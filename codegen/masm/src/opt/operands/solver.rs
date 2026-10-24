@@ -207,6 +207,28 @@ impl OperandMovementConstraintSolver {
         &self.context.options().trace_target
     }
 
+    /// Search for a shuffle using allocator-owned value IDs and faithful raw widths.
+    ///
+    /// Both slices are top-first grouped values, with one constraint per expected operand. The
+    /// request is rejected if identities have inconsistent widths, copies are already labeled,
+    /// an expected value is absent, or the solver's index limits would be exceeded. Search does
+    /// not spill values; callers must handle `NoSolution` with another scheduling strategy.
+    /// This entry point avoids manufacturing HIR objects merely to reuse the shuffle tactics.
+    pub(crate) fn from_layouts(
+        expected: &[ValueOrAlias],
+        constraints: &[Constraint],
+        stack: &[ValueOrAlias],
+        options: SolverOptions,
+    ) -> Result<Self, SolverError> {
+        let fuel = options.fuel;
+        let context = SolverContext::from_layouts(expected, constraints, stack, options)?;
+        Ok(Self {
+            context,
+            tactics: Default::default(),
+            fuel,
+        })
+    }
+
     /// Compute a solution that can be used to get the stack into the correct state
     pub fn solve(mut self) -> Result<Vec<Action>, SolverError> {
         use super::tactics::*;
@@ -455,6 +477,55 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{super::testing, *};
+
+    #[test]
+    fn immutable_layout_view_rejects_inconsistent_widths_and_external_copy_tags() {
+        let scalar = ValueOrAlias::new(0, 1);
+        let wide = ValueOrAlias::new(0, 2);
+        let copy = scalar.copy(core::num::NonZeroU8::new(1).unwrap());
+        for (expected, stack) in [(wide, scalar), (scalar, copy), (copy, scalar)] {
+            assert!(matches!(
+                OperandMovementConstraintSolver::from_layouts(
+                    &[expected],
+                    &[Constraint::Move],
+                    &[stack],
+                    SolverOptions::default(),
+                ),
+                Err(SolverError::NoSolution)
+            ));
+        }
+    }
+
+    #[test]
+    fn immutable_layout_view_refuses_unrepresentable_copy_indices() {
+        let stack: Vec<_> = (0..250).map(|id| ValueOrAlias::new(id, 1)).collect();
+        assert!(matches!(
+            OperandMovementConstraintSolver::from_layouts(
+                &[stack[0]; 10],
+                &[Constraint::Copy; 10],
+                &stack,
+                SolverOptions::default(),
+            ),
+            Err(SolverError::NoSolution)
+        ));
+    }
+
+    #[test]
+    fn existing_hir_constructor_preserves_legal_prefix_schedule_over_long_suffix() {
+        let mut order: Vec<_> = (0..260).collect();
+        order.swap(0, 1);
+        let problem = testing::make_problem_inputs(order, 2, 0);
+        let actions = OperandMovementConstraintSolver::new_with_options(
+            &problem.expected,
+            &problem.constraints,
+            &problem.stack,
+            SolverOptions::default(),
+        )
+        .expect("retained HIR constructor")
+        .solve()
+        .unwrap();
+        assert_eq!(actions, [Action::Swap(1)]);
+    }
 
     /// Apply `actions` to `stack` and return the resulting stack.
     fn apply_actions(mut stack: crate::OperandStack, actions: &[Action]) -> crate::OperandStack {

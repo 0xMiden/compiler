@@ -65,6 +65,15 @@ impl<'a> FrameLayout<'a> {
     }
 }
 
+impl<'a> From<&'a crate::plan::FinalFrameLayout> for FrameLayout<'a> {
+    fn from(frame: &'a crate::plan::FinalFrameLayout) -> Self {
+        Self {
+            local_offsets: &frame.source().offsets,
+            aligned_size: frame.aligned_size(),
+        }
+    }
+}
+
 /// Collects the local offsets of `function` for a [`FrameLayout`].
 pub(crate) fn local_offsets(function: &Function) -> Vec<u32> {
     function

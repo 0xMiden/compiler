@@ -44,8 +44,10 @@ pub(crate) struct DefinitionEvidence {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnitEvidence {
     pub aliases: LaneAliases,
-    pub equal_outputs: Vec<(u8, u8)>,
-    pub scratch_outputs: Vec<(FrameRef, u8)>,
+    /// Positions in the complete semantic output tuple, independent of machine access depth.
+    pub equal_outputs: Vec<(u32, u32)>,
+    /// Scratch cells that must equal positions of the unit's complete semantic output tuple.
+    pub scratch_outputs: Vec<(FrameRef, u32)>,
     /// Schemas for loops wholly internal to this unit, keyed by annotated control identity.
     pub loops: BTreeMap<ControlId, LoopSchema>,
     /// Ordered source-authorized call sites, with order interpreted within each path.
@@ -66,8 +68,10 @@ pub(crate) struct CallSite {
     pub path: Vec<CallPath>,
     /// Registered return-normalization helper; legal only at context/root boundaries.
     pub truncate: bool,
-    pub outputs: Vec<(FrameRef, u8)>,
-    pub publications: Vec<(Atom, u8)>,
+    /// Positions in the full ABI result tuple.
+    pub outputs: Vec<(FrameRef, u32)>,
+    /// Semantic atoms that must receive the corresponding full ABI result positions.
+    pub publications: Vec<(Atom, u32)>,
     /// Dynamic selector proof: the declared frame reference and its four expected root lanes.
     /// Replay checks both that the selector points here and that the cells contain these values.
     pub selector: Option<(FrameRef, Vec<StoredValue>)>,
@@ -189,9 +193,36 @@ fn validate_graph(
     program: &SelectedProgram,
     units: &BTreeMap<SelectedStepId, UnitEvidence>,
 ) -> Result<(), VerificationError> {
+    let mut objects = BTreeMap::<ScratchId, (ScratchRequirement, BTreeSet<SelectedStepId>)>::new();
+    for unit in program.segments.iter().flat_map(|segment| &segment.units) {
+        let mut seen = BTreeSet::new();
+        for requirement in &unit.scratch {
+            requirement.validate()?;
+            let mut normalized = requirement.clone();
+            normalized.uses.sort();
+            if !seen.insert(requirement.id)
+                || normalized.uses.windows(2).any(|uses| uses[0] == uses[1])
+            {
+                return Err(error("duplicate scratch declaration or use"));
+            }
+            let entry = objects
+                .entry(requirement.id)
+                .or_insert_with(|| (normalized.clone(), BTreeSet::new()));
+            if entry.0 != normalized {
+                return Err(error("inconsistent fixed scratch descriptor"));
+            }
+            entry.1.insert(unit.id);
+        }
+    }
+    for (requirement, uses) in objects.values() {
+        if requirement.uses.iter().copied().collect::<BTreeSet<_>>() != *uses {
+            return Err(error("scratch declared uses disagree with consuming units"));
+        }
+    }
     let mut segments = BTreeSet::new();
     let mut steps = BTreeSet::new();
     let mut edges = BTreeSet::new();
+    let mut definitions = BTreeSet::new();
     for (id, value) in &program.values {
         if *id != value.id {
             return Err(error("value ID disagrees with definition"));
@@ -201,9 +232,21 @@ fn validate_graph(
         if !segments.insert(segment.id) {
             return Err(error("duplicate segment"));
         }
-        for parameter in &segment.parameters {
-            if !program.values.contains_key(parameter) {
-                return Err(error("undefined parameter"));
+        for (index, parameter) in segment.parameters.iter().enumerate() {
+            let value =
+                program.values.get(parameter).ok_or_else(|| error("undefined parameter"))?;
+            match value.origin {
+                ValueOrigin::Parameter {
+                    segment: owner,
+                    index: position,
+                } if owner == segment.id && position as usize == index => {}
+                ValueOrigin::Hir(_) => {}
+                _ => return Err(error("parameter origin disagrees with segment ownership")),
+            }
+            for lane in 0..value.layout.lanes() {
+                if !definitions.insert(Atom::new(*parameter, lane)) {
+                    return Err(error("duplicate selected atom definition"));
+                }
             }
         }
         for unit in &segment.units {
@@ -227,6 +270,22 @@ fn validate_graph(
                 ) {
                     validate_atom(program, *atom)?;
                 }
+                let mut output_lanes = BTreeMap::<ValueId, u8>::new();
+                for atom in &unit.outputs {
+                    if !definitions.insert(*atom) {
+                        return Err(error("duplicate selected atom definition"));
+                    }
+                    *output_lanes.entry(atom.value).or_default() += 1;
+                }
+                // Distinct, in-range atoms must cover each defined value at this completion.
+                // A cross-unit partial computation uses explicit complete phase temporaries.
+                for (value, lanes) in output_lanes {
+                    if lanes != program.values[&value].layout.lanes() {
+                        return Err(error(
+                            "unit publication does not define the complete value layout",
+                        ));
+                    }
+                }
                 for requirement in &unit.scratch {
                     requirement.validate()?;
                     let wrong_owner = match requirement.lifetime {
@@ -240,6 +299,16 @@ fn validate_graph(
                     }
                 }
                 for effect in &unit.scratch_effects {
+                    if matches!(
+                        effect,
+                        ScratchEffect::Borrow {
+                            write: false,
+                            definite_write: true,
+                            ..
+                        }
+                    ) {
+                        return Err(error("definite borrowed write requires write permission"));
+                    }
                     let (object, offset, width) = match effect {
                         ScratchEffect::Read(fact) | ScratchEffect::Write(fact) => {
                             (fact.object, fact.offset, 1)
@@ -265,6 +334,25 @@ fn validate_graph(
                         || offset.checked_add(width).is_none_or(|end| end > requirement.size)
                     {
                         return Err(error("scratch effect exceeds declared object"));
+                    }
+                }
+                let mut pointers = BTreeSet::new();
+                for fact in &unit.address_results {
+                    let output = Atom::new(fact.pointer, 0);
+                    let requirement = unit.scratch.iter().find(|object| object.id == fact.object);
+                    if !pointers.insert(fact.pointer)
+                        || !unit.outputs.contains(&output)
+                        || program.values[&fact.pointer].layout.lanes() != 1
+                        || requirement.is_none_or(|object| {
+                            object.lifetime != ScratchLifetime::Spanning
+                                || fact.offset >= object.size
+                                || fact
+                                    .offset
+                                    .checked_add(fact.accessible)
+                                    .is_none_or(|end| end > object.size)
+                        })
+                    {
+                        return Err(error("invalid scratch-address output declaration"));
                     }
                 }
                 for (output, input) in units[&unit.id].aliases.pairs() {
@@ -324,13 +412,13 @@ fn validate_graph(
                 return Err(error("omitted edge parameter/capture"));
             }
         }
-        if edge.destination.is_none() && !matches!(edge.kind, EdgeKind::Return | EdgeKind::Trap) {
-            return Err(error("unsupported terminal edge"));
+        if edge.destination.is_none() != matches!(edge.kind, EdgeKind::Return | EdgeKind::Trap) {
+            return Err(error("terminal edge kind disagrees with its destination"));
         }
     }
     let mut used_segments = BTreeSet::new();
     let mut used_edges = BTreeSet::new();
-    walk_tree(&program.structure, &mut used_segments, &mut used_edges)?;
+    walk_tree(&program.structure, &mut used_segments, &mut used_edges, &mut BTreeSet::new())?;
     if used_segments != segments || used_edges != edges {
         return Err(error("structured skeleton and graph disagree"));
     }
@@ -344,6 +432,7 @@ fn walk_tree(
     tree: &ControlTree,
     segments: &mut BTreeSet<SegmentId>,
     edges: &mut BTreeSet<EdgeId>,
+    controls: &mut BTreeSet<ControlId>,
 ) -> Result<(), VerificationError> {
     match tree {
         ControlTree::Segment(id) => {
@@ -358,23 +447,29 @@ fn walk_tree(
         }
         ControlTree::Sequence(children) => {
             for child in children {
-                walk_tree(child, segments, edges)?;
+                walk_tree(child, segments, edges, controls)?;
             }
         }
         ControlTree::If {
+            id,
             on_true,
             then_body,
             on_false,
             else_body,
             ..
         } => {
+            if !controls.insert(*id) {
+                return Err(error("duplicate selected control identity"));
+            }
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate branch edge"));
             }
-            walk_tree(then_body, segments, edges)?;
-            walk_tree(else_body, segments, edges)?;
+            walk_tree(then_body, segments, edges, controls)?;
+            walk_tree(else_body, segments, edges, controls)?;
         }
         ControlTree::Loop {
+            id,
+            condition,
             header,
             body,
             backedges,
@@ -382,13 +477,16 @@ fn walk_tree(
             on_false,
             ..
         } => {
+            if !controls.insert(*id) || !controls.insert(*condition) {
+                return Err(error("duplicate selected control identity"));
+            }
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate loop condition edge"));
             }
             if !segments.insert(*header) {
                 return Err(error("duplicate loop header"));
             }
-            walk_tree(body, segments, edges)?;
+            walk_tree(body, segments, edges, controls)?;
             for edge in backedges {
                 if !edges.contains(edge) {
                     return Err(error("missing backedge in loop body"));

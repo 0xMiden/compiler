@@ -189,29 +189,20 @@ impl Verifier<'_> {
                     if retained {
                         return Err(error("callee retains compiler scratch address"));
                     }
-                    let start =
-                        u32::from(self.frame.resolve(FrameRef::Scratch { object, offset })?);
-                    let allocation = &self.frame.scratch()[&object];
-                    if offset.checked_add(size).is_none_or(|end| end > allocation.size) {
-                        return Err(error("borrow exceeds scratch object"));
-                    }
-                    for cell in start..start + size {
+                    let range = memory::object_range(object, offset, size, self.frame)?;
+                    for cell in range.clone() {
                         if read {
                             memory::read(state, cell, self.frame)?;
                         }
-                        if write {
-                            if active.readonly.contains_key(&cell) {
-                                return Err(fail(
-                                    DiagnosticCategory::InvalidSpillSlotRead,
-                                    "call writes stored input",
-                                ));
-                            }
-                            state.cells.remove(&cell);
-                            if definite_write {
-                                state.cells.insert(cell, self.tokens.fresh());
-                                state.written.insert(cell);
-                            }
+                        if write && active.readonly.contains_key(&cell) {
+                            return Err(fail(
+                                DiagnosticCategory::InvalidSpillSlotRead,
+                                "call writes stored input",
+                            ));
                         }
+                    }
+                    if write {
+                        memory::invalidate(state, range, definite_write, &mut self.tokens);
                     }
                 }
                 ScratchEffect::PossibleWrite {
@@ -219,17 +210,14 @@ impl Verifier<'_> {
                     offset,
                     size,
                 } => {
-                    let start =
-                        u32::from(self.frame.resolve(FrameRef::Scratch { object, offset })?);
-                    if offset
-                        .checked_add(size)
-                        .is_none_or(|end| end > self.frame.scratch()[&object].size)
-                    {
-                        return Err(error("possible write exceeds scratch object"));
+                    let range = memory::object_range(object, offset, size, self.frame)?;
+                    if range.clone().any(|cell| active.readonly.contains_key(&cell)) {
+                        return Err(fail(
+                            DiagnosticCategory::InvalidSpillSlotRead,
+                            "call writes stored input",
+                        ));
                     }
-                    for cell in start..start + size {
-                        state.cells.remove(&cell);
-                    }
+                    memory::invalidate(state, range, false, &mut self.tokens);
                 }
                 _ => {}
             }
@@ -264,17 +252,13 @@ impl Verifier<'_> {
             if !unit.outputs.contains(atom) || !publications.insert(*atom) {
                 return Err(error("call publication names undeclared result"));
             }
-            let token = *results
-                .get(usize::from(*index))
-                .ok_or_else(|| error("call publication index outside signature"))?;
+            let token = results[super::result_index(*index, results.len())?];
             state
                 .results
                 .insert((*atom, site_id), super::results::Requirement::equal(token));
         }
         for (reference, result) in &site.outputs {
-            let token = *results
-                .get(usize::from(*result))
-                .ok_or_else(|| error("borrowed output references unknown call result"))?;
+            let token = results[super::result_index(*result, results.len())?];
             let offset = u32::from(self.frame.resolve(*reference)?);
             let declared = unit.scratch_effects.iter().any(|effect| match (reference, effect) {
                 (

@@ -293,7 +293,8 @@ mod tests {
                             builder
                                 .stack()
                                 .iter()
-                                .filter(|operand| operand.value() == value)
+                                .filter(|operand| operand.unaliased()
+                                    == context.stack()[7 - index].unaliased())
                                 .count(),
                             1 + copies,
                             "incorrect multiplicity for argument {index}",

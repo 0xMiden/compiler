@@ -140,6 +140,8 @@ The selected graph is immutable during analysis and allocation. Reachability fol
 
 Backend liveness uses dense bitsets of semantic value identities. A live value initially means all its representation lanes are needed; lane-specific aliases are normalized through the layout table. Selected temporaries passed between lowering units and operands used in later phases are ordinary values in this analysis.
 
+Every value is published as a complete representation at an allocation boundary. A selected unit defining a value publishes all its layout lanes exactly once at that unit's normal completion; separate units cannot publish different lanes of the same value. Segment parameters likewise introduce complete values through checked simultaneous bindings. Cross-unit partial computations use explicit scalar or typed temporary values and an explicit alias/join completion unit when a complete result is needed. This keeps dense semantic-value demand meaningful at every boundary; it does not restrict raw partial stages inside one lowering unit.
+
 Let `P(S)` be the parameters of successor segment `S`, and `bind_e(p)` the source supplied to parameter `p` on edge `e: B -> S`:
 
 ```text
@@ -274,6 +276,7 @@ struct SelectedLowering {
     effects: LoweringEffects,
     scratch: Vec<ScratchRequirement>,
     scratch_effects: Vec<ScratchEffect>, // checked content dependencies, reads, and writes
+    address_results: Vec<AddressFact>, // scalar outputs equal declared scratch addresses
 }
 
 struct StoredInput {
@@ -316,6 +319,10 @@ Source-checked `Reconstruction::Literal` and `Reconstruction::Alias` declaration
 
 Contract aliases describe equality of current lane tokens. They allow multiple semantic names to use one recoverable representation, but do not change physical stack multiplicity. Rebinding or redefining a value invalidates facts about its old dynamic instance, including aliases; only checked new bindings can establish replacement equalities.
 
+`SelectedLowering.address_results` declares scratch-address provenance published at normal unit completion. Each fact names a scalar output of that unit, a declared scratch object, an exact element offset, and an accessible range. Selection checks the declaration against the registered source definition and validates output ownership, uniqueness, and the range with checked arithmetic. An address that survives the unit boundary requires a spanning scratch object; publishing an address into unit-local workspace is invalid. Scratch-content/output equality is a different relation and cannot substitute for an address-result declaration.
+
+Allocator completion invalidates facts for old dynamic definitions before publishing these declared address facts. Entry inheritance, joins, and simultaneous edge binding carry only established current facts. The allocator does not inspect expansion instructions to discover addresses or import the verifier's token transfers. An address-result declaration does not initialize the object, permit a memory access, or relax pointer-escape restrictions.
+
 `SpillSlotId` is an abstract spill slot for one raw lane. A scratch descriptor records size, alignment, contiguity, address space, declared uses and lifetime, and whether it is unit-local or spans lowering units. Scratch cannot alias a live spill slot. All scratch objects are declared before frame assignment; lowering unit expansion cannot discover additional storage. Source-declared HIR locals use their existing identifiers and occupy a disjoint frame range. Spill slot allocation does not mutate `Function::locals()`.
 
 Spill slots use the existing procedure-local memory and calling convention. On invocation, the VM advances the frame pointer to allocate sufficient space for the callee’s declared locals. The existing ABI assumes that a procedure does not write into its caller’s local memory unless explicitly arranged, such as by passing a pointer to a caller local. Compiler spill-slot addresses do not escape into the source program or callees, so their contents survive same-context calls under that assumption. This is an accepted premise of the design, not an open validation question or a new memory-protection mechanism; malicious writes are outside scope. The allocator and verifier still enforce correct frame offsets, slot reuse, and separation from source locals and reserved scratch.
@@ -337,6 +344,8 @@ Expansion receives resolved input and scratch bindings plus an instruction sink.
 An internal lowering unit stage is part of one uninterrupted expansion. It can have branches, loops, temporary lanes, bound-slot reads, and intrinsic calls. There is no allocator invocation, entry-contract normalization, or intermediate SSA result publication between its stages. “Uninterrupted” concerns allocation; it does not promise atomic memory effects or prohibit traps.
 
 An allocation boundary is explicitly selected between separate lowering unit steps. A multi-phase operation uses such steps only when allocation between them is useful. Their temporary values and cross-phase scratch lifetimes are present in the selected program before liveness runs; later phases' operands remain live through earlier phases. Each boundary must have a complete physical contract. No phase can assume that a partially prepared stack remains in place unless that boundary actually specifies it.
+
+Each phase publishes complete temporary or result values. For example, phases that compute the two limbs of a `u64` independently publish two scalar temporaries; a later alias/join unit declares their semantic dependencies and publishes both lanes of the `u64` together. The selected-program checker rejects missing, repeated or out-of-range output lanes and a value split across unit publications. Internal raw stages have no intermediate semantic publication and remain unrestricted by this boundary rule.
 
 The byte `memmove` and FPI examples below each use one lowering unit with internal stages. In particular, FPI uses sixteen stack inputs and six stored inputs at full width, then builds its twenty-two-lane call layout internally. It needs neither a fictitious intermediate payload value nor a general facility for locking a prepared prefix across separately allocated phases. Indirect-call or dispatch selection may still introduce genuine allocation boundaries where useful.
 
@@ -841,6 +850,10 @@ These contracts bound verification without unrolling or accumulating expressions
 
 Only the registered lowering definition can authorize semantic result publication, at its declared normal completion boundary. First verify the unit's actual input bindings, raw output shape, storage permissions and contents, suffix preservation, and any explicitly registered output relations. Then map each new semantic result atom to the actual verifier token in its declared result position. Publication does not replace or globally rename that token, so proved stack/storage equalities remain intact. Alias-producing lowerings must establish their specified input/result equality rather than introduce an unrelated result token.
 
+Semantic result positions refer to the entire result tuple, not the addressable stack window. Call publications, borrowed call outputs, output equalities, and scratch/output relations use `u32` positions, matching ABI result counts. Verification converts positions to host indices with checked conversion and bounds checks. Same-context results may exceed sixteen or 256 lanes; only indexed stack instructions are restricted to depths zero through fifteen. Generated definitions allocate disjoint value-ID ranges using checked arithmetic derived from their actual result counts, and diagnose ID-domain exhaustion before narrowing. Generated root cleanup retains the top sixteen lanes after a wider entrypoint return.
+
+For each declared address result, the verifier independently proves that the actual output token is the declared object's final frame address plus its element offset, with the declared accessible range within that object's assigned allocation. It checks this relation before publication, using tokens derived from actual instructions. Wrong literals, objects, offsets or ranges, missing address generation, and stale dynamic results cannot be certified by the declaration. The allocator and verifier share the immutable address-result definition and source contract, but not transfer implementations or conclusions about the emitted address.
+
 Publication cannot relabel a preserved suffix lane, validate changed spill-slot contents, establish an internal invariant, or turn a branch join into an expected input identity. Trapping or nonreturning paths publish no normal results. Intermediate phases may define only their selected temporary results; later phases' inputs and final result publication remain governed by the checked selected program.
 
 The registered rule asserting that these output lanes implement the HIR operation is a trusted semantic boundary. Generic token checking does not prove arithmetic, memory algorithms, termination, or trap conditions. Even a physically well-formed arithmetic lowering with incorrectly ordered result limbs can pass unless a registered output relation checks that order; semantic VM/differential tests cover that gap. This differs from allocation copying or permuting already identified lanes, where exact token order is checked. Trusted external call summaries likewise authorize only their declared effects and results.
@@ -885,6 +898,10 @@ final HIR or registered generated-procedure definition
 ```
 
 Peepholes run before final verification and preserve source/lowering boundaries or provide a checked mapping for moved annotations. They cannot erase the evidence needed to establish lowering unit inputs/outputs. No unchecked stack-changing rewrite follows `VerifiedProcedure`. Serialization performs no scheduling, result rebinding, or hidden local allocation.
+
+Executable anchoring is explicit in annotated MASM and checked before `VerifiedProcedure`. A closed anchor form admits only canonical `nop` anchors and the existing inert debug decorators. Insert a canonical `nop` before verification only when an executable MASM block would otherwise be empty. Verification checks that condition and its zero effect without consuming or skipping an allocation action. A debug anchor names and consumes the exact pending `DebugLocation` action ID, preserves its position, and forms an optimization barrier. Anchors cannot carry arbitrary instructions or effects, publish results, or manufacture or relocate source, unit, control, or edge evidence. Serialization emits only the already verified anchors; it does not insert new ones.
+
+Initially, peepholes simplify adjacent instructions only within the same active lowering unit, including its internal structured bodies. They stop at every proof, control, and debug boundary. Allocation actions and selected synthetic-control instructions retain exact correspondence with the physical plan. No general annotation-remapping mechanism or optimization-driven plan rewriting is needed for this policy.
 
 ### Diagnostics
 
