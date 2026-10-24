@@ -400,10 +400,15 @@ pub(super) fn choose(
     // Select eligible invariant names before old-source equality chooses a representative.
     // A changing parameter may equal a capture on entry without preserving that equality.
     let parameters = &program.segments.iter().find(|s| s.id == segment).unwrap().parameters;
+    let invariant_values: BTreeSet<_> = live
+        .iter()
+        .copied()
+        .filter(|value| loop_demand.is_none() || !parameters.contains(value))
+        .collect();
     let cached_atoms: Vec<_> = live_atoms
         .iter()
         .copied()
-        .filter(|atom| loop_demand.is_none() || !parameters.contains(&atom.value))
+        .filter(|atom| invariant_values.contains(&atom.value))
         .collect();
     let common = common_slots(incoming, &cached_atoms, context)?;
     let aliases = aliases(incoming, &live_atoms, context, loop_demand.is_some())?;
@@ -418,7 +423,9 @@ pub(super) fn choose(
         stack_top_first: vec![],
         required_spill_slots: vec![],
         required_scratch: scratch(incoming, &analysis.scratch.entry[&segment], context)?,
-        address_facts: common_addresses(incoming, &live, context)?,
+        // Forward-entry provenance cannot establish an exact address for a loop
+        // parameter: its backedge source may name another offset or object.
+        address_facts: common_addresses(incoming, &invariant_values, context)?,
         aliases,
         tail,
     };

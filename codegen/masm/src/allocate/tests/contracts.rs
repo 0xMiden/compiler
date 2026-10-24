@@ -1657,3 +1657,135 @@ fn procedure_allocator_consumes_checked_units_and_repairs_return() {
     let frame = fixture_frame(&plan);
     verify(&plan, &frame, fixture_body(&plan, &frame)).unwrap();
 }
+
+/// The same forward state must admit both invariant and changing backedge pointers.
+/// Captured pointer 100 retains its independently established exact provenance.
+fn loop_pointer_source(offset: u32, carried: u32, alias: bool) -> Source {
+    let object = ScratchRequirement {
+        id: ScratchId(0),
+        size: 2,
+        alignment: 1,
+        contiguous: true,
+        address_space: AddressSpace::ProcedureLocal,
+        lifetime: ScratchLifetime::Spanning,
+        uses: vec![SelectedStepId(0), SelectedStepId(2)],
+    };
+    let mut initial = request(0, &[], &[100]);
+    initial.kind = LoweringKind(5);
+    initial.scratch = vec![object.clone()];
+    initial.address_results = vec![AddressFact {
+        pointer: ValueId(100),
+        object: ScratchId(0),
+        offset: 0,
+        accessible: 1,
+    }];
+    let mut compare = request(1, &[11, 2], &[20]);
+    compare.kind = LoweringKind(4);
+    let mut changed = request(2, &[], &[101]);
+    changed.kind = LoweringKind(5);
+    changed.scratch = vec![object];
+    changed.address_results = vec![AddressFact {
+        pointer: ValueId(101),
+        object: ScratchId(0),
+        offset,
+        accessible: 1,
+    }];
+    let mut advance = request(3, &[11, 1], &[30]);
+    advance.kind = LoweringKind(3);
+    let mut distinct = request(4, &[40, 100], &[50]);
+    distinct.kind = LoweringKind(4);
+    let mut body = vec![changed, advance];
+    if alias {
+        let mut renamed = request(5, &[101], &[102]);
+        renamed.kind = LoweringKind(1);
+        body.push(renamed);
+    }
+    let tree = ControlTree::Loop {
+        id: ControlId(0),
+        condition: ControlId(1),
+        header: SegmentId(1),
+        predicate: a(20),
+        on_true: EdgeId(1),
+        on_false: EdgeId(2),
+        body: Box::new(seq(vec![s(2), e(3)])),
+        backedges: vec![EdgeId(3)],
+    };
+    let mut fixture = source(
+        vec![
+            segment(0, &[0, 1, 2], vec![initial]),
+            segment(1, &[10, 11], vec![compare]),
+            segment(2, &[], body),
+            segment(3, &[40], vec![distinct]),
+        ],
+        vec![
+            edge(0, 0, Some(1), EdgeKind::Forward, &[(10, 100), (11, 0)]),
+            edge(1, 1, Some(2), EdgeKind::True, &[]),
+            edge(2, 1, Some(3), EdgeKind::False, &[(40, 10)]),
+            edge(3, 2, Some(1), EdgeKind::Backedge, &[(10, carried), (11, 30)]),
+            edge(4, 3, None, EdgeKind::Return, &[(50, 50)]),
+        ],
+        seq(vec![s(0), e(0), tree, s(3), e(4)]),
+        1,
+    );
+    if alias {
+        fixture.0.values.get_mut(&ValueId(102)).unwrap().reconstruction =
+            Some(Reconstruction::Alias(vec![a(101)]));
+    }
+    fixture
+}
+
+#[test]
+fn loop_address_contracts_preserve_captures_without_fixing_carried_addresses() {
+    // Identity-carried and captured-source backedges are invariant positive controls;
+    // different-result backedges exercise equal and unequal offsets, plus alias transport.
+    for (offset, carried, alias, expected) in [
+        (1, 101, false, 1),
+        (1, 10, false, 0),
+        (1, 100, false, 0),
+        (0, 101, false, 0),
+        (1, 102, true, 1),
+    ] {
+        let fixture = loop_pointer_source(offset, carried, alias);
+        for options in [
+            AllocationOptions::default(),
+            AllocationOptions {
+                force_tier: Some(crate::allocate::schedule::SchedulingTier::Normalization),
+                ..Default::default()
+            },
+            AllocationOptions {
+                refuse_solver: true,
+                ..Default::default()
+            },
+        ] {
+            let plan = allocate(checked(&fixture), &options).unwrap();
+            let facts = &plan.contracts[&SegmentId(1)].address_facts;
+            assert!(facts.iter().any(|fact| fact.pointer == ValueId(100)));
+            // Even the invariant-carried controls need no unproved parameter facts.
+            assert!(facts.iter().all(|fact| fact.pointer != ValueId(10)));
+            execute(&plan, &[0, 1, 2], &[expected]);
+            execute(&plan, &[2, 1, 2], &[0]);
+        }
+    }
+}
+
+#[test]
+fn loop_address_contract_allows_a_different_backedge_scratch_object() {
+    let mut fixture = loop_pointer_source(0, 101, false);
+    // Keep the initial address unchanged; the backedge now points into a distinct
+    // spanning object, which must receive disjoint frame storage from the capture.
+    fixture.0.segments[0].units[0].scratch[0].uses = vec![SelectedStepId(0)];
+    let changed = &mut fixture.0.segments[2].units[0];
+    changed.scratch[0].id = ScratchId(1);
+    changed.scratch[0].uses = vec![SelectedStepId(2)];
+    changed.address_results[0].object = ScratchId(1);
+    let plan = allocate(checked(&fixture), &AllocationOptions::default()).unwrap();
+    let facts = &plan.contracts[&SegmentId(1)].address_facts;
+    assert!(
+        facts
+            .iter()
+            .any(|fact| fact.pointer == ValueId(100) && fact.object == ScratchId(0))
+    );
+    assert!(facts.iter().all(|fact| fact.pointer != ValueId(10)));
+    execute(&plan, &[0, 1, 2], &[1]);
+    execute(&plan, &[2, 1, 2], &[0]);
+}
