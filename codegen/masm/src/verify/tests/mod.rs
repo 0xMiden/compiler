@@ -1,6 +1,7 @@
 mod abi;
 mod contents;
 mod control;
+mod dataflow;
 mod diagnostics;
 mod diamond;
 
