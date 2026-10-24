@@ -482,6 +482,7 @@ impl From<wasmparser::TagType> for Tag {
         }
     }
 }
+
 /// Offset of a data segment inside a linear memory.
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 pub enum DataSegmentOffset {

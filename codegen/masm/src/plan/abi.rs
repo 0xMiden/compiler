@@ -151,6 +151,7 @@ pub(crate) enum ReturnBoundary {
     Context,
     Root,
 }
+
 impl ReturnBoundary {
     /// Permit truncation only after caller-suffix obligations have ended at a context or root exit.
     pub fn validate_truncation(self) -> Result<(), PlanError> {

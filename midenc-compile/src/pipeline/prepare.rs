@@ -211,6 +211,7 @@ pub(crate) fn synthesize_target(
         }
     }
 }
+
 /// The path a standalone `input`'s synthesized target is rooted at.
 ///
 /// A file input is rooted at itself. Standard input has no path, and cannot simply be given

@@ -30,6 +30,7 @@ impl OpEquivalence {
         }
     }
 }
+
 impl<OperandHasher, ResultHasher> OpEquivalence<OperandHasher, ResultHasher> {
     #[inline]
     pub fn with_flags(mut self, flags: EquivalenceFlags) -> Self {
@@ -161,6 +162,7 @@ pub fn ignore_value_equivalence(_lhs: &ValueRef, _rhs: &ValueRef) -> bool {
 }
 
 struct DefaultValueHasher;
+
 impl FnOnce<(&ValueRef, &mut dyn core::hash::Hasher)> for DefaultValueHasher {
     type Output = ();
 
@@ -174,6 +176,7 @@ impl FnOnce<(&ValueRef, &mut dyn core::hash::Hasher)> for DefaultValueHasher {
         value.dyn_hash(hasher);
     }
 }
+
 impl FnMut<(&ValueRef, &mut dyn core::hash::Hasher)> for DefaultValueHasher {
     extern "rust-call" fn call_mut(
         &mut self,
@@ -185,6 +188,7 @@ impl FnMut<(&ValueRef, &mut dyn core::hash::Hasher)> for DefaultValueHasher {
         value.dyn_hash(hasher);
     }
 }
+
 impl Fn<(&ValueRef, &mut dyn core::hash::Hasher)> for DefaultValueHasher {
     extern "rust-call" fn call(
         &self,
@@ -207,6 +211,7 @@ struct BlockEquivalenceData {
     /// this operation.
     op_order_index: SmallDenseMap<OperationRef, u32>,
 }
+
 impl BlockEquivalenceData {
     pub fn new(block: BlockRef) -> Self {
         use core::hash::Hasher;

@@ -119,6 +119,7 @@ impl fmt::Debug for AliasingViolationError {
         builder.finish()
     }
 }
+
 impl fmt::Display for AliasingViolationError {
     #[cfg(debug_assertions)]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -179,12 +180,15 @@ pub type UnsafeIntrusiveMapEntityRef<T> = RawEntityRef<T, map::IntrusiveLink>;
 pub struct RawEntityRef<T: ?Sized, Metadata = ()> {
     inner: NonNull<RawEntityMetadata<T, Metadata>>,
 }
+
 impl<T: ?Sized, Metadata> Copy for RawEntityRef<T, Metadata> {}
+
 impl<T: ?Sized, Metadata> Clone for RawEntityRef<T, Metadata> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<T, Metadata> RawEntityRef<T, Metadata> {
     /// Creates a new [RawEntityRef] that is dangling, but non-null and well-aligned.
     ///
@@ -199,6 +203,7 @@ impl<T, Metadata> RawEntityRef<T, Metadata> {
         }
     }
 }
+
 impl<T: ?Sized, Metadata> RawEntityRef<T, Metadata> {
     /// Create a new [RawEntityRef] from a raw pointer to the underlying entity.
     ///
@@ -504,42 +509,50 @@ where
     U: ?Sized,
 {
 }
+
 impl<T: ?Sized, Metadata> Eq for RawEntityRef<T, Metadata> {}
+
 impl<T: ?Sized, Metadata> PartialEq for RawEntityRef<T, Metadata> {
     #[inline]
     default fn eq(&self, other: &Self) -> bool {
         Self::ptr_eq(self, other)
     }
 }
+
 impl<T: ?Sized + EntityWithId, Metadata> PartialOrd for RawEntityRef<T, Metadata> {
     #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl<T: ?Sized + EntityWithId, Metadata> Ord for RawEntityRef<T, Metadata> {
     #[inline]
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.borrow().id().cmp(&other.borrow().id())
     }
 }
+
 impl<T: ?Sized, Metadata> core::hash::Hash for RawEntityRef<T, Metadata> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.inner.as_ptr().addr().hash(state);
     }
 }
+
 impl<T: ?Sized, Metadata> fmt::Pointer for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Pointer::fmt(&Self::as_ptr(self), f)
     }
 }
+
 impl<T: ?Sized + fmt::Display, Metadata> fmt::Display for RawEntityRef<T, Metadata> {
     #[inline]
     default fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.borrow())
     }
 }
+
 impl<T: ?Sized + fmt::Display + EntityWithId, Metadata> fmt::Display for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -553,12 +566,14 @@ impl<T: ?Sized + fmt::Debug, Metadata> fmt::Debug for RawEntityRef<T, Metadata> 
         fmt::Debug::fmt(&self.borrow(), f)
     }
 }
+
 impl<T: ?Sized + fmt::Debug + EntityWithId, Metadata> fmt::Debug for RawEntityRef<T, Metadata> {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.borrow().id())
     }
 }
+
 impl<T: ?Sized + crate::formatter::PrettyPrint, Metadata> crate::formatter::PrettyPrint
     for RawEntityRef<T, Metadata>
 {
@@ -567,6 +582,7 @@ impl<T: ?Sized + crate::formatter::PrettyPrint, Metadata> crate::formatter::Pret
         self.borrow().render()
     }
 }
+
 impl<T: ?Sized + StorableEntity, Metadata> StorableEntity for RawEntityRef<T, Metadata> {
     #[inline]
     fn index(&self) -> usize {
@@ -585,6 +601,7 @@ impl<T: ?Sized + StorableEntity, Metadata> StorableEntity for RawEntityRef<T, Me
         self.borrow_mut().unlink()
     }
 }
+
 impl<T: ?Sized + crate::Spanned, Metadata> crate::Spanned for RawEntityRef<T, Metadata> {
     #[inline]
     fn span(&self) -> crate::SourceSpan {
@@ -597,18 +614,21 @@ pub struct EntityRef<'b, T: ?Sized + 'b> {
     value: NonNull<T>,
     borrow: BorrowRef<'b>,
 }
+
 impl<T: ?Sized> AsRef<T> for EntityRef<'_, T> {
     default fn as_ref(&self) -> &T {
         // SAFETY: the value is accessible as long as we hold our borrow.
         unsafe { self.value.as_ref() }
     }
 }
+
 impl<T: super::Op> AsRef<super::Operation> for EntityRef<'_, T> {
     fn as_ref(&self) -> &super::Operation {
         // SAFETY: the value is accessible as long as we hold our borrow.
         unsafe { self.value.as_ref().as_operation() }
     }
 }
+
 impl<T: ?Sized> core::ops::Deref for EntityRef<'_, T> {
     type Target = T;
 
@@ -617,6 +637,7 @@ impl<T: ?Sized> core::ops::Deref for EntityRef<'_, T> {
         unsafe { self.value.as_ref() }
     }
 }
+
 impl<'b, T: ?Sized> EntityRef<'b, T> {
     /// Map this reference to a derived reference.
     #[inline]
@@ -667,6 +688,7 @@ impl<'b, T: ?Sized> EntityRef<'b, T> {
         Self { value, borrow }
     }
 }
+
 impl<T: crate::Attribute> EntityRef<'_, T> {
     /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
     pub fn as_attribute_ref(&self) -> crate::AttributeRef {
@@ -674,12 +696,14 @@ impl<T: crate::Attribute> EntityRef<'_, T> {
             .as_attribute_ref()
     }
 }
+
 impl EntityRef<'_, dyn crate::Attribute> {
     /// Reconstitutes the type-erased intrusive handle for this borrowed attribute.
     pub fn as_attribute_ref(&self) -> crate::AttributeRef {
         unsafe { crate::AttributeRef::from_raw(self.value.as_ptr()) }
     }
 }
+
 impl<'b, T, U> core::ops::CoerceUnsized<EntityRef<'b, U>> for EntityRef<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
@@ -692,23 +716,28 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityRef<'_, T> {
         (**self).fmt(f)
     }
 }
+
 impl<T: ?Sized + fmt::Display> fmt::Display for EntityRef<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
+
 impl<T: ?Sized + crate::formatter::PrettyPrint> crate::formatter::PrettyPrint for EntityRef<'_, T> {
     #[inline]
     fn render(&self) -> crate::formatter::Document {
         (**self).render()
     }
 }
+
 impl<T: ?Sized + Eq> Eq for EntityRef<'_, T> {}
+
 impl<T: ?Sized + PartialEq> PartialEq for EntityRef<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         **self == **other
     }
 }
+
 impl<T: ?Sized + PartialOrd> PartialOrd for EntityRef<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         (**self).partial_cmp(&**other)
@@ -730,11 +759,13 @@ impl<T: ?Sized + PartialOrd> PartialOrd for EntityRef<'_, T> {
         **self < **other
     }
 }
+
 impl<T: ?Sized + Ord> Ord for EntityRef<'_, T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (**self).cmp(&**other)
     }
 }
+
 impl<T: ?Sized + Hash> Hash for EntityRef<'_, T> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         (**self).hash(state);
@@ -755,6 +786,7 @@ pub struct EntityMut<'b, T: ?Sized> {
     /// `NonNull` is covariant over `T`, so we need to reintroduce invariance via phantom data
     _marker: core::marker::PhantomData<&'b mut T>,
 }
+
 impl<'b, T: ?Sized> EntityMut<'b, T> {
     /// Map this mutable reference to a derived mutable reference.
     #[inline]
@@ -861,6 +893,7 @@ impl<'b, T: ?Sized> EntityMut<'b, T> {
         }
     }
 }
+
 impl<T: ?Sized> Deref for EntityMut<'_, T> {
     type Target = T;
 
@@ -870,6 +903,7 @@ impl<T: ?Sized> Deref for EntityMut<'_, T> {
         unsafe { self.value.as_ref() }
     }
 }
+
 impl<T: ?Sized> DerefMut for EntityMut<'_, T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut T {
@@ -877,6 +911,7 @@ impl<T: ?Sized> DerefMut for EntityMut<'_, T> {
         unsafe { self.value.as_mut() }
     }
 }
+
 impl<'b, T, U> core::ops::CoerceUnsized<EntityMut<'b, U>> for EntityMut<'b, T>
 where
     T: ?Sized + core::marker::Unsize<U>,
@@ -889,23 +924,28 @@ impl<T: ?Sized + fmt::Debug> fmt::Debug for EntityMut<'_, T> {
         (**self).fmt(f)
     }
 }
+
 impl<T: ?Sized + fmt::Display> fmt::Display for EntityMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         (**self).fmt(f)
     }
 }
+
 impl<T: ?Sized + crate::formatter::PrettyPrint> crate::formatter::PrettyPrint for EntityMut<'_, T> {
     #[inline]
     fn render(&self) -> crate::formatter::Document {
         (**self).render()
     }
 }
+
 impl<T: ?Sized + Eq> Eq for EntityMut<'_, T> {}
+
 impl<T: ?Sized + PartialEq> PartialEq for EntityMut<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         **self == **other
     }
 }
+
 impl<T: ?Sized + PartialOrd> PartialOrd for EntityMut<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         (**self).partial_cmp(&**other)
@@ -927,11 +967,13 @@ impl<T: ?Sized + PartialOrd> PartialOrd for EntityMut<'_, T> {
         **self < **other
     }
 }
+
 impl<T: ?Sized + Ord> Ord for EntityMut<'_, T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         (**self).cmp(&**other)
     }
 }
+
 impl<T: ?Sized + Hash> Hash for EntityMut<'_, T> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         (**self).hash(state);
@@ -953,6 +995,7 @@ pub struct EntityProjection<'b, T: 'b> {
     borrow: BorrowRef<'b>,
     value: T,
 }
+
 impl<T> core::ops::Deref for EntityProjection<'_, T> {
     type Target = T;
 
@@ -961,12 +1004,14 @@ impl<T> core::ops::Deref for EntityProjection<'_, T> {
         &self.value
     }
 }
+
 impl<T> core::ops::DerefMut for EntityProjection<'_, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
 }
+
 impl<'b, T> EntityProjection<'b, T> {
     pub fn map<U, F>(orig: Self, f: F) -> EntityProjection<'b, U>
     where
@@ -978,28 +1023,34 @@ impl<'b, T> EntityProjection<'b, T> {
         }
     }
 }
+
 impl<T: fmt::Debug> fmt::Debug for EntityProjection<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.value, f)
     }
 }
+
 impl<T: fmt::Display> fmt::Display for EntityProjection<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.value, f)
     }
 }
+
 impl<T: crate::formatter::PrettyPrint> crate::formatter::PrettyPrint for EntityProjection<'_, T> {
     #[inline]
     fn render(&self) -> crate::formatter::Document {
         crate::formatter::PrettyPrint::render(&self.value)
     }
 }
+
 impl<T: Eq> Eq for EntityProjection<'_, T> {}
+
 impl<T: PartialEq> PartialEq for EntityProjection<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }
 }
+
 impl<T: PartialOrd> PartialOrd for EntityProjection<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         self.value.partial_cmp(&other.value)
@@ -1021,11 +1072,13 @@ impl<T: PartialOrd> PartialOrd for EntityProjection<'_, T> {
         self.value.lt(&other.value)
     }
 }
+
 impl<T: Ord> Ord for EntityProjection<'_, T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.value.cmp(&other.value)
     }
 }
+
 impl<T: Hash> Hash for EntityProjection<'_, T> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.value.hash(state)
@@ -1047,6 +1100,7 @@ pub struct EntityProjectionMut<'b, T: 'b> {
     borrow: BorrowRefMut<'b>,
     value: T,
 }
+
 impl<T> core::ops::Deref for EntityProjectionMut<'_, T> {
     type Target = T;
 
@@ -1055,12 +1109,14 @@ impl<T> core::ops::Deref for EntityProjectionMut<'_, T> {
         &self.value
     }
 }
+
 impl<T> core::ops::DerefMut for EntityProjectionMut<'_, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.value
     }
 }
+
 impl<'b, T> EntityProjectionMut<'b, T> {
     pub fn map<U, F>(orig: Self, f: F) -> EntityProjectionMut<'b, U>
     where
@@ -1072,16 +1128,19 @@ impl<'b, T> EntityProjectionMut<'b, T> {
         }
     }
 }
+
 impl<T: fmt::Debug> fmt::Debug for EntityProjectionMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(&self.value, f)
     }
 }
+
 impl<T: fmt::Display> fmt::Display for EntityProjectionMut<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&self.value, f)
     }
 }
+
 impl<T: crate::formatter::PrettyPrint> crate::formatter::PrettyPrint
     for EntityProjectionMut<'_, T>
 {
@@ -1090,12 +1149,15 @@ impl<T: crate::formatter::PrettyPrint> crate::formatter::PrettyPrint
         crate::formatter::PrettyPrint::render(&self.value)
     }
 }
+
 impl<T: Eq> Eq for EntityProjectionMut<'_, T> {}
+
 impl<T: PartialEq> PartialEq for EntityProjectionMut<'_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.value == other.value
     }
 }
+
 impl<T: PartialOrd> PartialOrd for EntityProjectionMut<'_, T> {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         self.value.partial_cmp(&other.value)
@@ -1117,11 +1179,13 @@ impl<T: PartialOrd> PartialOrd for EntityProjectionMut<'_, T> {
         self.value.lt(&other.value)
     }
 }
+
 impl<T: Ord> Ord for EntityProjectionMut<'_, T> {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.value.cmp(&other.value)
     }
 }
+
 impl<T: Hash> Hash for EntityProjectionMut<'_, T> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.value.hash(state)
@@ -1148,6 +1212,7 @@ pub struct RawEntityMetadata<T: ?Sized, Metadata> {
     metadata: Metadata,
     entity: RawEntity<T>,
 }
+
 impl<T, Metadata> RawEntityMetadata<T, Metadata> {
     pub(crate) fn new(value: T, metadata: Metadata) -> Self {
         Self {
@@ -1156,6 +1221,7 @@ impl<T, Metadata> RawEntityMetadata<T, Metadata> {
         }
     }
 }
+
 impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
     #[track_caller]
     pub(crate) fn borrow(&self) -> EntityRef<'_, T> {
@@ -1361,6 +1427,7 @@ impl<T: ?Sized> RawEntity<T> {
 pub struct BorrowRef<'b> {
     borrow: &'b Cell<BorrowFlag>,
 }
+
 impl<'b> BorrowRef<'b> {
     #[inline]
     fn new(borrow: &'b Cell<BorrowFlag>) -> Option<Self> {
@@ -1403,6 +1470,7 @@ impl<'b> BorrowRef<'b> {
         }
     }
 }
+
 impl Drop for BorrowRef<'_> {
     #[inline]
     fn drop(&mut self) {
@@ -1411,6 +1479,7 @@ impl Drop for BorrowRef<'_> {
         self.borrow.set(borrow - 1);
     }
 }
+
 impl Clone for BorrowRef<'_> {
     #[inline]
     fn clone(&self) -> Self {
@@ -1432,6 +1501,7 @@ impl Clone for BorrowRef<'_> {
 pub struct BorrowRefMut<'b> {
     borrow: &'b Cell<BorrowFlag>,
 }
+
 impl Drop for BorrowRefMut<'_> {
     #[inline]
     fn drop(&mut self) {
@@ -1440,6 +1510,7 @@ impl Drop for BorrowRefMut<'_> {
         self.borrow.set(borrow + 1);
     }
 }
+
 impl<'b> BorrowRefMut<'b> {
     /// Consume this mutable borrow and convert it into a immutable one without releasing it
     pub fn into_borrow_ref(self) -> BorrowRef<'b> {
@@ -1489,6 +1560,7 @@ impl<'b> BorrowRefMut<'b> {
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 struct BorrowFlag(isize);
+
 impl BorrowFlag {
     const MAX: Self = Self(isize::MAX);
     const MIN: Self = Self(isize::MIN);
@@ -1512,6 +1584,7 @@ impl BorrowFlag {
         Self(self.0.wrapping_add(rhs))
     }
 }
+
 impl core::ops::Add<isize> for BorrowFlag {
     type Output = BorrowFlag;
 
@@ -1520,6 +1593,7 @@ impl core::ops::Add<isize> for BorrowFlag {
         Self(self.0 + rhs)
     }
 }
+
 impl core::ops::Sub<isize> for BorrowFlag {
     type Output = BorrowFlag;
 

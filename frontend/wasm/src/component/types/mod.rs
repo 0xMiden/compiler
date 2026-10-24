@@ -266,6 +266,7 @@ pub enum ComponentItem {
     ComponentInstance(ComponentInstanceIndex),
     Type(component_types::ComponentAnyTypeId),
 }
+
 impl ComponentItem {
     pub(crate) fn unwrap_instance(&self) -> ComponentInstanceIndex {
         match self {

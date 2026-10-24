@@ -527,6 +527,7 @@ fn system_event_internal_loop_rechecks_late_compiler_taint_before_cleanup() {
 struct SystemEventGraphLoop {
     memory: bool,
 }
+
 impl GeneratedDefinition for SystemEventGraphLoop {
     fn id(&self) -> GeneratedDefinitionId {
         GeneratedDefinitionId(if self.memory { 20 } else { 19 })

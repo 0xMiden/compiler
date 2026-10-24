@@ -22,6 +22,7 @@ pub enum Event {
     PrintLn,
     Unknown(EventId),
 }
+
 impl Event {
     #[inline(always)]
     pub fn is_frame_start(&self) -> bool {

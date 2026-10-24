@@ -128,6 +128,7 @@ pub struct OperandMovementConstraintSolver {
     tactics: SmallVec<[Box<dyn Tactic>; 4]>,
     fuel: usize,
 }
+
 impl OperandMovementConstraintSolver {
     /// Returns true if `solution` would require accessing stack slots beyond what MASM supports.
     ///

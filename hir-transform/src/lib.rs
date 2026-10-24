@@ -2,6 +2,7 @@
 #![deny(warnings)]
 
 extern crate alloc;
+
 #[cfg(test)]
 extern crate std;
 

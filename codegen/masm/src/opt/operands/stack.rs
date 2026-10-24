@@ -9,6 +9,7 @@ use super::*;
 pub(crate) struct Stack {
     stack: Vec<ValueOrAlias>,
 }
+
 impl FromIterator<ValueOrAlias> for Stack {
     fn from_iter<I>(iter: I) -> Self
     where
@@ -20,6 +21,7 @@ impl FromIterator<ValueOrAlias> for Stack {
         Self { stack }
     }
 }
+
 impl Stack {
     pub fn len(&self) -> usize {
         self.stack.len()
@@ -95,6 +97,7 @@ impl Stack {
         self.stack.get(len - index - 1)
     }
 }
+
 impl core::ops::Index<usize> for Stack {
     type Output = ValueOrAlias;
 
@@ -107,6 +110,7 @@ impl core::ops::Index<usize> for Stack {
         &self.stack[index]
     }
 }
+
 impl core::ops::IndexMut<usize> for Stack {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         let len = self.stack.len();

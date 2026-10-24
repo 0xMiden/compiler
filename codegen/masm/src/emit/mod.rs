@@ -114,6 +114,7 @@ pub struct OpEmitter<'a> {
     invoked: &'a mut BTreeSet<masm::Invoke>,
     current_block: &'a mut Vec<masm::Op>,
 }
+
 impl<'a> OpEmitter<'a> {
     /// Build a MASM `assert` instruction with an inline diagnostic.
     #[inline]

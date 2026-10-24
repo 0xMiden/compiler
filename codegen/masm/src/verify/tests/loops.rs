@@ -162,6 +162,7 @@ impl GeneratedDefinition for LoopDefinition {
         })
     }
 }
+
 pub(in crate::verify) fn loop_fixture(
     repair: bool,
 ) -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {

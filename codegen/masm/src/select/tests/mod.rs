@@ -102,6 +102,7 @@ fn checked(f: &Parsed, env: &SelectEnv<'_>) -> verify::CheckedSelectedProgram {
     )
     .unwrap()
 }
+
 pub(crate) fn ready(
     f: &Parsed,
     env: &SelectEnv<'_>,
@@ -128,6 +129,7 @@ pub(crate) fn ready(
     crate::opt::peephole::simplify_annotated(&mut body);
     (plan, frame, body)
 }
+
 fn selected_procedure(f: &Parsed, env: &SelectEnv<'_>) -> alloc::string::String {
     let (plan, frame, body) = ready(f, env);
     verify::verify(&plan, &frame, body)
@@ -148,6 +150,7 @@ fn execute(f: &Parsed, env: &SelectEnv<'_>, inputs: &[usize], expected: &[usize]
     );
     execute_code(&code).unwrap();
 }
+
 fn execute_linked(f: &Parsed, inputs: &[usize], expected: &[usize]) {
     execute_linked_memory(f, inputs, expected, "", "").unwrap();
 }
@@ -207,6 +210,7 @@ fn execute_linked_memory_mutate(
         .map_err(|e| midenc_hir::Report::msg(e.to_string()))?;
     Ok(())
 }
+
 fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
     let program = miden_assembly::Assembler::default()
         .assemble_program("selected_hir", code)?
@@ -224,6 +228,7 @@ fn execute_program(
         .map_err(|e| midenc_hir::Report::msg(e.to_string()))?;
     Ok(())
 }
+
 fn processor_with_advice(advice: &[u64]) -> miden_processor::FastProcessor {
     let advice = miden_processor::advice::AdviceInputs::default()
         .with_stack(advice.iter().copied().map(miden_core::Felt::new_unchecked).collect());

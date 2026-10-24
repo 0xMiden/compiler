@@ -60,6 +60,7 @@ impl fmt::Display for PlanAction {
         }
     }
 }
+
 /// Proposed physical implementation of a source-checked selected procedure.
 /// Allocation can choose actions and contracts but cannot modify the sealed semantic program;
 /// independent verification must discharge those choices before serialization.

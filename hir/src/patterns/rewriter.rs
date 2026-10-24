@@ -846,6 +846,7 @@ impl<L: ?Sized + RewriterListener> RewriterListener for Rc<L> {
 
 /// A listener of kind `Rewriter` that does nothing
 pub struct NoopRewriterListener;
+
 impl Listener for NoopRewriterListener {
     #[inline]
     fn kind(&self) -> ListenerType {
@@ -864,6 +865,7 @@ impl Listener for NoopRewriterListener {
     ) {
     }
 }
+
 impl RewriterListener for NoopRewriterListener {
     #[inline(always)]
     fn notify_operation_replaced(&self, _op: OperationRef, _replacement: OperationRef) {}
@@ -871,6 +873,7 @@ impl RewriterListener for NoopRewriterListener {
 
 /// A listener of kind `Rewriter` that emits trace logging for events
 pub struct TracingRewriterListener;
+
 impl Listener for TracingRewriterListener {
     #[inline]
     fn kind(&self) -> ListenerType {
@@ -943,6 +946,7 @@ impl Listener for TracingRewriterListener {
         }
     }
 }
+
 impl RewriterListener for TracingRewriterListener {
     fn notify_operation_replaced(&self, _op: OperationRef, _replacement: OperationRef) {
         if log::log_enabled!(target: "rewriter", log::Level::Trace) {
@@ -1084,11 +1088,13 @@ pub struct ForwardingListener<Base, Derived> {
     base: Base,
     derived: Derived,
 }
+
 impl<Base, Derived> ForwardingListener<Base, Derived> {
     pub fn new(base: Base, derived: Derived) -> Self {
         Self { base, derived }
     }
 }
+
 impl<Base: Listener, Derived: Listener> Listener for ForwardingListener<Base, Derived> {
     fn kind(&self) -> ListenerType {
         self.derived.kind()
@@ -1109,6 +1115,7 @@ impl<Base: Listener, Derived: Listener> Listener for ForwardingListener<Base, De
         self.derived.notify_operation_inserted(op, prev);
     }
 }
+
 impl<Base: RewriterListener, Derived: RewriterListener> RewriterListener
     for ForwardingListener<Base, Derived>
 {
@@ -1179,6 +1186,7 @@ pub struct InPlaceModificationGuard<'a, R: ?Sized + Rewriter> {
     op: OperationRef,
     canceled: bool,
 }
+
 impl<'a, R> InPlaceModificationGuard<'a, R>
 where
     R: ?Sized + Rewriter,
@@ -1210,6 +1218,7 @@ where
     /// Signals the end of an in-place modification of the current operation.
     pub fn finalize(self) {}
 }
+
 impl<R: ?Sized + Rewriter> core::ops::Deref for InPlaceModificationGuard<'_, R> {
     type Target = R;
 
@@ -1218,12 +1227,14 @@ impl<R: ?Sized + Rewriter> core::ops::Deref for InPlaceModificationGuard<'_, R> 
         self.rewriter
     }
 }
+
 impl<R: ?Sized + Rewriter> core::ops::DerefMut for InPlaceModificationGuard<'_, R> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.rewriter
     }
 }
+
 impl<R: ?Sized + Rewriter> Drop for InPlaceModificationGuard<'_, R> {
     fn drop(&mut self) {
         if self.canceled {
@@ -1279,6 +1290,7 @@ impl<L: RewriterListener> PatternRewriter<L> {
         self.recoverable
     }
 }
+
 impl<L> Deref for PatternRewriter<L> {
     type Target = RewriterImpl<L>;
 
@@ -1287,6 +1299,7 @@ impl<L> Deref for PatternRewriter<L> {
         &self.rewriter
     }
 }
+
 impl<L> DerefMut for PatternRewriter<L> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {

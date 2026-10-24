@@ -47,7 +47,9 @@ use crate::{
 };
 
 const LINT_ESTIMATED_HIR_OP_LIMIT: usize = 900;
+
 const LINT_SIGNATURE_VALUE_LIMIT: usize = 8;
+
 type InitialSkip = (GlobalItemIndex, SourceSpan, String);
 
 struct LintProcedurePreflight {

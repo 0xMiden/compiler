@@ -19,6 +19,7 @@ pub(crate) struct GraphBuilder {
     segments: BTreeMap<SegmentId, SelectedSegment>,
     edges: BTreeMap<EdgeId, TransferEdge>,
 }
+
 #[cfg(test)]
 impl GraphBuilder {
     /// Start an empty graph with the source origin and externally visible procedure ABI.
@@ -94,6 +95,7 @@ fn insert<K: Ord, V>(map: &mut BTreeMap<K, V>, key: K, value: V) -> Result<(), P
         }
     }
 }
+
 #[cfg(test)]
 fn invalid(message: &'static str) -> PlanError {
     PlanError::new(DiagnosticCategory::InvalidSelectedLowering, message)
@@ -2084,6 +2086,7 @@ fn lanes(types: impl IntoIterator<Item = Type>) -> Result<u32, Report> {
             .ok_or_else(|| super::invalid("ABI lane count overflows"))
     })
 }
+
 /// Add actual source provenance only when a planning failure has no nested location.
 fn at_operation(mut report: Report, op: &Operation) -> Report {
     if let Some(error) = report.downcast_mut::<PlanError>()

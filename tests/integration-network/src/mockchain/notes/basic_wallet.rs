@@ -19,6 +19,7 @@ use super::super::support::{
     compile_rust_package, execute_tx, execute_tx_measurements, note_script_root, prologue_cycles,
     single_note_cycles, to_core_felts, tx_script_processing_cycles,
 };
+
 /// Converts the P2IDE note payload into protocol storage order for the basic-wallet tests.
 fn to_p2ide_storage_felts(
     target: &AccountId,

@@ -46,6 +46,7 @@ impl<T, const N: usize> Drop for SmallDeque<T, N> {
         self.clear();
     }
 }
+
 impl<T: Clone, const N: usize> Clone for SmallDeque<T, N> {
     fn clone(&self) -> Self {
         let mut deq = Self::with_capacity(self.len());
@@ -58,11 +59,13 @@ impl<T: Clone, const N: usize> Clone for SmallDeque<T, N> {
         self.extend(source.iter().cloned());
     }
 }
+
 impl<T, const N: usize> Default for SmallDeque<T, N> {
     fn default() -> Self {
         Self::new()
     }
 }
+
 impl<T, const N: usize> SmallDeque<T, N> {
     /// Returns a new, empty [SmallDeque]
     #[inline]
@@ -1641,11 +1644,17 @@ macro_rules! __impl_slice_eq1 {
 }
 
 __impl_slice_eq1! { [A: alloc::alloc::Allocator, const N: usize] SmallDeque<T, N>, Vec<U, A>, }
+
 __impl_slice_eq1! { [const N: usize] SmallDeque<T, N>, SmallVec<[U; N]>, }
+
 __impl_slice_eq1! { [const N: usize] SmallDeque<T, N>, &[U], }
+
 __impl_slice_eq1! { [const N: usize] SmallDeque<T, N>, &mut [U], }
+
 __impl_slice_eq1! { [const N: usize, const M: usize] SmallDeque<T, N>, [U; M], }
+
 __impl_slice_eq1! { [const N: usize, const M: usize] SmallDeque<T, N>, &[U; M], }
+
 __impl_slice_eq1! { [const N: usize, const M: usize] SmallDeque<T, N>, &mut [U; M], }
 
 impl<T: PartialOrd, const N: usize> PartialOrd for SmallDeque<T, N> {
@@ -2478,6 +2487,7 @@ impl<T: fmt::Debug, const N: usize> fmt::Debug for Drain<'_, T, N> {
 }
 
 unsafe impl<T: Sync, const N: usize> Sync for Drain<'_, T, N> {}
+
 unsafe impl<T: Send, const N: usize> Send for Drain<'_, T, N> {}
 
 impl<T, const N: usize> Drop for Drain<'_, T, N> {

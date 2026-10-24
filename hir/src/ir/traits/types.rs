@@ -391,21 +391,30 @@ macro_rules! type_constraint {
 }
 
 type_constraint!(AnyType, "any type", true);
+
 // TODO(pauls): Extend Type with new Function variant, we'll use that to represent function handles
 //type_constraint!(AnyFunction, "a function type", crate::Type::is_function);
 type_constraint!(AnyList, "any list type", crate::Type::is_list);
+
 type_constraint!(AnyArray, "any array type", crate::Type::is_array);
+
 type_constraint!(AnyStruct, "any struct type", crate::Type::is_struct);
+
 type_constraint!(AnyPointer, "a pointer type", crate::Type::is_pointer);
+
 type_constraint!(AnyInteger, "an integral type", crate::Type::is_integer);
+
 type_constraint!(AnyPointerOrInteger, "an integral or pointer type", |ty| ty.is_pointer()
     || ty.is_integer());
+
 type_constraint!(AnySignedInteger, "a signed integral type", crate::Type::is_signed_integer);
+
 type_constraint!(
     AnyUnsignedInteger,
     "an unsigned integral type",
     crate::Type::is_unsigned_integer
 );
+
 type_constraint!(IntFelt, "a field element", crate::Type::is_felt);
 
 /// A boolean
@@ -413,36 +422,46 @@ pub type Bool = SizedInt<1>;
 
 /// A signless 8-bit integer
 pub type Int8 = SizedInt<8>;
+
 /// A signed 8-bit integer
 pub type SInt8 = And<AnySignedInteger, SizedInt<8>>;
+
 /// An unsigned 8-bit integer
 pub type UInt8 = And<AnyUnsignedInteger, SizedInt<8>>;
 
 /// A signless 16-bit integer
 pub type Int16 = SizedInt<16>;
+
 /// A signed 16-bit integer
 pub type SInt16 = And<AnySignedInteger, SizedInt<16>>;
+
 /// An unsigned 16-bit integer
 pub type UInt16 = And<AnyUnsignedInteger, SizedInt<16>>;
 
 /// A signless 32-bit integer
 pub type Int32 = SizedInt<32>;
+
 /// A signed 16-bit integer
 pub type SInt32 = And<AnySignedInteger, SizedInt<32>>;
+
 /// An unsigned 16-bit integer
 pub type UInt32 = And<AnyUnsignedInteger, SizedInt<32>>;
 
 /// A signless 64-bit integer
 pub type Int64 = SizedInt<64>;
+
 /// A signed 64-bit integer
 pub type SInt64 = And<AnySignedInteger, SizedInt<64>>;
+
 /// An unsigned 64-bit integer
 pub type UInt64 = And<AnyUnsignedInteger, SizedInt<64>>;
 
 /// A signless 128-bit integer
 pub type Int128 = SizedInt<128>;
+
 /// A signed 128-bit integer
 pub type SInt128 = And<AnySignedInteger, SizedInt<128>>;
+
 /// An unsigned 128-bit integer
 pub type UInt128 = And<AnyUnsignedInteger, SizedInt<128>>;
 
@@ -451,56 +470,67 @@ impl BuildableTypeConstraint for IntFelt {
         crate::Type::Felt
     }
 }
+
 impl BuildableTypeConstraint for Bool {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I1
     }
 }
+
 impl BuildableTypeConstraint for UInt8 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::U8
     }
 }
+
 impl BuildableTypeConstraint for SInt8 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I8
     }
 }
+
 impl BuildableTypeConstraint for UInt16 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::U16
     }
 }
+
 impl BuildableTypeConstraint for SInt16 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I16
     }
 }
+
 impl BuildableTypeConstraint for UInt32 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::U32
     }
 }
+
 impl BuildableTypeConstraint for SInt32 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I32
     }
 }
+
 impl BuildableTypeConstraint for UInt64 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::U64
     }
 }
+
 impl BuildableTypeConstraint for SInt64 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I64
     }
 }
+
 impl BuildableTypeConstraint for UInt128 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::U128
     }
 }
+
 impl BuildableTypeConstraint for SInt128 {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I128
@@ -509,22 +539,27 @@ impl BuildableTypeConstraint for SInt128 {
 
 /// Represents a fixed-width integer of `N` bits
 pub struct SizedInt<const N: usize>(core::marker::PhantomData<[(); N]>);
+
 impl<const N: usize> Copy for SizedInt<N> {}
+
 impl<const N: usize> Clone for SizedInt<N> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<const N: usize> fmt::Debug for SizedInt<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(core::any::type_name::<Self>())
     }
 }
+
 impl<const N: usize> fmt::Display for SizedInt<N> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{N}-bit integral type")
     }
 }
+
 impl<const N: usize> TypeConstraint for SizedInt<N> {
     #[inline(always)]
     fn get() -> Self {
@@ -546,16 +581,19 @@ impl BuildableTypeConstraint for SizedInt<8> {
         crate::Type::I8
     }
 }
+
 impl BuildableTypeConstraint for SizedInt<16> {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I16
     }
 }
+
 impl BuildableTypeConstraint for SizedInt<32> {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I32
     }
 }
+
 impl BuildableTypeConstraint for SizedInt<64> {
     fn build(_context: &Context) -> crate::Type {
         crate::Type::I64
@@ -564,23 +602,28 @@ impl BuildableTypeConstraint for SizedInt<64> {
 
 /// A type constraint for pointer values
 pub struct PointerOf<T>(core::marker::PhantomData<T>);
+
 impl<T> Copy for PointerOf<T> {}
+
 impl<T> Clone for PointerOf<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<T> fmt::Debug for PointerOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(core::any::type_name::<Self>())
     }
 }
+
 impl<T: TypeConstraint> fmt::Display for PointerOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let pointee = <T as TypeConstraint>::get().description();
         write!(f, "a pointer to {pointee}")
     }
 }
+
 impl<T: TypeConstraint> TypeConstraint for PointerOf<T> {
     #[inline(always)]
     fn get() -> Self {
@@ -596,6 +639,7 @@ impl<T: TypeConstraint> TypeConstraint for PointerOf<T> {
             .is_some_and(|pointee| <T as TypeConstraint>::get().matches(pointee))
     }
 }
+
 impl<T: BuildableTypeConstraint> BuildableTypeConstraint for PointerOf<T> {
     fn build(context: &Context) -> crate::Type {
         crate::Type::from(PointerType::new(<T as BuildableTypeConstraint>::build(context)))
@@ -604,23 +648,28 @@ impl<T: BuildableTypeConstraint> BuildableTypeConstraint for PointerOf<T> {
 
 /// A type constraint for array values
 pub struct AnyArrayOf<T>(core::marker::PhantomData<T>);
+
 impl<T> Copy for AnyArrayOf<T> {}
+
 impl<T> Clone for AnyArrayOf<T> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<T> fmt::Debug for AnyArrayOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(core::any::type_name::<Self>())
     }
 }
+
 impl<T: TypeConstraint> fmt::Display for AnyArrayOf<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let element = <T as TypeConstraint>::get().description();
         write!(f, "an array of {element}")
     }
 }
+
 impl<T: TypeConstraint> TypeConstraint for AnyArrayOf<T> {
     #[inline(always)]
     fn get() -> Self {
@@ -641,23 +690,28 @@ impl<T: TypeConstraint> TypeConstraint for AnyArrayOf<T> {
 
 /// A type constraint for array values
 pub struct ArrayOf<const N: usize, T>(core::marker::PhantomData<[T; N]>);
+
 impl<const N: usize, T> Copy for ArrayOf<N, T> {}
+
 impl<const N: usize, T> Clone for ArrayOf<N, T> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<const N: usize, T> fmt::Debug for ArrayOf<N, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(core::any::type_name::<Self>())
     }
 }
+
 impl<const N: usize, T: TypeConstraint> fmt::Display for ArrayOf<N, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let element = <T as TypeConstraint>::get().description();
         write!(f, "an array of {N} {element}")
     }
 }
+
 impl<const N: usize, T: TypeConstraint> TypeConstraint for ArrayOf<N, T> {
     #[inline(always)]
     fn get() -> Self {
@@ -677,6 +731,7 @@ impl<const N: usize, T: TypeConstraint> TypeConstraint for ArrayOf<N, T> {
         }
     }
 }
+
 impl<const N: usize, T: BuildableTypeConstraint> BuildableTypeConstraint for ArrayOf<N, T> {
     fn build(context: &Context) -> crate::Type {
         let element = <T as BuildableTypeConstraint>::build(context);
@@ -689,17 +744,21 @@ pub struct And<T, U> {
     _left: core::marker::PhantomData<T>,
     _right: core::marker::PhantomData<U>,
 }
+
 impl<T, U> Copy for And<T, U> {}
+
 impl<T, U> Clone for And<T, U> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<T, U> fmt::Debug for And<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(core::any::type_name::<Self>())
     }
 }
+
 impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for And<T, U> {
     #[inline(always)]
     fn get() -> Self {
@@ -726,17 +785,21 @@ pub struct Or<T, U> {
     _left: core::marker::PhantomData<T>,
     _right: core::marker::PhantomData<U>,
 }
+
 impl<T, U> Copy for Or<T, U> {}
+
 impl<T, U> Clone for Or<T, U> {
     fn clone(&self) -> Self {
         *self
     }
 }
+
 impl<T, U> fmt::Debug for Or<T, U> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(core::any::type_name::<Self>())
     }
 }
+
 impl<T: TypeConstraint, U: TypeConstraint> TypeConstraint for Or<T, U> {
     #[inline(always)]
     fn get() -> Self {

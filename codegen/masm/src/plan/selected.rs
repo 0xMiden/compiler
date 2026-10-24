@@ -66,6 +66,7 @@ pub(crate) enum ProcedureOrigin {
         parameters: Vec<Felt>,
     },
 }
+
 /// Origin of one semantic stage, retaining either its HIR operation or generated definition stage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum SourceOrigin {
@@ -75,12 +76,14 @@ pub(crate) enum SourceOrigin {
         stage: u32,
     },
 }
+
 /// Semantic provenance and diagnostic location for a selected source step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SourceRecord {
     pub origin: SourceOrigin,
     pub location: SourceLocation,
 }
+
 /// Definition site of a semantic value, including generated intermediates and segment parameters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ValueOrigin {
@@ -88,6 +91,7 @@ pub(crate) enum ValueOrigin {
     Temporary { step: SourceStepId, index: u32 },
     Parameter { segment: SegmentId, index: u32 },
 }
+
 /// Semantic value and its raw lane layout. Optional reconstruction is a source claim that
 /// replay must prove at publication to validate the allocator's use of that recipe.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -98,6 +102,7 @@ pub(crate) struct SelectedValue {
     /// Recoverable identity, distinct from the value's current physical availability.
     pub reconstruction: Option<Reconstruction>,
 }
+
 /// Pure, lane-ordered recipe for recovering a value without preserving a physical copy.
 /// Alias dependencies must be acyclic and precede the value definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,6 +126,7 @@ pub(crate) struct StoredInput {
     pub id: StoredInputId,
     pub value: StoredValue,
 }
+
 /// Source-memory permissions for an entire unit; individual instructions retain exact effects.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct SourceMemoryEffects {
@@ -167,6 +173,7 @@ impl Default for LoweringEffects {
         }
     }
 }
+
 /// How a complete semantic result becomes available at a lowering boundary.
 ///
 /// Most units produce a physical prefix. Representation-preserving operations can instead
@@ -207,6 +214,7 @@ pub(crate) struct SelectedLowering {
     /// Required reads, writes, and borrows of compiler-owned scratch.
     pub scratch_effects: Vec<ScratchEffect>,
 }
+
 /// Straight-line sequence of units sharing one entry contract. Parameters are established
 /// simultaneously by incoming edges, including separately named scratch contents.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -235,6 +243,7 @@ pub(crate) struct ParameterBinding {
     pub destination: ValueId,
     pub source: ValueId,
 }
+
 /// Simultaneous renaming of scratch-content identity at a segment boundary; no bytes move.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct ContentBinding {
@@ -255,6 +264,7 @@ pub(crate) struct TransferEdge {
     pub bindings: Vec<ParameterBinding>,
     pub content_bindings: Vec<ContentBinding>,
 }
+
 /// Executable structured ordering of the selected graph. Segment and edge identifiers must
 /// agree with graph coverage; this tree also constrains the expanded control skeleton.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -288,6 +298,7 @@ pub(crate) enum ControlTree {
     /// Execute one transfer, including any physical edge actions.
     Edge(EdgeId),
 }
+
 /// Semantic program proposed by selection, before any allocation decisions.
 /// The first segment is the procedure entry. Source checking compares this entire description
 /// to independently reconstructed evidence and returns an immutable checked wrapper.
@@ -312,6 +323,7 @@ pub(crate) enum TailPolicy {
     /// Entry owns the root VM window, with no ordinary caller suffix.
     RootWindow,
 }
+
 /// Allocator-proposed entry hypothesis, proved on every actual incoming transfer.
 /// Stack entries may repeat an atom, but each entry still requires a physical occurrence.
 /// Scratch and address facts crossing a segment boundary must refer to spanning objects.

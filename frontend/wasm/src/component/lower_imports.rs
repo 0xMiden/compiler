@@ -39,11 +39,15 @@ use crate::{
 /// The attribute recording, on a declared import function, the component-model path of the
 /// import that declared it, so a later clashing import can name it. Its value is a `StringAttr`.
 const COMPONENT_IMPORT_PATH_ATTR: &str = "wasm_component_import_path";
+
 const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
+
 /// Field elements the callee's procedure root occupies, both as the leading flat parameters of a
 /// dyncall import's lowering function and as the root operand of the `hir.dyncall` it emits.
 const DYNCALL_ROOT_FELTS: usize = Dyncall::ROOT_FELTS;
+
 const FPI_EXEC_INPUTS: usize = ExecFpi::MAX_INPUT_FELTS;
+
 const FPI_EXEC_RESULTS: usize = ExecFpi::EXECUTOR_RESULT_FELTS;
 
 /// How a lowering function reaches the procedure behind a (non-FPI) component import.

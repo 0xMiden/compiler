@@ -82,6 +82,7 @@ pub struct Rodata {
     /// The raw binary data for this segment
     pub data: Arc<ConstantData>,
 }
+
 impl fmt::Debug for Rodata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rodata")
@@ -95,6 +96,7 @@ impl fmt::Debug for Rodata {
             .finish()
     }
 }
+
 impl Rodata {
     pub fn size_in_bytes(&self) -> usize {
         self.data.len()
@@ -390,6 +392,7 @@ mod tests {
                 assert_eq!(before, component.to_string());
             }
         }
+
         #[test]
         fn equivalent_spelling_is_selected_early_and_packaging_is_inert() {
             let target = target("::\"lib\"");
@@ -411,6 +414,7 @@ mod tests {
                 packaged.invoked().collect::<Vec<_>>()
             );
         }
+
         #[test]
         fn authored_namespace_and_quoted_separators_retain_their_identity() {
             let target = target("::left::right");
@@ -423,6 +427,7 @@ mod tests {
             let sources = component.source_inputs(&target, context.session()).unwrap();
             assert_eq!(sources.root.path(), component.root.as_ref());
         }
+
         #[test]
         fn a_later_incompatible_target_requires_lowering_again() {
             let target = target("::chosen");

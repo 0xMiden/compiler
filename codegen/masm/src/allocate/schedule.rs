@@ -793,6 +793,7 @@ fn victim_class(
 /// remain an exact suffix. Duplicate input requests receive distinct occurrence IDs.
 /// Successful selective trial with only its actual victim decisions retained.
 type SelectiveTrial<'a> = (Trial<'a>, Vec<crate::plan::VictimDecision>);
+
 fn selective<'a>(
     mut trial: Trial<'a>,
     unit: &SelectedLowering,

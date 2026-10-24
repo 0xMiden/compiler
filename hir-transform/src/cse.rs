@@ -544,6 +544,7 @@ impl core::hash::Hash for OpKey {
 }
 
 impl Eq for OpKey {}
+
 impl PartialEq for OpKey {
     fn eq(&self, other: &Self) -> bool {
         use midenc_hir::equivalence::{DefaultValueEquivalence, OperationEquivalenceFlags};

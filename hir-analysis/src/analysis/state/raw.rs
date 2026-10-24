@@ -18,6 +18,7 @@ pub struct AnalysisStateDescriptor {
     /// analysis type
     offset: u32,
 }
+
 impl AnalysisStateDescriptor {
     pub fn new<T: BuildableAnalysisState>(alloc: &blink_alloc::Blink) -> NonNull<Self> {
         let dyn_ptr = NonNull::<T>::dangling() as NonNull<dyn AnalysisState>;
@@ -58,6 +59,7 @@ pub struct RawAnalysisStateInfo<T> {
     info: AnalysisStateInfo,
     state: RawEntity<T>,
 }
+
 impl<T: BuildableAnalysisState> RawAnalysisStateInfo<T> {
     /// Allocate a new instance of the analysis state `T` attached to `anchor`, using `alloc`.
     ///
@@ -96,6 +98,7 @@ pub struct RawAnalysisStateInfoHandle<T: ?Sized> {
     state: NonNull<RawEntity<T>>,
     offset: u32,
 }
+
 impl<T: 'static> RawAnalysisStateInfoHandle<T> {
     pub unsafe fn new(info: NonNull<AnalysisStateInfo>) -> Self {
         unsafe {

@@ -174,6 +174,7 @@ define_unaligned_16bit_load_tests!(
     load_unaligned_u16_offset_2,
     load_unaligned_u16
 );
+
 define_unaligned_16bit_load_tests!(
     run_load_unaligned_i16,
     i16,

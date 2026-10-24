@@ -209,6 +209,7 @@ pub(super) fn body(plan: &ProcedurePlan, frame: &FinalFrameLayout) -> AnnotatedM
 fn frame(plan: &ProcedurePlan) -> FinalFrameLayout {
     crate::allocate::slots::assign_frame(plan, &SourceLocalLayout::default()).unwrap()
 }
+
 pub(super) fn render(body: &AnnotatedMasmBody) -> alloc::string::String {
     body.ops()
         .iter()
@@ -562,6 +563,7 @@ fn join_candidates_include_actual_edge_and_immediate_successor_costs() {
 
 #[derive(Clone)]
 pub(super) struct Source(pub(super) SelectedProgram);
+
 impl GeneratedDefinition for Source {
     fn id(&self) -> GeneratedDefinitionId {
         GeneratedDefinitionId(460)
@@ -600,9 +602,11 @@ impl GeneratedDefinition for Source {
         })
     }
 }
+
 pub(super) fn checked(source: &Source) -> CheckedSelectedProgram {
     check_selection(source.0.clone(), &SourceContext::Generated(source)).unwrap()
 }
+
 pub(super) fn edge(
     id: u32,
     source: u32,
@@ -625,6 +629,7 @@ pub(super) fn edge(
         content_bindings: vec![],
     }
 }
+
 pub(super) fn segment(
     id: u32,
     parameters: &[u32],
@@ -637,18 +642,23 @@ pub(super) fn segment(
         units,
     }
 }
+
 pub(super) fn s(id: u32) -> ControlTree {
     ControlTree::Segment(SegmentId(id))
 }
+
 pub(super) fn e(id: u32) -> ControlTree {
     ControlTree::Edge(EdgeId(id))
 }
+
 pub(super) fn seq(children: Vec<ControlTree>) -> ControlTree {
     ControlTree::Sequence(children)
 }
+
 pub(super) fn a(id: u32) -> Atom {
     Atom::new(ValueId(id), 0)
 }
+
 pub(super) fn source(
     segments: Vec<SelectedSegment>,
     edges: Vec<TransferEdge>,
@@ -717,6 +727,7 @@ pub(super) fn source(
         source_map,
     })
 }
+
 pub(super) fn request(id: u32, inputs: &[u32], outputs: &[u32]) -> SelectedLowering {
     let mut unit = unit(inputs.iter().copied().map(a).collect(), vec![]);
     unit.id = SelectedStepId(id);

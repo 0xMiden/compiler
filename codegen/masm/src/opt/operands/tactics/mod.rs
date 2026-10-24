@@ -91,6 +91,7 @@ pub struct SolutionBuilder<'a> {
     /// The actions that represent the solution constructed so far.
     actions: Vec<Action>,
 }
+
 impl<'a> SolutionBuilder<'a> {
     #[doc(hidden)]
     pub fn new(context: &'a SolverContext) -> Self {

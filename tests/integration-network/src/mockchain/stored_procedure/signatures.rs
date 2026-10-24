@@ -41,6 +41,7 @@ const EXPECTED_BUMPS: u64 = 2;
 /// Arguments the dispatcher passes to the `Word`-returning `pack` procedure, mirroring the fixed
 /// values spelled in the dispatcher source.
 const PACK_A: u64 = 7;
+
 const PACK_B: u64 = 11;
 
 /// Dispatches the four signature shapes at the edges of what a dispatched call supports: a

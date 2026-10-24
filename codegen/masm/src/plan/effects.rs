@@ -30,6 +30,7 @@ pub(crate) enum MemoryRegion {
         width: u8,
     },
 }
+
 /// A closed read footprint; circuit inputs name raw stack lanes, never SSA values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MemoryRead {
@@ -129,6 +130,7 @@ pub(crate) enum FloorStep {
     Push(u8),
     Pop(u8),
 }
+
 /// Trusted normal-completion rule for one target instruction. The consumed prefix includes
 /// all inspected lanes, even when outputs preserve them; the suffix is never inspected.
 /// Temporary floor steps and memory/observation effects are checked separately.
@@ -286,6 +288,7 @@ pub(crate) struct FloorState {
     pub protected: usize,
     pub padding: usize,
 }
+
 #[cfg(test)]
 impl FloorState {
     /// Pop owned lanes or reject a crossing into the protected suffix; padding may grow.

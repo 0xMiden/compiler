@@ -93,6 +93,7 @@ pub(crate) enum SpanningCell {
     /// Read the declared content identity and publish it as the single result lane.
     Read,
 }
+
 #[cfg(test)]
 impl SpanningCell {
     /// Declare one phase of a one-element spanning object, including its content obligation.
@@ -143,6 +144,7 @@ impl SpanningCell {
         Ok((unit, proof))
     }
 }
+
 #[cfg(test)]
 impl LoweringDefinition for SpanningCell {
     fn kind(&self) -> LoweringKind {

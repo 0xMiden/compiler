@@ -54,6 +54,7 @@ impl ValueLayout {
 #[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TupleLayout(Vec<ValueLayout>);
+
 #[cfg(test)]
 impl TupleLayout {
     /// Preserve semantic tuple order without imposing an aggregate lane limit.

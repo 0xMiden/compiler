@@ -10,6 +10,7 @@ struct AddressableStackWindow {
     /// The total number of field elements contained in the addressable portion of the stack.
     depth_felts: usize,
 }
+
 impl AddressableStackWindow {
     /// Compute the addressable window for `stack`.
     ///
@@ -230,6 +231,7 @@ fn materialize_missing_expected_copies(
 /// materialization risks pushing required operands beyond the MASM addressable window.
 #[derive(Default)]
 pub struct LinearStackWindow;
+
 impl Tactic for LinearStackWindow {
     fn cost(&self, context: &SolverContext) -> usize {
         core::cmp::max(context.copies().len(), 1)

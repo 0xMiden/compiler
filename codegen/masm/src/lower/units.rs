@@ -221,6 +221,7 @@ pub(crate) enum Scalar {
     Identity,
     Zero,
 }
+
 #[cfg(test)]
 impl Scalar {
     /// Declare scalar lane arity and source-derived identity evidence.
@@ -247,6 +248,7 @@ impl Scalar {
         Ok((selected(self.kind(), id, source, inputs, &[], outputs), evidence))
     }
 }
+
 #[cfg(test)]
 impl LoweringDefinition for Scalar {
     fn kind(&self) -> LoweringKind {

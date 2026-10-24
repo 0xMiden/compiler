@@ -11,6 +11,7 @@ use super::resolve::convert_results;
 use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
 const RAW_FPI_FLATTENED_ARG_COUNT: u32 = ExecFpi::EXECUTOR_INPUT_FELTS as u32;
+
 const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = ExecFpi::EXECUTOR_INPUT_FELTS;
 
 /// No transformation needed

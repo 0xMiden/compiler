@@ -28,6 +28,7 @@ pub trait Matcher<T: ?Sized> {
 
 #[repr(transparent)]
 pub struct MatchWith<F>(pub F);
+
 impl<F, T: ?Sized, U> Matcher<T> for MatchWith<F>
 where
     F: Fn(&T) -> Option<U>,
@@ -221,12 +222,14 @@ pub type TypedOpAttrMatcher<A> = OpAttrMatcher<TypedAttrMatcher<A>>;
 
 /// Matches and binds any attribute value whose concrete type is `A`.
 pub struct TypedAttrMatcher<A>(core::marker::PhantomData<A>);
+
 impl<A: AttributeRegistration + Clone> Default for TypedAttrMatcher<A> {
     #[inline(always)]
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<A: AttributeRegistration + Clone> Matcher<dyn Attribute> for TypedAttrMatcher<A> {
     type Matched = A;
 
@@ -238,6 +241,7 @@ impl<A: AttributeRegistration + Clone> Matcher<dyn Attribute> for TypedAttrMatch
 
 /// A matcher for operations that always succeeds, binding the operation reference in the process.
 struct AnyOpMatcher;
+
 impl Matcher<Operation> for AnyOpMatcher {
     type Matched = OperationRef;
 
@@ -250,11 +254,13 @@ impl Matcher<Operation> for AnyOpMatcher {
 /// A matcher for operations whose concrete type is `T`, binding the op with a strongly-typed
 /// reference.
 struct OneOpMatcher<T>(core::marker::PhantomData<T>);
+
 impl<T: Op> OneOpMatcher<T> {
     pub const fn new() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<T: Op> Matcher<Operation> for OneOpMatcher<T> {
     type Matched = UnsafeIntrusiveEntityRef<T>;
 
@@ -266,6 +272,7 @@ impl<T: Op> Matcher<Operation> for OneOpMatcher<T> {
 
 /// A matcher for values that always succeeds, binding the value reference in the process.
 struct AnyValueMatcher;
+
 impl Matcher<ValueRef> for AnyValueMatcher {
     type Matched = ValueRef;
 
@@ -277,6 +284,7 @@ impl Matcher<ValueRef> for AnyValueMatcher {
 
 /// A matcher that only succeeds if it matches exactly the provided value.
 struct ExactValueMatcher(ValueRef);
+
 impl Matcher<ValueRef> for ExactValueMatcher {
     type Matched = ValueRef;
 
@@ -297,6 +305,7 @@ type ConstantOpMatcher = HasTraitMatcher<dyn crate::traits::ConstantLike>;
 /// the operation itself, it binds the constant value produced by the operation.
 #[derive(Default)]
 struct ConstantOpBinder;
+
 impl Matcher<Operation> for ConstantOpBinder {
     type Matched = AttributeRef;
 
@@ -323,11 +332,13 @@ impl Matcher<Operation> for ConstantOpBinder {
 struct ImplementsConstantOpBinder<Trait: ?Sized + 'static>(
     core::marker::PhantomData<&'static Trait>,
 );
+
 impl<Trait: ?Sized + 'static> ImplementsConstantOpBinder<Trait> {
     pub const fn new() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<Trait> Matcher<Operation> for ImplementsConstantOpBinder<Trait>
 where
     Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
@@ -341,11 +352,13 @@ where
 
 /// An extension of [ConstantOpBinder] which only matches constant values of type `T`
 struct TypedConstantOpBinder<T>(core::marker::PhantomData<T>);
+
 impl<T> TypedConstantOpBinder<T> {
     pub const fn new() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<T: AttributeValue + Clone> Matcher<Operation> for TypedConstantOpBinder<T> {
     type Matched = T;
 
@@ -360,6 +373,7 @@ impl<T: AttributeValue + Clone> Matcher<Operation> for TypedConstantOpBinder<T> 
 /// Matches operations which implement [crate::traits::UnaryOp] and binds the operand.
 #[derive(Default)]
 struct UnaryOpBinder;
+
 impl Matcher<Operation> for UnaryOpBinder {
     type Matched = OpOperand;
 
@@ -375,6 +389,7 @@ impl Matcher<Operation> for UnaryOpBinder {
 /// Matches operations which implement [crate::traits::BinaryOp] and binds both operands.
 #[derive(Default)]
 struct BinaryOpBinder;
+
 impl Matcher<Operation> for BinaryOpBinder {
     type Matched = [OpOperand; 2];
 
@@ -397,6 +412,7 @@ impl Matcher<Operation> for BinaryOpBinder {
 ///
 /// This can be used to set up for folding.
 struct FoldResultBinder;
+
 impl Matcher<OpOperand> for FoldResultBinder {
     type Matched = OpFoldResult;
 
@@ -420,6 +436,7 @@ impl Matcher<OpOperand> for FoldResultBinder {
 ///
 /// This can be used to set up for folding.
 struct BinaryFoldResultBinder;
+
 impl Matcher<[OpOperand; 2]> for BinaryFoldResultBinder {
     type Matched = [OpFoldResult; 2];
 
@@ -437,6 +454,7 @@ impl Matcher<[OpOperand; 2]> for BinaryFoldResultBinder {
 ///
 /// A successful match binds the constant value of the operand for use by the [crate::traits::Foldable] impl.
 struct FoldableOperandBinder;
+
 impl Matcher<OpOperand> for FoldableOperandBinder {
     type Matched = AttributeRef;
 
@@ -448,11 +466,13 @@ impl Matcher<OpOperand> for FoldableOperandBinder {
 }
 
 struct TypedFoldableOperandBinder<T>(core::marker::PhantomData<T>);
+
 impl<T> Default for TypedFoldableOperandBinder<T> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<T: AttributeRegistration> Matcher<OpOperand> for TypedFoldableOperandBinder<T> {
     type Matched = UnsafeIntrusiveEntityRef<T>;
 
@@ -466,11 +486,13 @@ impl<T: AttributeRegistration> Matcher<OpOperand> for TypedFoldableOperandBinder
 struct ImplementsFoldableOperandBinder<Trait: ?Sized + 'static>(
     core::marker::PhantomData<&'static Trait>,
 );
+
 impl<Trait: ?Sized + 'static> Default for ImplementsFoldableOperandBinder<Trait> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<Trait> Matcher<OpOperand> for ImplementsFoldableOperandBinder<Trait>
 where
     Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
@@ -492,6 +514,7 @@ where
 /// wish to let the [crate::traits::Foldable] impl decide what to do in the presence of mixed constant and non-
 /// constant operands.
 struct FoldableBinaryOpBinder;
+
 impl Matcher<[OpOperand; 2]> for FoldableBinaryOpBinder {
     type Matched = [AttributeRef; 2];
 

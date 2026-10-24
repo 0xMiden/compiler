@@ -23,6 +23,7 @@ pub struct SolverContext {
     expected: Stack,
     copies: CopyInfo,
 }
+
 impl SolverContext {
     #[cfg(test)]
     pub fn new(
@@ -213,6 +214,7 @@ pub struct CopyInfo {
     copies: FxHashMap<ValueOrAlias, u8>,
     num_copies: u8,
 }
+
 impl CopyInfo {
     /// Returns the number of copies recorded in this structure
     #[inline(always)]

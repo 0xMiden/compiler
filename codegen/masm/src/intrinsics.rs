@@ -27,6 +27,7 @@ const SOURCES: &[(&str, &str)] = &[
 ];
 
 const NAME: &str = "compiler-intrinsics";
+
 const VERSION: &str = "0.9.0";
 
 /// The assembled package, cached by the digest of the core library it was assembled against.

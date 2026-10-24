@@ -8,6 +8,7 @@ use midenc_hir::{
 
 /// The page size used for the linker's own memory layout, in bytes.
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
+
 /// The default number of pages reserved before any compiler-managed memory region.
 ///
 /// This is a fallback floor for modules that carry no
@@ -32,9 +33,11 @@ const DEFAULT_RESERVATION: u32 = 17;
 
 /// Number of elements a reserved cell spans: one word.
 const RESERVED_WORD: u32 = miden_core::WORD_SIZE as u32;
+
 /// First element address past guest-reachable memory: the 2^32-byte guest address space, in
 /// elements.
 pub const GUEST_ADDRESS_LIMIT: u32 = ((u32::MAX as u64 + 1) / RESERVED_WORD as u64) as u32;
+
 /// The VM's initial frame pointer, from which procedure locals are allocated upwards.
 ///
 /// Mirrors `miden_core::FMP_INIT_VALUE`, which is not usable in constant expressions; the unit
@@ -55,6 +58,7 @@ const _: () = assert!(
     GUEST_ADDRESS_LIMIT.is_multiple_of(RESERVED_WORD),
     "the reserved band does not start on a word boundary"
 );
+
 const _: () = assert!(
     RESERVED_BAND_END <= LOCALS_FRAME_START,
     "the reserved band overlaps procedure locals"
@@ -579,6 +583,7 @@ pub struct GlobalVariableLayout {
     page_size: u32,
     offsets: FxHashMap<builtin::GlobalVariableRef, u32>,
 }
+
 impl GlobalVariableLayout {
     fn new(global_table_offset: u32, page_size: u32) -> Self {
         Self {

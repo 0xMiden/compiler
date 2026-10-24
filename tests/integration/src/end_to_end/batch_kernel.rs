@@ -26,6 +26,7 @@ use crate::{
 /// Advice-map keys under which the sorted note lists are provided to the kernel. Must match the
 /// key constants baked into the fixture's `prologue.rs`.
 const INPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::input_note_list";
+
 const OUTPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::output_note_list";
 
 /// Byte address (in Rust memory) at which the kernel writes its output words.

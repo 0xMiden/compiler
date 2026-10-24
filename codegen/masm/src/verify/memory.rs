@@ -85,6 +85,7 @@ pub(super) fn invalidate(
         }
     }
 }
+
 /// Discharge a scratch obligation against actual physical contents, comparing exact tokens
 /// for atom/content requirements and only initialization for the weakest requirement.
 pub(super) fn check_fact(

@@ -31,6 +31,7 @@ pub(crate) enum ScratchLifetime {
 pub(crate) enum AddressSpace {
     ProcedureLocal,
 }
+
 /// Fixed scratch descriptor declared by selection and repeated consistently by all uses.
 /// Size, alignment, and object-relative offsets are measured in field elements.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +74,7 @@ pub(crate) enum FrameRef {
     Spill(SpillSlotId),
     Scratch { object: ScratchId, offset: u32 },
 }
+
 /// Strength of a scratch-cell obligation, from definite initialization to exact identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum ContentRequirement {
@@ -91,6 +93,7 @@ pub(crate) enum ContentRequirement {
     )]
     Content(ContentId),
 }
+
 /// One object-relative scratch cell and the contents required or established there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct ScratchCellFact {
@@ -98,6 +101,7 @@ pub(crate) struct ScratchCellFact {
     pub offset: u32,
     pub content: ContentRequirement,
 }
+
 /// Claimed exact association between a semantic pointer and a scratch range.
 /// Replay proves its address and accessible extent independently of any cell initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

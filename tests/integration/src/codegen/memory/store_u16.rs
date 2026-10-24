@@ -286,6 +286,7 @@ define_unaligned_16bit_store_tests!(
     store_unaligned_u16_offset_2,
     store_unaligned_u16
 );
+
 define_unaligned_16bit_store_tests!(
     run_store_unaligned_i16,
     i16,
