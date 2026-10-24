@@ -9,19 +9,19 @@ fn basic_wallet_and_p2id() {
     assert!(account_package.is_library(), "expected library");
     // Pin executable MAST size independently of debug metadata, including generated call setup
     // and stack scheduling.
-    expect!["9376"].assert_eq(stripped_mast_size_str(&account_package).as_str());
+    expect!["9363"].assert_eq(stripped_mast_size_str(&account_package).as_str());
 
     let tx_script_package = compile_project(Path::new("../../examples/basic-wallet-tx-script"));
     assert!(tx_script_package.is_library(), "expected library");
     // Pin executable MAST size independently of debug metadata, including generated call setup
     // and stack scheduling.
-    expect!["16438"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    expect!["16264"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let note_package = compile_project(Path::new("../../examples/p2id-note"));
     assert!(note_package.is_library(), "expected library");
     // Pin executable MAST size independently of debug metadata, including generated call setup
     // and stack scheduling.
-    expect!["21508"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    expect!["21332"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build_recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
