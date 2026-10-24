@@ -1,6 +1,7 @@
 mod abi;
 mod contents;
 mod control;
+mod diagnostics;
 mod diamond;
 
 pub(super) mod loops;
