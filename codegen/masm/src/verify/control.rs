@@ -65,7 +65,7 @@ pub(super) fn check_projection(
             ControlTree::Loop {
                 id,
                 condition,
-                header,
+                before,
                 on_true,
                 on_false,
                 body,
@@ -77,17 +77,14 @@ pub(super) fn check_projection(
                 selected(body, &mut taken, loops);
                 loops.pop();
                 out.push(Projection::Flag(*id, true));
-                out.push(Projection::While(
-                    *id,
-                    vec![
-                        Projection::Segment(*header),
-                        Projection::If(
-                            *condition,
-                            taken,
-                            vec![Projection::Edge(*on_false), Projection::Flag(*id, false)],
-                        ),
-                    ],
+                let mut repeated = Vec::new();
+                selected(before, &mut repeated, loops);
+                repeated.push(Projection::If(
+                    *condition,
+                    taken,
+                    vec![Projection::Edge(*on_false), Projection::Flag(*id, false)],
                 ));
+                out.push(Projection::While(*id, repeated));
             }
         }
     }
@@ -238,6 +235,17 @@ impl Verifier<'_> {
             }
             positions.push((Some(offset), 0, *kind, memory::read(&initial, offset, self.frame)?));
         }
+        // Spill copies belong to allocation, so lowering schemas need not name them.
+        // Preserve initialized copies by proving their identity on every backedge,
+        // including cached copies that a later allocation action may reload. Several
+        // logical slots can share a cell; explicit schema positions take precedence.
+        for offset in self.frame.spills().values() {
+            if let Some(token) = initial.cells.get(offset)
+                && cell_offsets.insert(*offset)
+            {
+                positions.push((Some(*offset), 0, LoopPosition::Invariant, *token));
+            }
+        }
         let mut forward = BTreeMap::new();
         for (_, _, kind, token) in &positions {
             if let LoopPosition::Carry(parameter) = kind
@@ -264,10 +272,7 @@ impl Verifier<'_> {
         for token in external {
             let established = positions
                 .iter()
-                .any(|(_, _, kind, value)| *kind == LoopPosition::Invariant && *value == token)
-                || self.frame.spills().values().any(|offset| {
-                    initial.cells.get(offset) == Some(&token) && !cell_offsets.contains(offset)
-                });
+                .any(|(_, _, kind, value)| *kind == LoopPosition::Invariant && *value == token);
             if !established {
                 return Err(fail(
                     DiagnosticCategory::InvalidEdgeTransfer,

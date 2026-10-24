@@ -176,7 +176,21 @@ fn zero_instruction_alias_still_requires_checked_coverage() {
 #[test]
 fn unregistered_hir_source_fails_closed() {
     let candidate = Identity.instantiate(&[]).unwrap().program;
-    assert!(check_selection(candidate, &SourceContext::Hir).is_err());
+    let function = crate::select::tests::parse(
+        "builtin.function public extern(\"C\") @source() { builtin.ret; };",
+    );
+    let function = function.borrow();
+    let env = crate::select::SelectEnv::default();
+    assert!(
+        check_selection(
+            candidate,
+            &SourceContext::Hir {
+                function: &function,
+                env: &env
+            }
+        )
+        .is_err()
+    );
 }
 #[test]
 fn source_parameters_are_validated_by_registered_definition() {
@@ -604,4 +618,359 @@ fn literal_true_swapped_label_cannot_hide_the_invalid_taken_repair() {
     let error = result.unwrap_err();
     assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
     assert_eq!(error.message, "structured alternative disagrees with edge kind");
+}
+
+#[test]
+fn equality_assertions_check_actual_inputs_floor_and_trap_permission() {
+    for with_message in [false, true] {
+        let assertion = if with_message {
+            Instruction::AssertEqWithError(alloc::sync::Arc::<str>::from("table tag").into())
+        } else {
+            Instruction::AssertEq
+        };
+        for (left, right) in [(7, 7), (7, 8)] {
+            let mut fixture = Fixture::new(0, 0);
+            fixture.effects.may_trap = true;
+            let code = vec![
+                Primitive::Push(Felt::new_unchecked(left)).instruction().unwrap(),
+                Primitive::Push(Felt::new_unchecked(right)).instruction().unwrap(),
+                assertion.clone(),
+            ];
+            verify(&fixture.plan(), &fixture.frame(), body(code.clone())).unwrap();
+            fixture.effects.may_trap = false;
+            assert!(verify(&fixture.plan(), &fixture.frame(), body(code)).is_err());
+        }
+        let mut fixture = Fixture::new(2, 0);
+        fixture.effects.may_trap = true;
+        verify(&fixture.plan(), &fixture.frame(), body(vec![assertion.clone()])).unwrap();
+        let mut fixture = Fixture::new(1, 0);
+        fixture.effects.may_trap = true;
+        assert!(
+            verify(&fixture.plan(), &fixture.frame(), body(vec![assertion])).is_err(),
+            "cannot consume protected tail"
+        );
+    }
+}
+
+#[test]
+fn registered_loop_header_must_be_the_before_subtree_entry_even_without_backedges() {
+    struct BadHeader;
+    impl GeneratedDefinition for BadHeader {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(201)
+        }
+
+        fn instantiate(&self, _: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+            let mut evidence = super::loops::LoopDefinition.instantiate(&[])?;
+            evidence.program.origin = ProcedureOrigin::Generated {
+                definition: self.id(),
+                parameters: vec![],
+            };
+            let edge = &mut evidence.program.edges[2];
+            edge.kind = EdgeKind::Trap;
+            edge.destination = None;
+            edge.bindings.clear();
+            let ControlTree::Sequence(children) = &mut evidence.program.structure else {
+                unreachable!()
+            };
+            let ControlTree::Loop {
+                header, backedges, ..
+            } = &mut children[2]
+            else {
+                unreachable!()
+            };
+            *header = SegmentId(99);
+            backedges.clear();
+            Ok(evidence)
+        }
+    }
+    let source = BadHeader;
+    assert!(
+        check_selection(
+            source.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&source)
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn arithmetic_traps_require_declared_permission() {
+    use Instruction::*;
+    for (instruction, inputs) in [
+        (Div, vec![2, 14]),
+        (Inv, vec![1]),
+        (Not, vec![1]),
+        (And, vec![1, 0]),
+        (Or, vec![1, 0]),
+        (Xor, vec![1, 0]),
+        (Pow2, vec![4]),
+        (Exp, vec![3, 5]),
+        (ILog2, vec![31]),
+        (U32Assert, vec![31]),
+        (U32Assert2, vec![31, 32]),
+        (U32AssertW, vec![31, 32, 33, 34]),
+        (U32WrappingAdd, vec![2, 3]),
+        (U32OverflowingSub, vec![2, 3]),
+        (U32WideningMul, vec![2, 3]),
+        (U32Div, vec![2, 3]),
+        (U32Not, vec![2]),
+        (U32And, vec![2, 3]),
+        (U32Or, vec![2, 3]),
+        (U32Shl, vec![2, 3]),
+        (U32Rotr, vec![2, 3]),
+        (U32Popcnt, vec![2]),
+        (U32Clz, vec![2]),
+        (U32Clo, vec![2]),
+        (U32Ctz, vec![2]),
+        (U32Cto, vec![2]),
+        (Ext2Div, vec![1, 0, 2, 3]),
+        (Ext2Inv, vec![1, 0]),
+        (AssertEqw, vec![2, 3, 5, 7, 2, 3, 5, 7]),
+        (CDrop, vec![1, 2, 3]),
+        (CDropW, vec![0, 2, 3, 5, 7, 11, 13, 17, 19]),
+    ] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        assert!(effect.may_trap, "{instruction}");
+        let mut code = inputs.into_iter().rev().map(push).collect::<Vec<_>>();
+        code.push(inst(instruction.clone()));
+        code.extend((0..effect.outputs.len()).map(|_| inst(Drop)));
+        let mut fixture = Fixture::new(0, 0);
+        fixture.effects.may_trap = true;
+        fixture.run(code.clone()).unwrap();
+        fixture.effects.may_trap = false;
+        assert_eq!(
+            fixture.run(code).unwrap_err().message,
+            "undeclared trapping instruction",
+            "{instruction}"
+        );
+    }
+}
+
+#[test]
+fn conditional_drop_preserves_known_and_equal_unknown_candidate_identities() {
+    for predicate in [0, 1] {
+        let mut fixture = Fixture::new(2, 1);
+        fixture.effects.may_trap = true;
+        fixture.proof.aliases = LaneAliases::new(vec![(
+            Fixture::output(0),
+            Fixture::input(if predicate == 1 { 0 } else { 1 }),
+        )]);
+        fixture.run(vec![push(predicate), inst(Instruction::CDrop)]).unwrap();
+        fixture.proof.aliases = LaneAliases::new(vec![(
+            Fixture::output(0),
+            Fixture::input(if predicate == 1 { 1 } else { 0 }),
+        )]);
+        assert!(fixture.run(vec![push(predicate), inst(Instruction::CDrop)]).is_err());
+    }
+    // Preserve equality when either arm chooses the very same input token.
+    let mut fixture = Fixture::new(2, 1);
+    fixture.effects.may_trap = true;
+    fixture.proof.aliases = LaneAliases::new(vec![(Fixture::output(0), Fixture::input(1))]);
+    fixture
+        .run(vec![
+            inst(Instruction::Dup1),
+            inst(Instruction::MovDn2),
+            inst(Instruction::CDrop),
+        ])
+        .unwrap();
+}
+
+#[test]
+fn conditional_drop_unknown_candidates_retain_compiler_origins() {
+    let mut fixture = Fixture::new(1, 1).scratch(2);
+    fixture.effects.may_trap = true;
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    for candidates in [
+        vec![inst(Instruction::Locaddr(0.into())), push(77)],
+        vec![push(77), inst(Instruction::Locaddr(0.into()))],
+    ] {
+        let mut code = candidates;
+        code.extend([
+            inst(Instruction::MovUp2),
+            inst(Instruction::CDrop),
+            inst(Instruction::MemLoad),
+        ]);
+        assert_eq!(
+            fixture.run(code).unwrap_err().category,
+            DiagnosticCategory::InvalidSpillSlotRead
+        );
+    }
+}
+
+#[test]
+fn arithmetic_target_rules_never_consume_padding_as_owned_input() {
+    for instruction in [
+        Instruction::U32AssertW,
+        Instruction::Eqw,
+        Instruction::CDropW,
+        Instruction::Ext2Mul,
+    ] {
+        let effect = TargetEffects::instruction(&instruction).unwrap();
+        let mut fixture = Fixture::new(u32::from(effect.consumed) - 1, effect.outputs.len() as u32);
+        fixture.effects.may_trap = true;
+        assert_eq!(
+            fixture.run(vec![inst(instruction)]).unwrap_err().category,
+            DiagnosticCategory::IllegalStackAccess
+        );
+    }
+}
+
+#[test]
+fn nonboolean_conditional_predicate_has_no_normal_continuation() {
+    let mut fixture = Fixture::new(0, 0);
+    fixture.effects.may_trap = true;
+    // The invalid Drop cannot be reached after the known nonboolean predicate traps.
+    fixture
+        .run(vec![
+            push(7),
+            push(9),
+            push(2),
+            inst(Instruction::CDrop),
+            inst(Instruction::DropW),
+        ])
+        .unwrap();
+    fixture.effects.may_trap = false;
+    assert_eq!(
+        fixture
+            .run(vec![push(7), push(9), push(2), inst(Instruction::CDrop)])
+            .unwrap_err()
+            .message,
+        "undeclared trapping instruction"
+    );
+}
+
+#[test]
+fn generic_event_source_category_shape_binding_and_candidate_attacks() {
+    use crate::select::{SelectEnv, select_function, tests::intrinsics::generic_event_fixture};
+    for immediate in [false, true] {
+        let f = generic_event_fixture(immediate);
+        let function = f.borrow();
+        let env = SelectEnv::default();
+        let source = SourceContext::Hir {
+            function: &function,
+            env: &env,
+        };
+        let selected = select_function(&function, &env).unwrap();
+        for mutation in 0..7 {
+            let mut bad = selected.clone();
+            match mutation {
+                0 => bad.segments[0].units.clear(),
+                1 => {
+                    let unit = bad.segments[0].units[0].clone();
+                    bad.segments[0].units.push(unit);
+                }
+                2 => bad.segments[0].units[0].effects.may_trap = false,
+                3 => bad.segments[0].units[0].effects.memory = SourceMemoryEffects::READ_WRITE,
+                4 => bad.segments[0].units[0].outputs.clear(),
+                5 => bad.segments[0].units[0].source = SourceStepId(999),
+                _ => bad.source_map.clear(),
+            }
+            if immediate && mutation == 4 {
+                continue;
+            }
+            assert!(
+                check_selection(bad, &source).is_err(),
+                "immediate{immediate} mutation{mutation}"
+            );
+        }
+        // Authority is reconstructed from source; numerical IDs and annotations cannot supply it.
+        let (plan, frame, original) = crate::select::tests::ready(&f, &env);
+        let index = original
+            .ops()
+            .iter()
+            .position(|op| {
+                matches!(
+                    op,
+                    AnnotatedOp::Instruction {
+                        instruction: Instruction::Emit | Instruction::EmitImm(_),
+                        ..
+                    }
+                )
+            })
+            .unwrap();
+        for mutation in 0..4 {
+            let mut body = original.clone();
+            let unit = match body.ops()[index] {
+                AnnotatedOp::Instruction { unit, .. } => unit,
+                _ => unreachable!(),
+            };
+            match mutation {
+                0 => {
+                    body.ops_mut()[index] = AnnotatedOp::Instruction {
+                        instruction: Instruction::Emit,
+                        unit: SelectedStepId(999),
+                    };
+                }
+                1 if !immediate => {
+                    body.ops_mut().insert(
+                        index,
+                        AnnotatedOp::Instruction {
+                            instruction: Primitive::Push(Felt::ONE).instruction().unwrap(),
+                            unit,
+                        },
+                    );
+                    body.ops_mut().insert(
+                        index + 2,
+                        AnnotatedOp::Instruction {
+                            instruction: Instruction::Drop,
+                            unit,
+                        },
+                    );
+                }
+                1 => {
+                    body.ops_mut()[index] = AnnotatedOp::Instruction {
+                        instruction: Instruction::Emit,
+                        unit,
+                    };
+                }
+                2 => {
+                    body.ops_mut().insert(
+                        index,
+                        AnnotatedOp::Instruction {
+                            instruction: Instruction::MemStore,
+                            unit,
+                        },
+                    );
+                }
+                _ => {
+                    body.ops_mut().insert(index, AnnotatedOp::Boundary(Boundary::UnitEnd(unit)));
+                }
+            }
+            assert!(
+                verify(&plan, &frame, body).is_err(),
+                "immediate{immediate} physical{mutation}"
+            );
+        }
+    }
+    let ordinary = identity_plan();
+    // Even a may-trap ordinary source has no category and cannot emit a dynamic event.
+    assert!(verify(&ordinary, &frame(), body(vec![Instruction::Emit])).is_err());
+}
+
+#[test]
+fn generic_event_closed_metadata_rejects_forged_registered_shapes() {
+    for dynamic in [false, true] {
+        let mut f = Fixture::new(0, 0);
+        f.effects.may_trap = true;
+        f.proof.generated_event = Some(if dynamic {
+            GeneratedEvent::Dynamic(Fixture::input(0))
+        } else {
+            GeneratedEvent::Immediate
+        });
+        if dynamic {
+            assert!(
+                check_selection(f.instantiate(&[]).unwrap().program, &SourceContext::Generated(&f))
+                    .is_err()
+            );
+        } else {
+            check_selection(f.instantiate(&[]).unwrap().program, &SourceContext::Generated(&f))
+                .unwrap();
+            f.effects.memory = SourceMemoryEffects::READ;
+            assert!(
+                check_selection(f.instantiate(&[]).unwrap().program, &SourceContext::Generated(&f))
+                    .is_err()
+            );
+        }
+    }
 }

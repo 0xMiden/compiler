@@ -9,10 +9,39 @@ use crate::{
     verify::{CallArgument, CallSite, UnitEvidence},
 };
 
+/// Semantic foreign-call operand groups in executor order.
+/// Account identity uses suffix then prefix; the procedure root retains its four-lane order.
+/// Payload atoms may also name prefix/root atoms, and every occurrence remains a semantic use.
+pub(crate) struct Operands<'a> {
+    pub account_suffix: Atom,
+    pub account_prefix: Atom,
+    pub procedure_root: [Atom; 4],
+    pub payload: &'a [Atom],
+}
+
 /// Closed invocation of the transaction protocol's foreign-procedure helper.
 /// Six prefix lanes are loaded from stored inputs; the payload is padded to sixteen lanes.
 pub(crate) struct Fpi;
 impl Fpi {
+    /// Bind named source groups to the executor's six stored lanes and stack payload.
+    /// This is the final semantic API; legacy HIR prefix locals are not interpreted here.
+    pub fn select_semantic(
+        &self,
+        id: SelectedStepId,
+        source: SourceStepId,
+        operands: Operands<'_>,
+        outputs: &[Atom],
+    ) -> Result<(SelectedLowering, UnitEvidence), PlanError> {
+        let [root0, root1, root2, root3] = operands.procedure_root;
+        self.select(
+            id,
+            source,
+            [operands.account_suffix, operands.account_prefix, root0, root1, root2, root3],
+            operands.payload,
+            outputs,
+        )
+    }
+
     /// Declare the six prefix lanes, at most sixteen payload lanes, and exactly sixteen results.
     /// Evidence fixes the helper target and each physical argument, including padding zeros.
     pub fn select(
@@ -34,9 +63,8 @@ impl Fpi {
                 value: StoredValue::Atom(atom),
             })
             .collect::<alloc::vec::Vec<_>>();
-        let mut unit = selected(self.kind(), id, source, payload, &stored, outputs);
+        let unit = selected(self.kind(), id, source, payload, &stored, outputs);
         let abi = ProcedureAbi::new(CallingConvention::SameContext, 22, 16)?;
-        unit.effects.call = Some(abi.invocation(Invocation::Exec)?);
         let inputs = prefix
             .into_iter()
             .chain(payload.iter().copied())
@@ -74,7 +102,7 @@ impl LoweringDefinition for Fpi {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut offsets = [0; 6];

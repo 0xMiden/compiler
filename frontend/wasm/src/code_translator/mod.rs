@@ -201,7 +201,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             translate_br_if(*relative_depth, builder, state, span)?
         }
         Operator::BrTable { targets } => translate_br_table(targets, state, builder, span)?,
-        Operator::Return => translate_return(state, builder, diagnostics, span)?,
+        Operator::Return => translate_return(state, builder, span)?,
         /************************************ Calls ****************************************/
         Operator::Call { function_index } => {
             translate_call(
@@ -941,24 +941,10 @@ fn translate_call_indirect<B: ?Sized + Builder>(
 fn translate_return<B: ?Sized + Builder>(
     state: &mut FuncTranslationState,
     builder: &mut FunctionBuilderExt<'_, B>,
-    diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let return_count = {
-        let frame = &mut state.control_stack[0];
-        frame.num_return_values()
-    };
-    {
-        let return_args = match return_count {
-            0 => None,
-            1 => Some(*state.peekn_mut(return_count).first().unwrap()),
-            _ => {
-                unsupported_diag!(diagnostics, "Multiple values are not supported");
-            }
-        };
-
-        builder.ret(return_args, span)?;
-    }
+    let return_count = state.control_stack[0].num_return_values();
+    builder.ret(state.peekn(return_count).iter().copied(), span)?;
     state.popn(return_count);
     state.reachable = false;
     Ok(())

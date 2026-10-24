@@ -3,6 +3,7 @@ use core::{
     cmp::Ordering,
     fmt,
     iter::{ByRefSized, repeat_n, repeat_with},
+    mem::{ManuallyDrop, MaybeUninit},
     ops::{Index, IndexMut, Range, RangeBounds},
     ptr::{self, NonNull},
 };
@@ -33,7 +34,16 @@ pub struct SmallDeque<T, const N: usize = 8> {
     /// If `T` is zero-sized, then `self.len <= usize::MAX`, otherwise
     /// `self.len <= isize::MAX as usize`
     len: usize,
-    buf: SmallVec<[T; N]>,
+    // Storage owns only MaybeUninit slots; the deque exclusively owns the T values in its ring.
+    // For non-ZSTs every physical slot is represented in buf.len(), so reallocation preserves
+    // wrapped live values as well as unused cells. ZSTs need no physical relocation; their
+    // logical ownership is tracked solely by len, without materializing usize::MAX slots.
+    buf: SmallVec<[MaybeUninit<T>; N]>,
+}
+impl<T, const N: usize> Drop for SmallDeque<T, N> {
+    fn drop(&mut self) {
+        self.clear();
+    }
 }
 impl<T: Clone, const N: usize> Clone for SmallDeque<T, N> {
     fn clone(&self) -> Self {
@@ -49,11 +59,7 @@ impl<T: Clone, const N: usize> Clone for SmallDeque<T, N> {
 }
 impl<T, const N: usize> Default for SmallDeque<T, N> {
     fn default() -> Self {
-        Self {
-            head: 0,
-            len: 0,
-            buf: Default::default(),
-        }
+        Self::new()
     }
 }
 impl<T, const N: usize> SmallDeque<T, N> {
@@ -64,17 +70,23 @@ impl<T, const N: usize> SmallDeque<T, N> {
         Self {
             head: 0,
             len: 0,
-            buf: SmallVec::new_const(),
+            buf: SmallVec::from_const([const { MaybeUninit::uninit() }; N]),
         }
     }
 
     /// Create an empty deque with pre-allocated space for `capacity` elements.
     #[must_use]
     pub fn with_capacity(capacity: usize) -> Self {
+        let mut buf = SmallVec::with_capacity(capacity);
+        // SAFETY: Every slot is a valid MaybeUninit<T>, including newly allocated storage.
+        // ZSTs never reallocate and must not materialize the sentinel capacity.
+        if !T::IS_ZST {
+            unsafe { buf.set_len(buf.capacity()) };
+        }
         Self {
             head: 0,
             len: 0,
-            buf: SmallVec::with_capacity(capacity),
+            buf,
         }
     }
 
@@ -275,7 +287,7 @@ impl<T, const N: usize> SmallDeque<T, N> {
         let old_cap = self.capacity();
 
         if new_cap > old_cap {
-            self.buf.try_grow(new_cap).expect("capacity overflow");
+            self.grow_storage(new_cap);
             unsafe {
                 self.handle_capacity_increase(old_cap);
             }
@@ -295,7 +307,7 @@ impl<T, const N: usize> SmallDeque<T, N> {
         if new_cap > old_cap {
             // we don't need to reserve_exact(), as the size doesn't have
             // to be a power of 2.
-            self.buf.try_grow(new_cap).expect("capacity overflow");
+            self.grow_storage(new_cap);
             unsafe {
                 self.handle_capacity_increase(old_cap);
             }
@@ -773,11 +785,19 @@ impl<T, const N: usize> SmallDeque<T, N> {
         // buffer without it being full emerge
         debug_assert!(self.is_full());
         let old_cap = self.capacity();
-        self.buf.grow(old_cap + 1);
+        self.grow_storage(old_cap.checked_add(1).expect("capacity overflow"));
         unsafe {
             self.handle_capacity_increase(old_cap);
         }
         debug_assert!(!self.is_full());
+    }
+
+    /// Preserve all physical slots while growing, independently of the live ring's shape.
+    fn grow_storage(&mut self, capacity: usize) {
+        self.buf.try_grow(capacity).expect("capacity overflow");
+        // SAFETY: MaybeUninit<T> permits uninitialized storage. The old wrapper length covered
+        // every slot before reallocation, and this publishes any additional slots afterward.
+        unsafe { self.buf.set_len(self.buf.capacity()) };
     }
 
     /// Modifies the deque in-place so that `len()` is equal to `new_len`,
@@ -1148,12 +1168,12 @@ impl<T: Clone, const N: usize> SmallDeque<T, N> {
 impl<T, const N: usize> SmallDeque<T, N> {
     #[inline]
     fn ptr(&self) -> *const T {
-        self.buf.as_ptr()
+        self.buf.as_ptr().cast()
     }
 
     #[inline]
     fn ptr_mut(&mut self) -> *mut T {
-        self.buf.as_mut_ptr()
+        self.buf.as_mut_ptr().cast()
     }
 
     /// Appends an element to the buffer.
@@ -1764,13 +1784,26 @@ impl<T, const N: usize> From<SmallVec<[T; N]>> for SmallDeque<T, N> {
     /// [`SmallVec<[T; N]>`]: smallvec::SmallVec
     /// [`SmallDeque<T, N>`]: crate::adt::SmallDeque
     ///
-    /// This conversion is guaranteed to run in *O*(1) time
-    /// and to not re-allocate the `Vec`'s buffer or allocate
-    /// any additional memory.
+    /// This conversion never allocates or reallocates. Spilled buffers transfer in *O*(1)
+    /// time; inline buffers move at most `N` elements.
     #[inline]
     fn from(buf: SmallVec<[T; N]>) -> Self {
+        let mut buf = ManuallyDrop::new(buf);
         let len = buf.len();
-        Self { head: 0, len, buf }
+        let mut deque = Self::new();
+        // SAFETY: The old owner is disarmed. MaybeUninit<T> has T's size/alignment, so a
+        // spilled allocation can be transferred unchanged. Inline values are moved into
+        // distinct slot storage. No operation here can panic after moving the values.
+        unsafe {
+            if buf.spilled() {
+                let capacity = buf.capacity();
+                deque.buf = SmallVec::from_raw_parts(buf.as_mut_ptr().cast(), capacity, capacity);
+            } else {
+                ptr::copy_nonoverlapping(buf.as_ptr(), deque.ptr_mut(), len);
+            }
+        }
+        deque.len = len;
+        deque
     }
 }
 
@@ -1783,48 +1816,33 @@ impl<T, const N: usize> From<SmallDeque<T, N>> for SmallVec<[T; N]> {
     /// This never needs to re-allocate, but does need to do *O*(*n*) data movement if
     /// the circular buffer doesn't happen to be at the beginning of the allocation.
     fn from(mut other: SmallDeque<T, N>) -> Self {
-        use core::mem::ManuallyDrop;
-
         other.make_contiguous();
-
+        let mut other = ManuallyDrop::new(other);
+        let len = other.len;
+        if T::IS_ZST {
+            let mut buffer = SmallVec::new();
+            // SAFETY: ZST storage has capacity usize::MAX and needs no byte movement.
+            // All len logical values are initialized, and the disarmed deque transfers
+            // their ownership to buffer. The inline-array constructor cannot be used
+            // here: its documented length limit is N, including for ZSTs.
+            unsafe { buffer.set_len(len) };
+            return buffer;
+        }
+        // SAFETY: make_contiguous establishes one initialized T range. Disarming the deque
+        // transfers its sole ownership to the result. Only len values are initialized in
+        // the destination; the uninitialized inline tail is never treated as T.
         unsafe {
+            let head = other.head;
+            let source = other.ptr_mut().add(head);
             if other.buf.spilled() {
-                let mut other = ManuallyDrop::new(other);
-                let buf = other.buf.as_mut_ptr();
-                let len = other.len();
-                let cap = other.capacity();
-
-                if other.head != 0 {
-                    ptr::copy(buf.add(other.head), buf, len);
-                }
-                SmallVec::from_raw_parts(buf, len, cap)
+                let capacity = other.capacity();
+                let buffer = other.ptr_mut();
+                ptr::copy(source, buffer, len);
+                SmallVec::from_raw_parts(buffer, len, capacity)
             } else {
-                // `other` is entirely stack-allocated, so we need to produce a new copy that
-                // has all of the elements starting at index 0, if not already
-                if other.head == 0 {
-                    // Steal the underlying vec, and make sure that the length is set
-                    let mut buf = other.buf;
-                    buf.set_len(other.len);
-                    buf
-                } else {
-                    let mut other = ManuallyDrop::new(other);
-                    let ptr = other.buf.as_mut_ptr();
-                    let len = other.len();
-
-                    // Construct an uninitialized array on the stack of the same size as the target
-                    // SmallVec's inline size, "move" `len` items into it, and the construct the
-                    // SmallVec from the raw buffer and len
-                    let mut buf = [const { core::mem::MaybeUninit::<T>::uninit() }; N];
-                    let buf_ptr = buf.as_mut_ptr().cast_init();
-                    ptr::copy(ptr.add(other.head), buf_ptr, len);
-                    // While we are technically potentially letting a subset of elements in the
-                    // array that never got uninitialized, be assumed to have been initialized
-                    // here - that fact is never material: no references are ever created to those
-                    // items, and the array is never dropped, as it is immediately placed in a
-                    // ManuallyDrop, and the vector length is set to `len` before any access can
-                    // be made to the vector
-                    SmallVec::from_buf_and_len(core::mem::MaybeUninit::array_assume_init(buf), len)
-                }
+                let mut buffer = MaybeUninit::<[T; N]>::uninit();
+                ptr::copy_nonoverlapping(source, buffer.as_mut_ptr().cast::<T>(), len);
+                SmallVec::from_buf_and_len_unchecked(buffer, len)
             }
         }
     }
@@ -2778,6 +2796,369 @@ mod tests {
 
     use super::*;
 
+    #[derive(Debug)]
+    struct Owned {
+        id: usize,
+        live: alloc::rc::Rc<Vec<core::cell::Cell<usize>>>,
+    }
+
+    impl Owned {
+        fn new(id: usize, live: &alloc::rc::Rc<Vec<core::cell::Cell<usize>>>) -> Self {
+            live[id].set(live[id].get() + 1);
+            Self {
+                id,
+                live: live.clone(),
+            }
+        }
+    }
+
+    impl Clone for Owned {
+        fn clone(&self) -> Self {
+            Self::new(self.id, &self.live)
+        }
+    }
+
+    impl Drop for Owned {
+        fn drop(&mut self) {
+            let count = self.live[self.id].get();
+            assert!(count > 0, "value {} dropped twice", self.id);
+            self.live[self.id].set(count - 1);
+        }
+    }
+
+    fn ownership_counts() -> alloc::rc::Rc<Vec<core::cell::Cell<usize>>> {
+        alloc::rc::Rc::new((0..64).map(|_| core::cell::Cell::new(0)).collect())
+    }
+
+    fn assert_released(live: &alloc::rc::Rc<Vec<core::cell::Cell<usize>>>) {
+        assert!(live.iter().all(|count| count.get() == 0), "leaked values: {live:?}");
+    }
+
+    #[test]
+    fn owned_wrapped_growth_preserves_every_live_slot() {
+        // Every head covers both relocation branches, full and partial rings, and both
+        // inline-to-heap and heap-to-heap growth through each public reservation path.
+        for capacity in [8, 16] {
+            for head in 0..capacity {
+                for len in 1..=capacity {
+                    for exact in [false, true] {
+                        let live = ownership_counts();
+                        {
+                            let mut deque = SmallDeque::<_, 8>::with_capacity(capacity);
+                            deque.head = head;
+                            for id in 0..len {
+                                deque.push_back(Owned::new(id, &live));
+                            }
+                            if exact {
+                                deque.reserve_exact(capacity + 1);
+                            } else {
+                                deque.reserve(capacity + 1);
+                            }
+                            assert_eq!(
+                                deque.iter().map(|value| value.id).collect::<Vec<_>>(),
+                                (0..len).collect::<Vec<_>>()
+                            );
+                            assert!(live[..len].iter().all(|count| count.get() == 1));
+                        }
+                        assert_released(&live);
+                    }
+                }
+                let live = ownership_counts();
+                {
+                    let mut deque = SmallDeque::<_, 8>::with_capacity(capacity);
+                    deque.head = head;
+                    for id in 0..=capacity {
+                        deque.push_front(Owned::new(id, &live));
+                    }
+                    assert_eq!(
+                        deque.iter().map(|value| value.id).collect::<Vec<_>>(),
+                        (0..=capacity).rev().collect::<Vec<_>>()
+                    );
+                }
+                assert_released(&live);
+            }
+        }
+    }
+
+    #[test]
+    fn owned_smallvec_conversions_transfer_ownership() {
+        for capacity in [0, 4, 8] {
+            for len in 0..=4 {
+                let live = ownership_counts();
+                {
+                    let mut input = SmallVec::<[_; 4]>::with_capacity(capacity);
+                    input.extend((0..len).map(|id| Owned::new(id, &live)));
+                    let allocation = input.as_ptr();
+                    let spilled = input.spilled();
+                    let mut deque = SmallDeque::from(input);
+                    if spilled {
+                        assert_eq!(deque.ptr(), allocation);
+                    }
+                    let first = deque.pop_front();
+                    deque.clear();
+                    drop(deque);
+                    if let Some(first) = first {
+                        assert_eq!(live[first.id].get(), 1);
+                        drop(first);
+                    }
+                }
+                assert_released(&live);
+            }
+        }
+        // Include uninitialized inline tails and every wrapped/contiguous position.
+        for capacity in [4, 8] {
+            for head in 0..capacity {
+                for len in 0..=capacity {
+                    let live = ownership_counts();
+                    {
+                        let mut deque = SmallDeque::<_, 4>::with_capacity(capacity);
+                        deque.head = head;
+                        for id in 0..len {
+                            deque.push_back(Owned::new(id, &live));
+                        }
+                        let allocation = deque.ptr();
+                        let output = SmallVec::from(deque);
+                        if capacity > 4 {
+                            assert_eq!(output.as_ptr(), allocation);
+                        }
+                        assert_eq!(
+                            output.iter().map(|value| value.id).collect::<Vec<_>>(),
+                            (0..len).collect::<Vec<_>>()
+                        );
+                    }
+                    assert_released(&live);
+                }
+            }
+        }
+        let live = ownership_counts();
+        drop(SmallVec::from(SmallDeque::from([Owned::new(0, &live), Owned::new(1, &live)])));
+        assert_released(&live);
+    }
+
+    #[test]
+    fn owned_clone_extend_drain_and_owning_iterator_cleanup() {
+        for head in 0..8 {
+            let live = ownership_counts();
+            {
+                let mut deque = SmallDeque::<_, 4>::with_capacity(8);
+                deque.head = head;
+                deque.extend((0..8).map(|id| Owned::new(id, &live)));
+                let mut copy = deque.clone();
+                copy.clone_from(&deque);
+                assert!(live[..8].iter().all(|count| count.get() == 2));
+                let removed = copy.drain(1..7).next().unwrap();
+                assert_eq!(removed.id, 1);
+                drop(removed);
+                let mut iterator = deque.into_iter();
+                drop(iterator.next());
+                drop(iterator.next_back());
+                let remaining = iterator.into_smalldeque();
+                assert_eq!(
+                    remaining.iter().map(|value| value.id).collect::<Vec<_>>(),
+                    [1, 2, 3, 4, 5, 6]
+                );
+                drop(remaining.into_iter());
+                assert_eq!(copy.into_iter().count(), 2);
+            }
+            assert_released(&live);
+        }
+        for fold in [false, true] {
+            let live = ownership_counts();
+            let deque: SmallDeque<_, 2> = (0..12).map(|id| Owned::new(id, &live)).collect();
+            if fold {
+                assert_eq!(deque.into_iter().fold(0, |sum, value| sum + value.id), 66);
+            } else {
+                drop(deque.into_iter().last());
+            }
+            assert_released(&live);
+        }
+    }
+
+    #[test]
+    fn owned_extend_and_clone_panic_cleanup() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        // map retains TrustedLen; filter deliberately exercises the generic extension path.
+        for trusted in [false, true] {
+            for head in [0, 3, 6] {
+                for fail in [1, 4, 7] {
+                    let live = ownership_counts();
+                    let mut deque = SmallDeque::<_, 8>::new();
+                    deque.head = head;
+                    let result = catch_unwind(AssertUnwindSafe(|| {
+                        let input = (0..8).map(|id| {
+                            assert_ne!(id, fail, "iterator panic");
+                            Owned::new(id, &live)
+                        });
+                        if trusted {
+                            deque.extend(input)
+                        } else {
+                            deque.extend(input.filter(|_| true))
+                        }
+                    }));
+                    assert!(result.is_err());
+                    assert_eq!(
+                        deque.iter().map(|value| value.id).collect::<Vec<_>>(),
+                        (0..fail).collect::<Vec<_>>()
+                    );
+                    drop(deque);
+                    assert_released(&live);
+                }
+            }
+        }
+        struct PanicClone(Owned);
+        impl Clone for PanicClone {
+            fn clone(&self) -> Self {
+                assert_ne!(self.0.id, 3, "clone panic");
+                Self(self.0.clone())
+            }
+        }
+        let live = ownership_counts();
+        let source: SmallDeque<_, 2> = (0..8).map(|id| PanicClone(Owned::new(id, &live))).collect();
+        assert!(catch_unwind(AssertUnwindSafe(|| source.clone())).is_err());
+        assert!(live[..8].iter().all(|count| count.get() == 1));
+        let mut target: SmallDeque<_, 2> =
+            (8..12).map(|id| PanicClone(Owned::new(id, &live))).collect();
+        assert!(catch_unwind(AssertUnwindSafe(|| target.clone_from(&source))).is_err());
+        drop(target);
+        drop(source);
+        assert_released(&live);
+    }
+
+    #[test]
+    fn owned_destructor_panic_cleans_both_slices() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        struct PanicDrop {
+            owned: Owned,
+            fail: bool,
+        }
+        impl Drop for PanicDrop {
+            fn drop(&mut self) {
+                assert!(!self.fail, "destructor panic");
+            }
+        }
+        for fail in 0..8 {
+            for action in 0..4 {
+                let live = ownership_counts();
+                let mut deque = SmallDeque::<_, 8>::new();
+                deque.head = 5;
+                for id in 0..8 {
+                    deque.push_back(PanicDrop {
+                        owned: Owned::new(id, &live),
+                        fail: id == fail,
+                    });
+                }
+                // Read identities too, so the regression observes ownership and order.
+                assert_eq!(deque.front().unwrap().owned.id, 0);
+                let result = catch_unwind(AssertUnwindSafe(|| match action {
+                    0 => deque.clear(),
+                    1 => drop(deque.drain(..)),
+                    2 => drop(core::mem::take(&mut deque)),
+                    _ => {
+                        let iterator = core::mem::take(&mut deque).into_iter();
+                        iterator.fold((), |(), value| drop(value));
+                    }
+                }));
+                assert!(result.is_err());
+                drop(deque);
+                assert_released(&live);
+            }
+        }
+    }
+
+    #[test]
+    fn owned_drain_and_truncate_panic_restore_survivors() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        struct PanicDrop(Owned, bool);
+        impl Drop for PanicDrop {
+            fn drop(&mut self) {
+                assert!(!self.1, "destructor panic");
+            }
+        }
+        for head in 0..8 {
+            for drain in [false, true] {
+                let range = if drain { 1..7 } else { 2..8 };
+                for fail in range {
+                    let live = ownership_counts();
+                    let mut deque = SmallDeque::<_, 8>::new();
+                    deque.head = head;
+                    for id in 0..8 {
+                        deque.push_back(PanicDrop(Owned::new(id, &live), id == fail));
+                    }
+                    assert!(
+                        catch_unwind(AssertUnwindSafe(|| {
+                            if drain {
+                                drop(deque.drain(1..7));
+                            } else {
+                                deque.truncate(2);
+                            }
+                        }))
+                        .is_err()
+                    );
+                    let expected = if drain { [0, 7] } else { [0, 1] };
+                    assert_eq!(deque.iter().map(|value| value.0.id).collect::<Vec<_>>(), expected);
+                    drop(deque);
+                    assert_released(&live);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn owned_zero_capacity_const_and_zst() {
+        const EMPTY: SmallDeque<usize, 0> = SmallDeque::new();
+        let vector: SmallVec<[usize; 0]> = SmallVec::from(EMPTY);
+        assert!(vector.is_empty());
+        let mut empty = EMPTY;
+        empty.push_back(7);
+        assert_eq!(SmallVec::from(empty).as_slice(), [7]);
+        let live = ownership_counts();
+        let deque: SmallDeque<_, 0> = (0..3).map(|id| Owned::new(id, &live)).collect();
+        let vector = SmallVec::from(deque);
+        drop(SmallDeque::from(vector));
+        assert_released(&live);
+        static DROPS: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+        struct Zst;
+        impl Drop for Zst {
+            fn drop(&mut self) {
+                DROPS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        fn check<const N: usize>() {
+            let mut deque = SmallDeque::<Zst, N>::new();
+            assert_eq!(deque.capacity(), usize::MAX);
+            deque.extend((0..7).map(|_| Zst));
+            drop(deque.pop_front());
+            drop(deque.pop_back());
+            let vector = SmallVec::from(deque);
+            assert_eq!(vector.len(), 5);
+            drop(SmallDeque::from(vector));
+            drop(SmallDeque::from([Zst, Zst]));
+        }
+        check::<0>();
+        check::<4>();
+        assert_eq!(DROPS.load(core::sync::atomic::Ordering::SeqCst), 18);
+    }
+
+    #[test]
+    fn owned_inline_values_drop() {
+        let owner = alloc::rc::Rc::new(7);
+        {
+            let mut deque = SmallDeque::<_, 2>::new();
+            deque.push_back(owner.clone());
+        }
+        assert_eq!(alloc::rc::Rc::strong_count(&owner), 1);
+    }
+
+    #[test]
+    fn owned_inline_growth_preserves_slots() {
+        // Integer identities avoid dereferencing invalid owned pointers on the broken path.
+        let mut deque = SmallDeque::<_, 2>::new();
+        deque.push_back(101usize);
+        deque.push_back(102);
+        deque.push_back(103);
+        assert_eq!(deque.into_iter().collect::<Vec<_>>(), [101, 102, 103]);
+    }
+
     #[test]
     fn test_swap_front_back_remove() {
         fn test(back: bool) {
@@ -3472,7 +3853,6 @@ mod tests {
         test_extend_impl(false);
     }
 
-    #[ignore = "trusted_len extension is broken, needs further analysis"]
     #[test]
     fn test_extend_trusted_len() {
         test_extend_impl(true);

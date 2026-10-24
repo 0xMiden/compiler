@@ -98,10 +98,9 @@ fn switch_loop_oz() {
     );
 }
 
-/// Deeply nested control flow must report an unsupported region-exit budget.
-/// The compilation harness panics with the returned diagnostic; a compiler panic does not match.
+/// Wide region exits must preserve all values through deeply nested control
+/// flow, including values temporarily outside the addressable stack window.
 #[test]
-#[should_panic(expected = "its region results")]
 fn nest8_oz() {
     run_case_with_flags("nest8_oz", include_str!("../cases/case_nest8.rs"), SIZE_MIN);
 }

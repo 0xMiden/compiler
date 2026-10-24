@@ -127,7 +127,7 @@ pub(crate) trait LoweringDefinition {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        env: &ExpansionEnv<'_>,
+        env: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report>;
 }
 
@@ -161,8 +161,10 @@ impl<'a> LoweringRegistry<'a> {
     }
 }
 
+pub(crate) mod arithmetic;
 pub(crate) mod calls;
 pub(crate) mod fpi;
+pub(crate) mod intrinsics;
 pub(crate) mod memory;
 
 fn invalid(message: &str) -> PlanError {
@@ -205,12 +207,14 @@ fn selected(
 /// The small scalar primitives also serve structured generated definitions. Their executable
 /// operations are the actual target primitives, with explicit identity publication for aliases.
 #[derive(Debug, Clone, Copy)]
+#[cfg(test)]
 pub(crate) enum Scalar {
     Add,
     Neq,
     Identity,
     Zero,
 }
+#[cfg(test)]
 impl Scalar {
     /// Declare scalar lane arity and source-derived identity evidence.
     /// `Identity` publishes its unchanged input lane; all variants require exactly one result.
@@ -236,6 +240,7 @@ impl Scalar {
         Ok((selected(self.kind(), id, source, inputs, &[], outputs), evidence))
     }
 }
+#[cfg(test)]
 impl LoweringDefinition for Scalar {
     fn kind(&self) -> LoweringKind {
         LoweringKind(
@@ -253,7 +258,7 @@ impl LoweringDefinition for Scalar {
         unit: &SelectedLowering,
         bindings: &LoweringBindings,
         frame: &FinalFrameLayout,
-        _: &ExpansionEnv<'_>,
+        _: &ExpansionEnv,
     ) -> Result<AnnotatedMasmBody, Report> {
         bindings.validate(unit, frame)?;
         let mut body = AnnotatedMasmBody::new();
@@ -267,5 +272,62 @@ impl LoweringDefinition for Scalar {
             body.push_instruction(instruction, unit.id);
         }
         Ok(body)
+    }
+}
+
+/// An executable definition reconstructed from an actual registered HIR source rule.
+/// The candidate selected graph cannot supply this instruction construction.
+pub(crate) struct HirUnit {
+    /// Per-selection identity matching the unit in the selected program.
+    pub kind: LoweringKind,
+    /// Closed instruction algorithm with its source parameters already captured.
+    pub body: HirBody,
+}
+/// Source-owned construction families used by final-HIR selection.
+/// Dynamic storage offsets are supplied only through the final frame and validated bindings.
+pub(crate) enum HirBody {
+    /// Typed arithmetic, conversions, assertions, and scalar representation operations.
+    Arithmetic(alloc::boxed::Box<arithmetic::Arithmetic>),
+    /// Typed memory operations, possibly requiring a resolved source-local address.
+    Memory(alloc::boxed::Box<memory::Memory>),
+    /// Fixed-stack target primitives and their checked event or intrinsic parameters.
+    Intrinsic(alloc::boxed::Box<intrinsics::Intrinsic>),
+    /// A source rule's fully fixed straight-line instruction sequence.
+    Plain(alloc::vec::Vec<masm::Instruction>),
+    /// One phase of a checked indirect call, with explicit storage between phases.
+    Indirect(calls::Indirect),
+    /// A resolved direct invocation with its declared procedure ABI.
+    Direct(calls::Direct),
+    /// Stored protocol prefix plus stack payload.
+    Fpi,
+}
+impl LoweringDefinition for HirUnit {
+    fn kind(&self) -> LoweringKind {
+        self.kind
+    }
+
+    fn expand(
+        &self,
+        unit: &SelectedLowering,
+        bindings: &LoweringBindings,
+        frame: &FinalFrameLayout,
+        env: &ExpansionEnv,
+    ) -> Result<AnnotatedMasmBody, Report> {
+        bindings.validate(unit, frame)?;
+        match &self.body {
+            HirBody::Arithmetic(definition) => Ok(definition.expand(unit)),
+            HirBody::Memory(definition) => definition.expand(unit, frame),
+            HirBody::Intrinsic(definition) => Ok(definition.expand(unit)),
+            HirBody::Plain(instructions) => {
+                let mut body = AnnotatedMasmBody::new();
+                for instruction in instructions {
+                    body.push_instruction(instruction.clone(), unit.id);
+                }
+                Ok(body)
+            }
+            HirBody::Direct(definition) => definition.expand(unit, bindings, frame, env),
+            HirBody::Indirect(definition) => definition.expand(unit, bindings, frame, env),
+            HirBody::Fpi => fpi::Fpi.expand(unit, bindings, frame, env),
+        }
     }
 }

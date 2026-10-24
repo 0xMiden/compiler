@@ -100,19 +100,22 @@ impl OpEmitter<'_> {
     /// Sign-extend the N-bit value on the stack to M-bits, where M is >= N and <= 256.
     ///
     /// This assumes the value on the stack is a valid N-bit integer in two's complement
-    /// representation, i.e. the most significant bit is the sign bit.
+    /// representation. I1 is always unsigned; other widths use their most significant bit.
     pub fn sext_smallint(&mut self, n: u32, m: u32, span: SourceSpan) {
-        assert_valid_integer_size!(n, n, 256);
+        assert_valid_integer_size!(n, 1, 32);
+        assert_valid_integer_size!(m, n, 256);
         // No-op
         if n == m {
             return;
         }
-        // The number of sign bits are the number of bits between N and 32
-        let num_sign_bits = 32 - n;
-        // By subtracting 1 from 2^(32 - N), we get a value that is all 1s,
-        // shifting it left by N, and bitwise-OR'ing it with the input value,
-        // we produce the sign-extended value
-        let sign_bits = ((1 << num_sign_bits) - 1) << n;
+        // Extend only through the destination pattern when it occupies a partial limb.
+        let num_sign_bits = m.min(32) - n;
+        // Fill the destination bits above N without exposing bits beyond a narrow result.
+        let sign_bits = if num_sign_bits == 0 {
+            0
+        } else {
+            ((1u32 << num_sign_bits) - 1) << n
+        };
         // We optimize larger extensions by re-using the is_signed flag
         let is_large = m > 32;
         // Get the value of the sign bit
@@ -147,19 +150,21 @@ impl OpEmitter<'_> {
             }
         } else {
             self.select_int32(sign_bits, 0, span);
-            // Sign-extend to i32
+            // Extend within the destination's single-lane pattern.
             self.emit(masm::Instruction::U32Or, span);
         }
     }
 
-    /// Zero-extend the N-bit value on the stack to M-bits, where M is >= N and <= 256.
+    /// Zero-extend the N-bit small integer on the stack to M-bits, where N <= 32 and
+    /// N <= M <= 256.
     ///
     /// This assumes the value on the stack is a valid N-bit integer.
     #[inline]
     pub fn zext_smallint(&mut self, n: u32, m: u32, span: SourceSpan) {
-        assert_valid_integer_size!(n, n, 256);
-        // No-op
-        if n == m {
+        assert_valid_integer_size!(n, 1, 32);
+        assert_valid_integer_size!(m, n, 256);
+        // A valid small integer already has zeroes above its N-bit pattern in this lane.
+        if m <= 32 {
             return;
         }
         self.zext_int32(m, span);
@@ -361,6 +366,94 @@ impl OpEmitter<'_> {
                     span,
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc, string::String, vec::Vec};
+
+    use midenc_hir::{Context, Report, formatter::PrettyPrint};
+
+    use super::*;
+    use crate::OperandStack;
+
+    /// Invoke the raw shared owner and check every result limb and a suffix wider than the
+    /// indexed window, independently of the emitter's typed operand bookkeeping.
+    fn check_extension(
+        bits: u32,
+        value: u32,
+        emit: impl FnOnce(&mut OpEmitter<'_>, SourceSpan),
+    ) -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::new();
+        let mut body = Vec::new();
+        let span = SourceSpan::UNKNOWN;
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+            for i in (0..20).rev() {
+                emitter.literal(1000u32 + i, span);
+            }
+            emitter.literal(value, span);
+            emit(&mut emitter, span);
+        }
+        let assertions = core::iter::once(value)
+            .chain(core::iter::repeat_n(0, bits.div_ceil(32) as usize - 1))
+            .chain(1000..1020)
+            .map(|lane| format!("push.{lane} assert_eq\n"))
+            .collect::<String>();
+        let code =
+            format!("begin {} {assertions} end", masm::Block::new(span, body).to_pretty_string());
+        let program = miden_assembly::Assembler::default()
+            .assemble_program("smallint_extension", code)?
+            .try_into_program()?;
+        let mut host = crate::plan::tests::lowering_units::host();
+        miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+            .execute_sync(&program, &mut host)
+            .map_err(|e| Report::msg(e.to_string()))?;
+        Ok(())
+    }
+
+    #[test]
+    fn zero_extension_width_matrix_preserves_value_limbs_and_suffix() -> Result<(), Report> {
+        for n in [1, 8, 16, 32] {
+            for m in [1, 8, 16, 32, 64, 128, 256].into_iter().filter(|m| *m >= n) {
+                for value in [0, ((1u64 << n) - 1) as u32] {
+                    check_extension(m, value, |emitter, span| emitter.zext_smallint(n, m, span))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn wider_direct_callers_preserve_value_limbs_and_suffix() -> Result<(), Report> {
+        for n in [8, 16] {
+            for value in [0, (1u32 << n) - 1] {
+                check_extension(64, value, |emitter, span| emitter.uint_to_u64(n, span))?;
+                check_extension(128, value, |emitter, span| emitter.uint_to_i128(n, span))?;
+            }
+            for value in [0, (1u32 << (n - 1)) - 1] {
+                check_extension(64, value, |emitter, span| emitter.int_to_u64(n, span))?;
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zero_extension_rejects_invalid_widths() {
+        for (n, m) in [(0, 32), (3, 32), (64, 64), (8, 3), (16, 8), (8, 512)] {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let context = Rc::new(Context::default());
+                let mut stack = OperandStack::new(context);
+                let mut invoked = BTreeSet::new();
+                let mut body = Vec::new();
+                let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+                emitter.zext_smallint(n, m, SourceSpan::UNKNOWN);
+            }));
+            assert!(result.is_err(), "invalid extension {n} -> {m}");
         }
     }
 }

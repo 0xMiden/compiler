@@ -1,20 +1,18 @@
-//! Foreign procedure invocation rejection tests for records whose `u64` fields expand too wide.
+//! Foreign procedure invocation of a thirteen-flat-value record with nineteen wrapper lanes.
 
-use super::super::common::build_fpi_test_packages_err;
+use miden_client::Word;
+use miden_core::Felt;
 
-/// Rejects FPI signatures whose direct wrapper call would not fit on the operand stack with a
-/// diagnostic.
-///
-/// The record expands to 20 operand stack felts (6 prefix felts, six double-felt `u64` fields,
-/// one felt, and the canonical ABI output pointer), which no MASM call can pass at once.
+use super::super::common::{build_fpi_test_packages, execute_counter_caller_note};
+
+/// Executes the SDK-generated direct source wrapper, including its separate result pointer.
 #[test]
-pub fn six_u64_struct_rejects_direct_width() {
-    let error = build_fpi_test_packages_err(
-        "six_u64_struct",
-        COUNTER_CONTRACT_SOURCE,
-        COUNTER_CALLER_SOURCE,
-    );
-    assert!(error.contains("direct FPI calls support at most 16"), "{error}");
+pub fn six_u64_struct() {
+    let (counter, caller, slot) =
+        build_fpi_test_packages("six_u64_struct", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);
+    let key =
+        Word::new([Felt::from(31u32), Felt::from(32u32), Felt::from(33u32), Felt::from(34u32)]);
+    execute_counter_caller_note(counter, caller, slot, key, 100);
 }
 
 /// Minimal counter account component source used by the six-`u64` record FPI test.
@@ -24,7 +22,7 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 
 use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
-/// Record whose six `u64` fields expand past the direct FPI stack window.
+/// Six typed integer carriers whose protocol payload occupies thirteen felts.
 #[export_type]
 pub struct SixU64Record {
     /// First double-word integer field.
@@ -63,8 +61,11 @@ trait CounterContract {
 impl CounterContract for CounterContractStorage {
     /// Returns the six-`u64` record received from the caller.
     fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record {
-        let _ = &self.count_map;
-        input
+        let key = Word::new([Felt::from_u32(31), Felt::from_u32(32), Felt::from_u32(33), Felt::from_u32(34)]);
+        SixU64Record {
+            felt_value: input.felt_value + self.count_map.get(key),
+            ..input
+        }
     }
 }
 "#;
@@ -122,7 +123,7 @@ impl CounterCaller {
         assert_u64_eq(result.fourth, FOURTH);
         assert_u64_eq(result.fifth, FIFTH);
         assert_u64_eq(result.sixth, SIXTH);
-        assert_eq(result.felt_value, felt!(91));
+        assert_eq(result.felt_value, felt!(191));
     }
 }
 

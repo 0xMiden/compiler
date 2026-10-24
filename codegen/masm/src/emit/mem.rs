@@ -1,8 +1,5 @@
 use miden_core::Felt;
-use midenc_hir::{
-    AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type,
-    dialects::builtin::attributes::LocalVariable,
-};
+use midenc_hir::{AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type};
 
 use super::{OpEmitter, masm};
 use crate::{OperandStack, lower::NativePtr};
@@ -195,7 +192,7 @@ impl OpEmitter<'_> {
     pub fn mem_grow(&mut self, span: SourceSpan) {
         let _num_pages = self.stack.pop().expect("operand stack is empty");
         self.raw_exec("::intrinsics::mem::memory_grow", span);
-        self.push(Type::I32);
+        self.push(Type::U32);
     }
 
     /// Returns the size (in pages) of the heap (from the perspective of Wasm programs)
@@ -212,30 +209,14 @@ impl OpEmitter<'_> {
 
 /// Loads
 impl OpEmitter<'_> {
-    /// Push an element-address-space pointer to the given local.
+    /// Push an element-space pointer to a source local at its finalized element offset.
     ///
-    /// `offset` is the frame's `locaddr` operand for `local`, see
-    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
-    pub fn local_address(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
+    /// Selection supplies the checked pointee type and frame binding, so this helper needs no HIR
+    /// local object and makes no storage-allocation decision. `offset` is relative to the procedure
+    /// frame and must already have passed layout and capacity checks.
+    pub(crate) fn local_address_typed(&mut self, ty: Type, offset: u16, span: SourceSpan) {
         self.emit(masm::Instruction::Locaddr(offset.into()), span);
-        self.push(Type::from(PointerType::new_with_address_space(
-            local.ty(),
-            AddressSpace::Element,
-        )));
-    }
-
-    /// Load a value corresponding to the type of the given local, from the memory allocated for
-    /// that local.
-    ///
-    /// `offset` is the frame's `locaddr` operand for `local`, see
-    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
-    ///
-    /// Internally, this pushes the address of the local on the stack, then delegates to
-    /// [OpEmitter::load]
-    pub fn load_local(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
-        let ty = local.ty();
-        self.local_address(local, offset, span);
-        self.load(ty, span)
+        self.push(Type::from(PointerType::new_with_address_space(ty, AddressSpace::Element)));
     }
 
     /// Load a value corresponding to the pointee type of a pointer operand on the stack.
@@ -694,19 +675,6 @@ impl OpEmitter<'_> {
 
 /// Stores
 impl OpEmitter<'_> {
-    /// Store a value of the type given by the specified local ID, using the memory allocated
-    /// for that local.
-    ///
-    /// `offset` is the frame's `locaddr` operand for `local`, see
-    /// [FrameLayout::locaddr](crate::emitter::FrameLayout::locaddr).
-    ///
-    /// Internally, this pushes the address of the given local on the stack, and delegates to
-    /// [OpEmitter::store] to perform the actual store.
-    pub fn store_local(&mut self, local: &LocalVariable, offset: u16, span: SourceSpan) {
-        self.local_address(local, offset, span);
-        self.store(span)
-    }
-
     /// Store a value of type `value` to the address in the Miden address space
     /// which corresponds to a pointer in the IR's byte-addressable address space.
     ///
@@ -749,23 +717,29 @@ impl OpEmitter<'_> {
                 }
                 // Convert the pointer to a native pointer representation
                 self.convert_to_native_ptr(ptr_ty, span);
-                match value_ty {
-                    Type::I128 | Type::U128 => self.store_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.store_double_word_int(None, span),
-                    Type::Felt => self.store_felt(None, span),
-                    Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
-                    ref ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
-                    Type::Array(ref array_ty) => self.store_array(array_ty, None, span),
-                    Type::Struct(ref struct_ty) => self.store_struct(&struct_ty.get(), None, span),
-                    ty => unimplemented!(
-                        "invalid store: support for storing {ty} has not been implemented"
-                    ),
-                }
+                self.store_native(&value_ty, span);
             }
             ty if !ty.is_pointer() => {
                 panic!("invalid operand to store: expected pointer, got {ty}")
             }
             ty => unimplemented!("store support for pointers of type {ty} is not implemented"),
+        }
+    }
+
+    /// Store through an already normalized `[element_addr, byte_offset, value..]` pair.
+    /// Shared by ordinary stores and contiguous typed fills; does not update typed operands.
+    fn store_native(&mut self, value_ty: &Type, span: SourceSpan) {
+        match value_ty {
+            Type::I128 | Type::U128 => self.store_quad_word(None, span),
+            Type::I64 | Type::U64 => self.store_double_word_int(None, span),
+            Type::Felt => self.store_felt(None, span),
+            Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
+            ty if ty.size_in_bytes() <= 4 => self.store_small(ty, None, span),
+            Type::Array(array_ty) => self.store_array(array_ty, None, span),
+            Type::Struct(struct_ty) => self.store_struct(&struct_ty.get(), None, span),
+            ty => {
+                unimplemented!("invalid store: support for storing {ty} has not been implemented")
+            }
         }
     }
 
@@ -800,65 +774,65 @@ impl OpEmitter<'_> {
         let ty = value.ty();
         assert!(dst.ty().is_pointer());
         assert_eq!(&ty, dst.ty().pointee().unwrap(), "expected value and pointee type to match");
+        assert!(
+            matches!(ty.size_in_bytes(), 1..=4)
+                || matches!(ty, Type::I64 | Type::U64 | Type::I128 | Type::U128),
+            "memset requires a supported value"
+        );
         let value_size = u32::try_from(ty.size_in_bytes()).expect("invalid value size");
+        let lanes = value.size();
+        use masm::Instruction as I;
 
-        // Create new block for loop body and switch to it temporarily
-        let mut body = Vec::default();
-        let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
-
-        // Loop body - compute address for next value to be written
-        body_emitter.emit_all(
+        // Keep a wide byte position, never a narrowed u32 byte pointer. With supported size <=16,
+        // start + count*size < 2^37, so these field operations are exact integer arithmetic.
+        let limit = if matches!(dst.ty(), Type::Ptr(ref ptr) if ptr.is_byte_pointer()) {
+            0xffff_fffcu64
+        } else {
+            self.emit(I::MulImm(Felt::from(4u32).into()), span);
+            1u64 << 34
+        };
+        self.emit_all([I::Dup1, I::MulImm(Felt::from(value_size).into()), I::Dup1, I::Add], span);
+        self.emit_push(Felt::new_unchecked(limit), span);
+        self.emit_all(
             [
-                // [i, dst, count, value..]
-                // Offset the pointer by the current iteration count * aligned size of value, and
-                // trap if it overflows
-                masm::Instruction::Dup1, // [dst, i, dst, count, value]
-                masm::Instruction::Dup1, // [i, dst, i, dst, count, value]
-            ],
-            span,
-        );
-        body_emitter.emit_push(value_size, span); // [value_size, i, * dst, ..]
-        body_emitter.emit_all(
-            [
-                masm::Instruction::U32WideningMadd, // [value_size * i + dst, i, dst, count, value]
-                masm::Instruction::Swap1,
-                Self::assertz_with_message_inst(
-                    "memset destination address computation overflowed",
-                    span,
-                ), // [aligned_dst, i, dst, count, value..]
+                I::Lte,
+                Self::assert_with_message_inst("memset destination range is out of bounds", span),
             ],
             span,
         );
 
-        // Loop body - move value to top of stack, swap with pointer
-        body_emitter.push(value);
-        body_emitter.push(count);
-        body_emitter.push(dst.clone());
-        body_emitter.push(dst.ty());
-        body_emitter.push(dst.ty());
-        body_emitter.dup(4, span); // [value, aligned_dst, i, dst, count, value]
-        body_emitter.swap(1, span); // [aligned_dst, value, i, dst, count, value]
-
-        // Loop body - write value to destination
-        body_emitter.store(span); // [i, dst, count, value]
-
-        // Loop body - increment iteration count, determine whether to continue loop
-        body_emitter.emit_counted_loop_next_condition(masm::Instruction::Dup3, span);
-        // [i++ < count, i++, dst, count, value]
-
-        // Switch back to original block and emit loop header and 'while.true' instruction
-        //
-        // Loop header - prepare to loop until `count` iterations have been performed
-        // [dst, count, value..]
-        self.emit_counted_loop_header(masm::Instruction::Dup2, span);
-        // [count > 0, i, dst, count, value..]
-        self.current_block.push(masm::Op::While {
-            span,
-            body: masm::Block::new(span, body),
+        // Raw invariant: [i, start_bytes, count, value lanes | S]. Only actual iteration starts
+        // become addresses: the valid exclusive native endpoint 2^34 is never materialized.
+        let body = self.build_masm_block(span, |emitter| {
+            for _ in 0..lanes {
+                emitter.emit(super::dup_from_offset(lanes + 2), span);
+            }
+            emitter.emit_all(
+                [
+                    super::dup_from_offset(lanes + 1),
+                    super::dup_from_offset(lanes + 1),
+                    I::MulImm(Felt::from(value_size).into()),
+                    I::Add,
+                    // [lo32, hi32, value lanes, i, start, count, original value lanes | S]
+                    I::U32Split,
+                    I::U32DivModImm(4u32.into()),
+                    // [offset, lo32/4, hi32, ...] -> [element, offset, ...]
+                    I::MovDn2,
+                    I::Swap1,
+                    I::MulImm(Felt::from(1u32 << 30).into()),
+                    I::Add,
+                ],
+                span,
+            );
+            emitter.store_native(&ty, span);
+            emitter.emit_counted_loop_next_condition(I::Dup3, span);
         });
-
-        // Cleanup - at end of 'while' loop, drop the 4 operands remaining on the stack
-        self.dropn(4, span);
+        self.emit_counted_loop_header(I::Dup2, span);
+        self.current_block.push(masm::Op::While { span, body });
+        // The logical operands were consumed above. Cleanup all raw state/value lanes explicitly.
+        for _ in 0..3 + lanes {
+            self.emit(I::Drop, span);
+        }
     }
 
     /// Copy `count` values of the pointee type from a source address to a destination address.
@@ -1408,26 +1382,47 @@ impl OpEmitter<'_> {
     /// The approach preserves other bytes in the same word while updating only
     /// the target byte(s).
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
-        if let Some(imm) = ptr {
-            self.store_small_imm(ty, imm, span);
-            return;
-        }
-
         let type_size = ty.size_in_bits();
+        // Whole-cell values (including small wrappers) retain the word owner's existing
+        // validation and full-field behavior, for both immediate and dynamic pointers.
         if type_size == 32 {
             self.store_word(ptr, span);
             return;
         }
-
+        if let Some(imm) = ptr {
+            self.store_small_imm(ty, imm, span);
+            return;
+        }
         if type_size == 16 {
             self.store_16bit_dynamic(span);
             return;
         }
+        let bits = u32::try_from(type_size).expect("invalid sub-word type size");
+        if bits <= 8 {
+            self.store_small_within_element(bits, span);
+            return;
+        }
 
-        self.store_small_within_element(
-            u32::try_from(type_size).expect("invalid sub-word type size"),
+        // Normalized offsets are 0..3. A window is needed only when the actual declared
+        // bits cross the cell boundary; otherwise an unrelated neighbor must stay untouched.
+        use masm::Instruction as I;
+        self.emit(I::Dup1, span);
+        self.emit_push((32 - bits) / 8, span);
+        self.emit(I::U32Gt, span);
+        let crossed = self.build_masm_block(span, |emitter| {
+            // [addr, offset, value | S] -> [window, addr, offset, value | S]
+            emitter.emit_all([I::Dup1, I::Dup1], span);
+            emitter.raw_exec("::intrinsics::mem::load_sw", span);
+            emitter.const_mask_u32(!((1u32 << bits) - 1), span);
+            // The existing sub32 representation requires value to be already truncated.
+            emitter.emit_all([I::MovUp3, I::U32Or, I::Swap2, I::Swap1], span);
+            emitter.raw_exec("::intrinsics::mem::store_sw", span);
+        });
+        self.current_block.push(masm::Op::If {
             span,
-        );
+            then_blk: crossed,
+            else_blk: masm::Block::new(span, crate::lower::raw::store_small(bits, span)),
+        });
     }
 
     /// Store a sub-word value which is fully contained in the current 32-bit element.
@@ -1460,9 +1455,11 @@ impl OpEmitter<'_> {
     /// - Before: `[value]` (where value is already truncated to the correct size)
     /// - After: []
     fn store_small_imm(&mut self, ty: &Type, imm: NativePtr, span: SourceSpan) {
-        if ty.size_in_bits() == 16 && !imm.is_element_aligned() {
-            // Route unaligned 16-bit immediates through the dynamic path so they share the same
-            // cross-element windowing logic as byte-pointer stores.
+        let type_size = ty.size_in_bits();
+        if (type_size == 16 && !imm.is_element_aligned())
+            || type_size + usize::from(imm.offset) * 8 > 32
+        {
+            // Share the dynamic owner for every actual crossing and the existing U16 path.
             self.push_native_ptr(imm, span);
             self.store_small(ty, None, span);
             return;
@@ -1534,5 +1531,559 @@ mod tests {
         assert_eq!(emitter.stack_len(), 13);
         assert!(emitter.stack().iter().all(|ty| *ty == Type::Felt));
         assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::MemStream)));
+    }
+    use miden_processor::{ContextId, FastProcessor, StackInputs};
+    use midenc_hir::{Immediate, formatter::PrettyPrint};
+
+    fn execute_memory_program(source: &str, succeeds: bool) -> FastProcessor {
+        let context = Context::default();
+        let core = midenc_session::LinkLibrary::core().load(&context.session().options).unwrap();
+        let intrinsics = crate::intrinsics::load(context.session()).unwrap();
+        let mut assembler = miden_assembly::Assembler::default();
+        assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+        assembler
+            .link_package(intrinsics.clone(), miden_assembly::Linkage::Dynamic)
+            .unwrap();
+        let package = assembler.assemble_program("typed_fill", source).unwrap();
+        let program = package.try_into_program().unwrap();
+        let mut host = crate::plan::tests::lowering_units::host();
+        host.load_library(miden_processor::HostLibrary::from(core)).unwrap();
+        host.load_library(miden_processor::HostLibrary::from(intrinsics)).unwrap();
+        let mut processor = FastProcessor::new(StackInputs::default());
+        let mut resume = processor.get_initial_resume_context(&program).unwrap();
+        let result = loop {
+            match processor.step_sync(&mut host, resume) {
+                Ok(Some(next)) => resume = next,
+                Ok(None) => break Ok(()),
+                Err(error) => break Err(error),
+            }
+        };
+        if succeeds {
+            result.unwrap();
+        } else {
+            assert!(result.is_err(), "expected fill to trap");
+        }
+        processor
+    }
+
+    /// Execute exactly the production emitter algorithm, every raw value lane, and a suffix wider
+    /// than the indexed window. On traps, public VM stepping retains the actual memory state.
+    fn check_fill(
+        ty: Type,
+        value: Immediate,
+        space: AddressSpace,
+        base: u32,
+        count: u32,
+        initial: &[(u32, u64)],
+        expected: Option<&[(u32, u64)]>,
+    ) {
+        let span = SourceSpan::UNKNOWN;
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::new();
+        let mut instructions = Vec::new();
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
+            for lane in (0..24).rev() {
+                emitter.literal(1000 + lane as u32, span);
+            }
+            emitter.literal(value, span);
+            emitter.pop();
+            emitter.push(ty.clone());
+            emitter.literal(count, span);
+            emitter.emit_push(base, span);
+            emitter.push(Type::from(PointerType::new_with_address_space(ty, space)));
+            emitter.memset(span);
+            assert_eq!(emitter.stack_len(), 24);
+        }
+        let body = masm::Block::new(span, instructions).to_pretty_string();
+        let initialize = initial
+            .iter()
+            .map(|(addr, value)| format!("push.{value} mem_store.{addr}\n"))
+            .collect::<String>();
+        let suffix = (0..24)
+            .map(|lane| format!("push.{} assert_eq\n", 1000 + lane))
+            .collect::<String>();
+        let check = expected
+            .unwrap_or(&[])
+            .iter()
+            .map(|(addr, value)| format!("mem_load.{addr} push.{value} assert_eq\n"))
+            .collect::<String>();
+        let processor = execute_memory_program(
+            &format!(
+                "begin {initialize} {body} {suffix} {check} \
+                 exec.::miden::core::sys::truncate_stack end"
+            ),
+            expected.is_some(),
+        );
+        for &(addr, value) in expected.unwrap_or(initial) {
+            assert_eq!(
+                processor.memory().read_element(ContextId::root(), Felt::from(addr)).unwrap(),
+                Felt::new_unchecked(value),
+                "unexpected cell {addr} after execution"
+            );
+        }
+    }
+
+    #[test]
+    fn native_fill_uses_contiguous_bytes() {
+        let base = 0xc000_0010; // Native address above the u32 byte-pointer domain.
+        for (value, expected) in [
+            (Immediate::I1(true), vec![0x0101_0101, 1]),
+            (Immediate::U8(0xab), vec![0xabab_abab, 0xab]),
+            (Immediate::U16(0xabcd), vec![0xabcd_abcd, 0xabcd_abcd, 0xabcd]),
+            (Immediate::U32(0x1234_5678), vec![0x1234_5678; 5]),
+            (
+                Immediate::U64(0x0123_4567_89ab_cdef),
+                vec![
+                    0x89ab_cdef,
+                    0x0123_4567,
+                    0x89ab_cdef,
+                    0x0123_4567,
+                    0x89ab_cdef,
+                    0x0123_4567,
+                    0x89ab_cdef,
+                    0x0123_4567,
+                    0x89ab_cdef,
+                    0x0123_4567,
+                ],
+            ),
+            (
+                Immediate::U128(0x7654_3210_fedc_ba98_0123_4567_89ab_cdef),
+                [0x89ab_cdef, 0x0123_4567, 0xfedc_ba98, 0x7654_3210].repeat(5),
+            ),
+            (
+                Immediate::Felt(Felt::new_unchecked((1u64 << 40) + 7)),
+                vec![(1u64 << 40) + 7; 5],
+            ),
+        ] {
+            let expected = expected
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (base + i as u32, v))
+                .collect::<Vec<_>>();
+            check_fill(value.ty(), value, AddressSpace::Element, base, 5, &[], Some(&expected));
+        }
+        let ty = Type::from(PointerType::new(Type::U8));
+        check_fill(
+            ty,
+            Immediate::U32(0x1234_5678),
+            AddressSpace::Element,
+            base,
+            2,
+            &[],
+            Some(&[(base, 0x1234_5678), (base + 1, 0x1234_5678)]),
+        );
+    }
+
+    #[test]
+    fn fill_range_policy_is_explicit() {
+        for (space, base, value, count, succeeds) in [
+            (AddressSpace::Byte, 0xffff_fff8, Immediate::U32(7), 1, true),
+            (AddressSpace::Byte, 0xffff_fffb, Immediate::U8(7), 1, true),
+            (AddressSpace::Byte, 0xffff_fffc, Immediate::U8(7), 0, true),
+            (AddressSpace::Byte, 65, Immediate::Felt(Felt::ONE), 0, true),
+            (AddressSpace::Byte, 0xffff_fffd, Immediate::U8(7), 0, false),
+            (AddressSpace::Byte, 0xffff_fffc, Immediate::U8(7), 1, false),
+            (AddressSpace::Byte, 0xffff_fff8, Immediate::U32(7), 2, false),
+            (AddressSpace::Element, u32::MAX, Immediate::U16(0xabcd), 2, true),
+            (AddressSpace::Element, u32::MAX, Immediate::U16(0xabcd), 3, false),
+            (AddressSpace::Element, u32::MAX, Immediate::U128(7), 0, true),
+            (AddressSpace::Element, u32::MAX, Immediate::U64(7), 1, false),
+            (AddressSpace::Element, 16, Immediate::U128(7), u32::MAX, false),
+        ] {
+            let cell = if space == AddressSpace::Byte {
+                base / 4
+            } else {
+                base
+            };
+            let initial = [(cell, 0x1234_5678)];
+            let updated = if count == 0 {
+                0x1234_5678
+            } else if space == AddressSpace::Element {
+                0xabcd_abcd
+            } else if base % 4 == 3 {
+                0x0734_5678
+            } else {
+                7
+            };
+            let expected = [(cell, updated)];
+            check_fill(
+                value.ty(),
+                value,
+                space,
+                base,
+                count,
+                &initial,
+                if succeeds { Some(&expected) } else { None },
+            );
+        }
+    }
+
+    #[test]
+    fn fill_preserves_partial_cells_and_suffix() {
+        let base = 0xc000_0010;
+        check_fill(
+            Type::U16,
+            Immediate::U16(0xabcd),
+            AddressSpace::Element,
+            base,
+            1,
+            &[(base, 0x1234_5678), (base + 1, (1u64 << 40) + 7)],
+            Some(&[(base, 0x1234_abcd), (base + 1, (1u64 << 40) + 7)]),
+        );
+        check_fill(
+            Type::I1,
+            Immediate::I1(true),
+            AddressSpace::Byte,
+            65,
+            2,
+            &[(16, 0xaabb_ccdd)],
+            Some(&[(16, 0xaabb_cddd)]),
+        );
+        for (value, cells) in [
+            (Immediate::U32(0x1234_5678), vec![0x1234_5678]),
+            (Immediate::U64(0x0123_4567_89ab_cdef), vec![0x89ab_cdef, 0x0123_4567]),
+            (
+                Immediate::U128(0x7654_3210_fedc_ba98_0123_4567_89ab_cdef),
+                vec![0x89ab_cdef, 0x0123_4567, 0xfedc_ba98, 0x7654_3210],
+            ),
+        ] {
+            let initial = (0..cells.len())
+                .map(|i| (base + i as u32, (1u64 << 40) + 7))
+                .collect::<Vec<_>>();
+            let expected = cells
+                .into_iter()
+                .enumerate()
+                .map(|(i, v)| (base + i as u32, v))
+                .collect::<Vec<_>>();
+            check_fill(
+                value.ty(),
+                value,
+                AddressSpace::Element,
+                base,
+                1,
+                &initial,
+                Some(&expected),
+            );
+        }
+        // Partial-cell integer writes require a u32 byte view; full-cell Felt needs alignment.
+        check_fill(
+            Type::U16,
+            Immediate::U16(0xabcd),
+            AddressSpace::Element,
+            base,
+            1,
+            &[(base, 1u64 << 40)],
+            None,
+        );
+        check_fill(
+            Type::Felt,
+            Immediate::Felt(Felt::ONE),
+            AddressSpace::Byte,
+            65,
+            1,
+            &[(16, 0x1234_5678)],
+            None,
+        );
+        // Byte-pointer fills at all offsets reuse exactly the scalar store algorithms.
+        for (value, bytes) in [
+            (Immediate::U8(0xab), vec![0xab]),
+            (Immediate::U16(0xabcd), 0xabcdu16.to_le_bytes().to_vec()),
+            (Immediate::U32(0x1234_5678), 0x1234_5678u32.to_le_bytes().to_vec()),
+            (
+                Immediate::U64(0x0123_4567_89ab_cdef),
+                0x0123_4567_89ab_cdefu64.to_le_bytes().to_vec(),
+            ),
+            (
+                Immediate::U128(0x7654_3210_fedc_ba98_0123_4567_89ab_cdef),
+                0x7654_3210_fedc_ba98_0123_4567_89ab_cdefu128.to_le_bytes().to_vec(),
+            ),
+        ] {
+            for offset in 0..4 {
+                for count in [0, 1, 3] {
+                    let mut expected_bytes = [0x12u8; 64];
+                    for i in 0..count {
+                        expected_bytes[offset + i * bytes.len()..offset + (i + 1) * bytes.len()]
+                            .copy_from_slice(&bytes);
+                    }
+                    let initial = (16..32).map(|addr| (addr, 0x1212_1212)).collect::<Vec<_>>();
+                    let expected = expected_bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .enumerate()
+                        .map(|(i, b)| (16 + i as u32, u32::from_le_bytes(*b) as u64))
+                        .collect::<Vec<_>>();
+                    check_fill(
+                        value.ty(),
+                        value,
+                        AddressSpace::Byte,
+                        64 + offset as u32,
+                        count as u32,
+                        &initial,
+                        Some(&expected),
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn local_fill_preserves_final_frame_spill_sentinel() {
+        use crate::plan::{
+            FinalFrameLayout, FrameRef, SlotOwner, SourceLocalLayout, SpillSlotId, ValueId,
+        };
+        let frame = FinalFrameLayout::new(
+            SourceLocalLayout {
+                offsets: vec![0],
+                extent: 1,
+            },
+            [(
+                SpillSlotId {
+                    owner: SlotOwner::Value(ValueId(0)),
+                    index: 0,
+                },
+                1,
+            )]
+            .into_iter()
+            .collect(),
+            Default::default(),
+            4,
+        )
+        .unwrap();
+        let local = frame.resolve(FrameRef::SourceLocal(0)).unwrap();
+        let spill = frame
+            .resolve(FrameRef::Spill(SpillSlotId {
+                owner: SlotOwner::Value(ValueId(0)),
+                index: 0,
+            }))
+            .unwrap();
+        let span = SourceSpan::UNKNOWN;
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::new();
+        let mut body = Vec::new();
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+            emitter.literal(Immediate::U16(0xabcd), span);
+            emitter.literal(2u32, span);
+            emitter.emit(masm::Instruction::Locaddr(local.into()), span);
+            emitter.push(Type::from(PointerType::new_with_address_space(
+                Type::U16,
+                AddressSpace::Element,
+            )));
+            emitter.memset(span);
+            assert_eq!(emitter.stack_len(), 0);
+        }
+        let body = masm::Block::new(span, body).to_pretty_string();
+        execute_memory_program(
+            &format!(
+                "@locals({}) proc fill push.0 loc_store.{local} push.1099511627783 \
+                 loc_store.{spill} {body} loc_load.{local} push.2882382797 assert_eq \
+                 loc_load.{spill} push.1099511627783 assert_eq end begin exec.fill \
+                 exec.::miden::core::sys::truncate_stack end",
+                frame.aligned_size()
+            ),
+            true,
+        );
+    }
+    /// Exercise the shared store owner independently of MemSet and check every suffix lane.
+    fn check_packed_store(
+        ty: Type,
+        value: impl Into<Immediate>,
+        ptr: NativePtr,
+        immediate: bool,
+        initial: &[(u32, u64)],
+        expected: Option<&[(u32, u64)]>,
+    ) {
+        let span = SourceSpan::UNKNOWN;
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::new();
+        let mut body = Vec::new();
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+            for lane in (0..24u32).rev() {
+                emitter.literal(2000 + lane, span);
+            }
+            let value: Immediate = value.into();
+            emitter.literal(value, span);
+            if immediate {
+                emitter.store_small(&ty, Some(ptr), span);
+            } else {
+                emitter.push_native_ptr(ptr, span);
+                emitter.store_small(&ty, None, span);
+            }
+            emitter.pop();
+            assert_eq!(emitter.stack_len(), 24);
+        }
+        let body = masm::Block::new(span, body).to_pretty_string();
+        let initialize = initial
+            .iter()
+            .map(|(addr, value)| format!("push.{value} mem_store.{addr}\n"))
+            .collect::<String>();
+        let suffix = (0..24)
+            .map(|lane| format!("push.{} assert_eq\n", 2000 + lane))
+            .collect::<String>();
+        let processor = execute_memory_program(
+            &format!(
+                "begin {initialize} {body} {suffix} exec.::miden::core::sys::truncate_stack end"
+            ),
+            expected.is_some(),
+        );
+        for &(addr, value) in expected.unwrap_or(initial) {
+            assert_eq!(
+                processor.memory().read_element(ContextId::root(), Felt::from(addr)).unwrap(),
+                Felt::new_unchecked(value),
+                "{ty} at {ptr:?}, immediate={immediate}, cell={addr}"
+            );
+        }
+    }
+
+    fn packed_types() -> [Type; 4] {
+        [
+            Type::from(ArrayType::new(Type::I1, 2)),
+            Type::from(ArrayType::new(Type::I1, 3)),
+            Type::from(ArrayType::new(Type::U8, 3)),
+            Type::from(ArrayType::new(Type::I1, 4)),
+        ]
+    }
+
+    fn check_packed_crossings(immediate: bool) {
+        for ty in packed_types() {
+            let bits = ty.size_in_bits();
+            let mask = (1u32 << bits) - 1;
+            for value in [mask, 0, 0x0055_aa55 & mask] {
+                for offset in 0..4 {
+                    let initial = if value == 0 {
+                        [(16, u32::MAX as u64), (17, u32::MAX as u64)]
+                    } else {
+                        [(16, 0xa1b2_c3d4), (17, 0x5566_7788)]
+                    };
+                    let previous = (initial[1].1 << 32) | initial[0].1;
+                    let shift = offset * 8;
+                    let positioned_mask = (mask as u64) << shift;
+                    let updated = (previous & !positioned_mask) | ((value as u64) << shift);
+                    let expected = [(16, updated & 0xffff_ffff), (17, updated >> 32)];
+                    let ptr = NativePtr::new(16, offset as u8);
+                    check_packed_store(
+                        ty.clone(),
+                        value,
+                        ptr,
+                        immediate,
+                        &initial,
+                        Some(&expected),
+                    );
+                    let high = (1u64 << 40) + 7;
+                    let neighbor = [(16, initial[0].1), (17, high)];
+                    if shift + bits <= 32 {
+                        check_packed_store(
+                            ty.clone(),
+                            value,
+                            ptr,
+                            immediate,
+                            &neighbor,
+                            Some(&[(16, expected[0].1), (17, high)]),
+                        );
+                        check_packed_store(
+                            ty.clone(),
+                            value,
+                            NativePtr::new(u32::MAX, offset as u8),
+                            immediate,
+                            &[(u32::MAX, initial[0].1)],
+                            Some(&[(u32::MAX, expected[0].1)]),
+                        );
+                    } else {
+                        check_packed_store(ty.clone(), value, ptr, immediate, &neighbor, None);
+                        check_packed_store(
+                            ty.clone(),
+                            value,
+                            NativePtr::new(u32::MAX, offset as u8),
+                            immediate,
+                            &[(u32::MAX, initial[0].1)],
+                            None,
+                        );
+                    }
+                    check_packed_store(
+                        ty.clone(),
+                        value,
+                        ptr,
+                        immediate,
+                        &[(16, high), (17, initial[1].1)],
+                        None,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn packed_dynamic_stores_preserve_crossed_bits() {
+        check_packed_crossings(false);
+    }
+
+    #[test]
+    fn packed_immediate_stores_preserve_crossed_bits() {
+        check_packed_crossings(true);
+    }
+
+    #[test]
+    fn packed_whole_word_immediates_preserve_full_field_wrapper() {
+        let high = (1u64 << 40) + 7;
+        let ty = Type::from(ArrayType::new(Type::Felt, 1));
+        for immediate in [false, true] {
+            check_packed_store(
+                ty.clone(),
+                Immediate::Felt(Felt::new_unchecked(high)),
+                NativePtr::new(16, 0),
+                immediate,
+                &[(16, 11), (17, high + 1)],
+                Some(&[(16, high), (17, high + 1)]),
+            );
+            check_packed_store(
+                ty.clone(),
+                Immediate::Felt(Felt::new_unchecked(high)),
+                NativePtr::new(16, 1),
+                immediate,
+                &[(16, 11), (17, 13)],
+                None,
+            );
+        }
+        check_fill(
+            ty,
+            Immediate::Felt(Felt::new_unchecked(high)),
+            AddressSpace::Element,
+            0xc000_0010,
+            2,
+            &[],
+            Some(&[(0xc000_0010, high), (0xc000_0011, high)]),
+        );
+    }
+
+    #[test]
+    fn packed_fill_range_and_terminal_footprints() {
+        let ty = Type::from(ArrayType::new(Type::U8, 3));
+        for count in [0, 1, 2] {
+            let expected = [(u32::MAX, if count == 1 { 0x12ff_ffff } else { 0x1234_5678 })];
+            check_fill(
+                ty.clone(),
+                Immediate::U32(0x00ff_ffff),
+                AddressSpace::Element,
+                u32::MAX,
+                count,
+                &[(u32::MAX, 0x1234_5678)],
+                if count < 2 { Some(&expected) } else { None },
+            );
+        }
+        for (base, count) in [(0xffff_fff8, 2), (64, u32::MAX)] {
+            check_fill(
+                ty.clone(),
+                Immediate::U32(0x00ff_ffff),
+                AddressSpace::Byte,
+                base,
+                count,
+                &[(base / 4, 0x1234_5678)],
+                None,
+            );
+        }
     }
 }

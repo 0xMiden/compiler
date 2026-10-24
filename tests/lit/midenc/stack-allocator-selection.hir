@@ -1,18 +1,247 @@
-// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.world(builtin.module(builtin.function(canonicalizer,cfg-to-scf,canonicalizer)))' > %t.hir
+// RUN: midenc %t.hir --emit=masm=- | filecheck %s
+// CHECK-DAG: proc reloaded_capture
+// CHECK-DAG: proc wide_join
+// CHECK-DAG: proc aliases
 
-// A `cf.switch` with 256 cases plus a fallback, every arm branching to one join block, while
-// %1 stays live across the join. The spill analysis counts, per value live into a join, the
-// predecessors it arrives from; 257 executable predecessors overflowed the 8-bit count it used
-// to keep (`attempt to add with overflow` in debug builds, a wrapped count in release builds).
-// Nothing exceeds the operand stack here, so the function must come out without a spill.
-
-// CHECK-NOT: hir.store_local
-// CHECK: cf.switch %0 [
-// CHECK-NOT: hir.store_local
-// CHECK: ^[[JOIN:block\d+]](%[[R:\d+]]: u32):
-// CHECK-NEXT: arith.add %[[R]], %1
-// CHECK-NEXT: builtin.ret %
-builtin.module public @test {
+builtin.world {
+// BEGIN reloaded-region-capture
+builtin.module public @reloaded_region_capture {
+    builtin.function public extern("C") @reloaded_capture(%0: i1, %1: i1) -> i1 {
+        cf.cond_br %0 ^left, ^right : (i1);
+    ^left:
+        %2 = arith.constant 1 : u128;
+        %3 = hir.exec ::@reloaded_region_capture::@consume(%2, %2, %2, %2) : extern("C") (u128, u128, u128, u128) -> u128;
+        cf.br ^join(%3, %3, %3, %3 : u128, u128, u128, u128);
+    ^right:
+        %4 = arith.constant 2 : u128;
+        %5 = hir.exec ::@reloaded_region_capture::@consume(%4, %4, %4, %4) : extern("C") (u128, u128, u128, u128) -> u128;
+        cf.br ^join(%5, %5, %5, %5 : u128, u128, u128, u128);
+    ^join(%6: u128, %7: u128, %8: u128, %9: u128):
+        scf.if %1 then {
+            %10 = hir.exec ::@reloaded_region_capture::@consume(%6, %7, %8, %9) : extern("C") (u128, u128, u128, u128) -> u128;
+            scf.yield : ();
+        } else {
+            %11 = hir.exec ::@reloaded_region_capture::@consume(%6, %7, %8, %9) : extern("C") (u128, u128, u128, u128) -> u128;
+            scf.yield : ();
+        } : (i1) -> ();
+        builtin.ret %1 : (i1);
+    };
+    builtin.function public extern("C") @consume(%0: u128, %1: u128, %2: u128, %3: u128) -> u128 {
+        builtin.ret %0 : (u128);
+    };
+};
+// END reloaded-region-capture
+// BEGIN unreachable-predecessor
+builtin.module public @unreachable_predecessor {
+    builtin.function public extern("C") @unreachable_predecessor(%0: ptr<u8, element>) -> u32 {
+        %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+        %2 = arith.constant 32 : u32;
+        %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %5 = hir.load %4;
+        %6 = arith.constant 64 : u32;
+        %7 = arith.add %1, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %9 = hir.load %8;
+        %10 = arith.constant 0 : u32;
+        %11 = arith.eq %1, %10;
+        cf.cond_br %11 ^then, ^other : (i1);
+    ^then:
+        %12 = arith.constant 1 : u64;
+        %13 = hir.exec ::@unreachable_predecessor::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%13 : u32);
+    ^other:
+        %14 = arith.constant 2 : u64;
+        %15 = hir.exec ::@unreachable_predecessor::@example(%8, %5, %9, %9, %14) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%15 : u32);
+    ^unreachable:
+        %16 = arith.constant 3 : u64;
+        %17 = hir.exec ::@unreachable_predecessor::@example(%8, %5, %9, %9, %16) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%17 : u32);
+    ^join(%18: u32):
+        %19 = arith.constant 5 : u32;
+        %20 = arith.add %1, %19 <{ overflow = #builtin.overflow<unchecked> }>;
+        %21 = arith.add %20, %18 <{ overflow = #builtin.overflow<unchecked> }>;
+        %22 = arith.add %21, %3 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %22 : (u32);
+    };
+    builtin.function public extern("C") @example(%p: ptr<u128, element>, %x: u128, %y: u128, %z: u128, %w: u64) -> u32 {
+        builtin.ret_imm 42 : u32;
+    };
+};
+// END unreachable-predecessor
+// BEGIN region-live-through
+builtin.module public @region_live_through {
+    builtin.function public extern("C") @live_through(%0: i1, %1: u32) -> u32 {
+        scf.if %0 then {
+            %2 = arith.constant 1 : u128;
+            %3 = hir.exec ::@region_live_through::@consume(%2, %2, %2, %2) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else {
+            scf.yield : ();
+        } : (i1) -> ();
+        builtin.ret %1 : (u32);
+    };
+    builtin.function public extern("C") @nested_live_through(%0: i1, %1: u32, %2: i1) -> u32 {
+        scf.if %0 then {
+            scf.if %2 then {
+                %3 = arith.constant 1 : u128;
+                %4 = hir.exec ::@region_live_through::@consume(%3, %3, %3, %3) : extern("C") (u128, u128, u128, u128) -> u32;
+                scf.yield : ();
+            } else {
+                scf.yield : ();
+            } : (i1) -> ();
+            scf.yield : ();
+        } else {
+            scf.yield : ();
+        } : (i1) -> ();
+        builtin.ret %1 : (u32);
+    };
+    builtin.function public extern("C") @loop_captures(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 0 : u32;
+        %3 = scf.while %2 before {
+        ^before(%4: u32):
+            %5 = arith.lt %4, %0;
+            scf.condition %5, %4 : (i1, u32);
+        } after {
+        ^after(%6: u32):
+            %7 = arith.add %6, %1 <{ overflow = #builtin.overflow<unchecked> }>;
+            %8 = arith.constant 1 : u128;
+            %9 = hir.exec ::@region_live_through::@consume(%8, %8, %8, %8) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield %7 : (u32);
+        } : (u32) -> (u32);
+        builtin.ret %3 : (u32);
+    };
+    builtin.function public extern("C") @successive_regions(%0: i1, %1: u32) -> u32 {
+        scf.if %0 then {
+            %2 = arith.constant 1 : u128;
+            %3 = hir.exec ::@region_live_through::@consume(%2, %2, %2, %2) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else { scf.yield : (); } : (i1) -> ();
+        scf.if %0 then {
+            %4 = arith.constant 1 : u128;
+            %5 = hir.exec ::@region_live_through::@consume(%4, %4, %4, %4) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else { scf.yield : (); } : (i1) -> ();
+        scf.if %0 then {
+            %6 = arith.constant 1 : u128;
+            %7 = hir.exec ::@region_live_through::@consume(%6, %6, %6, %6) : extern("C") (u128, u128, u128, u128) -> u32;
+            scf.yield : ();
+        } else { scf.yield : (); } : (i1) -> ();
+        builtin.ret %1 : (u32);
+    };
+    builtin.function public extern("C") @consume(%0: u128, %1: u128, %2: u128, %3: u128) -> u32 {
+        %4 = arith.constant 0 : u32;
+        builtin.ret %4 : (u32);
+    };
+};
+// END region-live-through
+// BEGIN entry-backedge
+builtin.module public @entry_backedge {
+    builtin.function public extern("C") @entry_backedge() -> u32 {
+    ^entry:
+        %90 = arith.constant 1 : u32;
+        %0 = hir.int_to_ptr %90 <{ ty = #builtin.type<ptr<u8, element>> }>;
+        %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+        %2 = arith.constant 32 : u32;
+        %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %5 = hir.load %4;
+        %6 = arith.constant 64 : u32;
+        %7 = arith.add %1, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %9 = hir.load %8;
+        %10 = arith.constant 0 : u32;
+        %11 = arith.eq %1, %10;
+        cf.cond_br %11 ^then, ^other : (i1);
+    ^then:
+        %12 = arith.constant 1 : u64;
+        %13 = hir.exec ::@entry_backedge::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        %80 = arith.add %1, %3 <{ overflow = #builtin.overflow<unchecked> }>;
+        %81 = arith.add %1, %3 <{ overflow = #builtin.overflow<unchecked> }>;
+        cf.br ^entry;
+    ^other:
+        %14 = arith.constant 2 : u64;
+        %15 = hir.exec ::@entry_backedge::@example(%8, %5, %9, %9, %14) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^entry;
+    };
+    builtin.function public extern("C") @example(%p: ptr<u128, element>, %x: u128, %y: u128, %z: u128, %w: u64) -> u32 {
+        builtin.ret_imm 42 : u32;
+    };
+};
+// END entry-backedge
+// BEGIN dead-successor
+builtin.module public @dead_successor {
+    builtin.function public extern("C") @dead_successor(%0: ptr<u8, element>) -> u32 {
+        %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+        %2 = arith.constant 32 : u32;
+        %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %5 = hir.load %4;
+        %6 = arith.constant 64 : u32;
+        %7 = arith.add %1, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %9 = hir.load %8;
+        %10 = arith.constant 1 : u32;
+        cf.switch %10 [#builtin.u32<0> -> ^then], ^else : (u32);
+    ^then:
+        %12 = arith.constant 1 : u64;
+        %13 = hir.exec ::@dead_successor::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%13 : u32);
+    ^else:
+        %14 = arith.constant 1 : u64;
+        %15 = hir.exec ::@dead_successor::@example(%8, %5, %9, %9, %14) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%15 : u32);
+    ^join(%16: u32):
+        %17 = arith.constant 5 : u32;
+        %18 = arith.add %1, %17 <{ overflow = #builtin.overflow<unchecked> }>;
+        %19 = arith.add %18, %16 <{ overflow = #builtin.overflow<unchecked> }>;
+        %20 = arith.add %19, %3 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %20 : (u32);
+    };
+    builtin.function public extern("C") @example(%p: ptr<u128, element>, %x: u128, %y: u128, %z: u128, %w: u64) -> u32 {
+        builtin.ret_imm 42 : u32;
+    };
+};
+// END dead-successor
+// BEGIN join-covered-reload
+builtin.module public @join_covered_reload {
+    builtin.function public extern("C") @join_covered_reload(%0: ptr<u8, element>) -> u32 {
+        %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+        %2 = arith.constant 32 : u32;
+        %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %5 = hir.load %4;
+        %6 = arith.constant 64 : u32;
+        %7 = arith.add %1, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %9 = hir.load %8;
+        %10 = arith.constant 0 : u32;
+        %11 = arith.eq %1, %10;
+        cf.cond_br %11 ^then, ^else : (i1);
+    ^then:
+        %12 = arith.constant 1 : u64;
+        %13 = hir.exec ::@join_covered_reload::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%13 : u32);
+    ^else:
+        %14 = arith.constant 1 : u64;
+        %15 = hir.exec ::@join_covered_reload::@example(%8, %5, %9, %9, %14) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%15 : u32);
+    ^join(%16: u32):
+        %17 = arith.constant 5 : u32;
+        %18 = arith.add %1, %17 <{ overflow = #builtin.overflow<unchecked> }>;
+        %19 = arith.add %18, %16 <{ overflow = #builtin.overflow<unchecked> }>;
+        %20 = arith.add %19, %3 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %20 : (u32);
+    };
+    builtin.function public extern("C") @example(%p: ptr<u128, element>, %x: u128, %y: u128, %z: u128, %w: u64) -> u32 {
+        builtin.ret_imm 42 : u32;
+    };
+};
+// END join-covered-reload
+// BEGIN wide-join
+builtin.module public @wide_join {
     builtin.function public extern("C") @wide_join(%0: u32, %1: u32) -> u32 {
         cf.switch %0 [#builtin.u32<0> -> ^case0, #builtin.u32<1> -> ^case1, #builtin.u32<2> -> ^case2, #builtin.u32<3> -> ^case3, #builtin.u32<4> -> ^case4, #builtin.u32<5> -> ^case5, #builtin.u32<6> -> ^case6, #builtin.u32<7> -> ^case7, #builtin.u32<8> -> ^case8, #builtin.u32<9> -> ^case9, #builtin.u32<10> -> ^case10, #builtin.u32<11> -> ^case11, #builtin.u32<12> -> ^case12, #builtin.u32<13> -> ^case13, #builtin.u32<14> -> ^case14, #builtin.u32<15> -> ^case15, #builtin.u32<16> -> ^case16, #builtin.u32<17> -> ^case17, #builtin.u32<18> -> ^case18, #builtin.u32<19> -> ^case19, #builtin.u32<20> -> ^case20, #builtin.u32<21> -> ^case21, #builtin.u32<22> -> ^case22, #builtin.u32<23> -> ^case23, #builtin.u32<24> -> ^case24, #builtin.u32<25> -> ^case25, #builtin.u32<26> -> ^case26, #builtin.u32<27> -> ^case27, #builtin.u32<28> -> ^case28, #builtin.u32<29> -> ^case29, #builtin.u32<30> -> ^case30, #builtin.u32<31> -> ^case31, #builtin.u32<32> -> ^case32, #builtin.u32<33> -> ^case33, #builtin.u32<34> -> ^case34, #builtin.u32<35> -> ^case35, #builtin.u32<36> -> ^case36, #builtin.u32<37> -> ^case37, #builtin.u32<38> -> ^case38, #builtin.u32<39> -> ^case39, #builtin.u32<40> -> ^case40, #builtin.u32<41> -> ^case41, #builtin.u32<42> -> ^case42, #builtin.u32<43> -> ^case43, #builtin.u32<44> -> ^case44, #builtin.u32<45> -> ^case45, #builtin.u32<46> -> ^case46, #builtin.u32<47> -> ^case47, #builtin.u32<48> -> ^case48, #builtin.u32<49> -> ^case49, #builtin.u32<50> -> ^case50, #builtin.u32<51> -> ^case51, #builtin.u32<52> -> ^case52, #builtin.u32<53> -> ^case53, #builtin.u32<54> -> ^case54, #builtin.u32<55> -> ^case55, #builtin.u32<56> -> ^case56, #builtin.u32<57> -> ^case57, #builtin.u32<58> -> ^case58, #builtin.u32<59> -> ^case59, #builtin.u32<60> -> ^case60, #builtin.u32<61> -> ^case61, #builtin.u32<62> -> ^case62, #builtin.u32<63> -> ^case63, #builtin.u32<64> -> ^case64, #builtin.u32<65> -> ^case65, #builtin.u32<66> -> ^case66, #builtin.u32<67> -> ^case67, #builtin.u32<68> -> ^case68, #builtin.u32<69> -> ^case69, #builtin.u32<70> -> ^case70, #builtin.u32<71> -> ^case71, #builtin.u32<72> -> ^case72, #builtin.u32<73> -> ^case73, #builtin.u32<74> -> ^case74, #builtin.u32<75> -> ^case75, #builtin.u32<76> -> ^case76, #builtin.u32<77> -> ^case77, #builtin.u32<78> -> ^case78, #builtin.u32<79> -> ^case79, #builtin.u32<80> -> ^case80, #builtin.u32<81> -> ^case81, #builtin.u32<82> -> ^case82, #builtin.u32<83> -> ^case83, #builtin.u32<84> -> ^case84, #builtin.u32<85> -> ^case85, #builtin.u32<86> -> ^case86, #builtin.u32<87> -> ^case87, #builtin.u32<88> -> ^case88, #builtin.u32<89> -> ^case89, #builtin.u32<90> -> ^case90, #builtin.u32<91> -> ^case91, #builtin.u32<92> -> ^case92, #builtin.u32<93> -> ^case93, #builtin.u32<94> -> ^case94, #builtin.u32<95> -> ^case95, #builtin.u32<96> -> ^case96, #builtin.u32<97> -> ^case97, #builtin.u32<98> -> ^case98, #builtin.u32<99> -> ^case99, #builtin.u32<100> -> ^case100, #builtin.u32<101> -> ^case101, #builtin.u32<102> -> ^case102, #builtin.u32<103> -> ^case103, #builtin.u32<104> -> ^case104, #builtin.u32<105> -> ^case105, #builtin.u32<106> -> ^case106, #builtin.u32<107> -> ^case107, #builtin.u32<108> -> ^case108, #builtin.u32<109> -> ^case109, #builtin.u32<110> -> ^case110, #builtin.u32<111> -> ^case111, #builtin.u32<112> -> ^case112, #builtin.u32<113> -> ^case113, #builtin.u32<114> -> ^case114, #builtin.u32<115> -> ^case115, #builtin.u32<116> -> ^case116, #builtin.u32<117> -> ^case117, #builtin.u32<118> -> ^case118, #builtin.u32<119> -> ^case119, #builtin.u32<120> -> ^case120, #builtin.u32<121> -> ^case121, #builtin.u32<122> -> ^case122, #builtin.u32<123> -> ^case123, #builtin.u32<124> -> ^case124, #builtin.u32<125> -> ^case125, #builtin.u32<126> -> ^case126, #builtin.u32<127> -> ^case127, #builtin.u32<128> -> ^case128, #builtin.u32<129> -> ^case129, #builtin.u32<130> -> ^case130, #builtin.u32<131> -> ^case131, #builtin.u32<132> -> ^case132, #builtin.u32<133> -> ^case133, #builtin.u32<134> -> ^case134, #builtin.u32<135> -> ^case135, #builtin.u32<136> -> ^case136, #builtin.u32<137> -> ^case137, #builtin.u32<138> -> ^case138, #builtin.u32<139> -> ^case139, #builtin.u32<140> -> ^case140, #builtin.u32<141> -> ^case141, #builtin.u32<142> -> ^case142, #builtin.u32<143> -> ^case143, #builtin.u32<144> -> ^case144, #builtin.u32<145> -> ^case145, #builtin.u32<146> -> ^case146, #builtin.u32<147> -> ^case147, #builtin.u32<148> -> ^case148, #builtin.u32<149> -> ^case149, #builtin.u32<150> -> ^case150, #builtin.u32<151> -> ^case151, #builtin.u32<152> -> ^case152, #builtin.u32<153> -> ^case153, #builtin.u32<154> -> ^case154, #builtin.u32<155> -> ^case155, #builtin.u32<156> -> ^case156, #builtin.u32<157> -> ^case157, #builtin.u32<158> -> ^case158, #builtin.u32<159> -> ^case159, #builtin.u32<160> -> ^case160, #builtin.u32<161> -> ^case161, #builtin.u32<162> -> ^case162, #builtin.u32<163> -> ^case163, #builtin.u32<164> -> ^case164, #builtin.u32<165> -> ^case165, #builtin.u32<166> -> ^case166, #builtin.u32<167> -> ^case167, #builtin.u32<168> -> ^case168, #builtin.u32<169> -> ^case169, #builtin.u32<170> -> ^case170, #builtin.u32<171> -> ^case171, #builtin.u32<172> -> ^case172, #builtin.u32<173> -> ^case173, #builtin.u32<174> -> ^case174, #builtin.u32<175> -> ^case175, #builtin.u32<176> -> ^case176, #builtin.u32<177> -> ^case177, #builtin.u32<178> -> ^case178, #builtin.u32<179> -> ^case179, #builtin.u32<180> -> ^case180, #builtin.u32<181> -> ^case181, #builtin.u32<182> -> ^case182, #builtin.u32<183> -> ^case183, #builtin.u32<184> -> ^case184, #builtin.u32<185> -> ^case185, #builtin.u32<186> -> ^case186, #builtin.u32<187> -> ^case187, #builtin.u32<188> -> ^case188, #builtin.u32<189> -> ^case189, #builtin.u32<190> -> ^case190, #builtin.u32<191> -> ^case191, #builtin.u32<192> -> ^case192, #builtin.u32<193> -> ^case193, #builtin.u32<194> -> ^case194, #builtin.u32<195> -> ^case195, #builtin.u32<196> -> ^case196, #builtin.u32<197> -> ^case197, #builtin.u32<198> -> ^case198, #builtin.u32<199> -> ^case199, #builtin.u32<200> -> ^case200, #builtin.u32<201> -> ^case201, #builtin.u32<202> -> ^case202, #builtin.u32<203> -> ^case203, #builtin.u32<204> -> ^case204, #builtin.u32<205> -> ^case205, #builtin.u32<206> -> ^case206, #builtin.u32<207> -> ^case207, #builtin.u32<208> -> ^case208, #builtin.u32<209> -> ^case209, #builtin.u32<210> -> ^case210, #builtin.u32<211> -> ^case211, #builtin.u32<212> -> ^case212, #builtin.u32<213> -> ^case213, #builtin.u32<214> -> ^case214, #builtin.u32<215> -> ^case215, #builtin.u32<216> -> ^case216, #builtin.u32<217> -> ^case217, #builtin.u32<218> -> ^case218, #builtin.u32<219> -> ^case219, #builtin.u32<220> -> ^case220, #builtin.u32<221> -> ^case221, #builtin.u32<222> -> ^case222, #builtin.u32<223> -> ^case223, #builtin.u32<224> -> ^case224, #builtin.u32<225> -> ^case225, #builtin.u32<226> -> ^case226, #builtin.u32<227> -> ^case227, #builtin.u32<228> -> ^case228, #builtin.u32<229> -> ^case229, #builtin.u32<230> -> ^case230, #builtin.u32<231> -> ^case231, #builtin.u32<232> -> ^case232, #builtin.u32<233> -> ^case233, #builtin.u32<234> -> ^case234, #builtin.u32<235> -> ^case235, #builtin.u32<236> -> ^case236, #builtin.u32<237> -> ^case237, #builtin.u32<238> -> ^case238, #builtin.u32<239> -> ^case239, #builtin.u32<240> -> ^case240, #builtin.u32<241> -> ^case241, #builtin.u32<242> -> ^case242, #builtin.u32<243> -> ^case243, #builtin.u32<244> -> ^case244, #builtin.u32<245> -> ^case245, #builtin.u32<246> -> ^case246, #builtin.u32<247> -> ^case247, #builtin.u32<248> -> ^case248, #builtin.u32<249> -> ^case249, #builtin.u32<250> -> ^case250, #builtin.u32<251> -> ^case251, #builtin.u32<252> -> ^case252, #builtin.u32<253> -> ^case253, #builtin.u32<254> -> ^case254, #builtin.u32<255> -> ^case255], ^fallback : (u32);
     ^case0:
@@ -790,4 +1019,105 @@ builtin.module public @test {
         %260 = arith.add %259, %1 <{ overflow = #builtin.overflow<wrapping> }>;
         builtin.ret %260 : (u32);
     };
+};
+// END wide-join
+builtin.module public @selection {
+builtin.function public extern("C") @aliases(%input: u128) -> u128 {
+    %hi, %midhi, %midlo, %lo = arith.split %input : (u128) -> (u32, u32, u32, u32);
+    %output = arith.join %hi, %midhi, %midlo, %lo <{ ty = #builtin.type<u128> }>;
+    builtin.ret %output : (u128);
+};
+builtin.function public extern("C") @default_switch(%index: u32, %a: felt) -> felt {
+    %result = scf.index_switch %index
+    default { scf.yield %a : (felt); } : felt;
+    builtin.ret %result : (felt);
+};
+builtin.function public extern("C") @nested_before(%go: i1, %q: i1, %a: felt, %b: felt) -> felt {
+    %result = scf.while %go, %a before {
+    ^before(%flag: i1, %value: felt):
+        %chosen = scf.if %q then {
+            scf.yield %value : (felt);
+        } else {
+            scf.yield %b : (felt);
+        } : (i1) -> felt;
+        scf.condition %flag, %chosen : (i1, felt);
+    } after {
+    ^after(%next: felt):
+        %no = arith.constant 0 : i1;
+        scf.yield %no, %next : (i1, felt);
+    } : (i1, felt) -> felt;
+    builtin.ret %result : (felt);
+};
+builtin.function public extern("C") @nested_before_inner(%go: i1, %q: i1, %a: felt, %b: felt) -> felt {
+    %never = arith.constant 0 : i1;
+    %result = scf.while %go, %a before {
+    ^before(%flag: i1, %value: felt):
+        %inner = scf.while %value before {
+        ^inner_before(%iv: felt):
+            scf.condition %never, %iv : (i1, felt);
+        } after {
+        ^inner_after(%iv_next: felt):
+            scf.yield %iv_next : (felt);
+        } : (felt) -> felt;
+        %chosen = scf.if %q then {
+            scf.yield %inner : (felt);
+        } else {
+            scf.yield %b : (felt);
+        } : (i1) -> felt;
+        scf.condition %flag, %chosen : (i1, felt);
+    } after {
+    ^after(%next: felt):
+        %no = arith.constant 0 : i1;
+        scf.yield %no, %next : (i1, felt);
+    } : (i1, felt) -> felt;
+    builtin.ret %result : (felt);
+};
+builtin.function public extern("C") @permutation(%go: i1, %a: felt, %b: felt, %dead: felt) -> (felt, felt) {
+    %first, %second, %unused = scf.while %go, %a, %b, %dead before {
+    ^before(%flag: i1, %x: felt, %y: felt, %z: felt):
+        scf.condition %flag, %x, %y, %z : (i1, felt, felt, felt);
+    } after {
+    ^after(%u: felt, %v: felt, %w: felt):
+        %no = arith.constant 0 : i1;
+        scf.yield %no, %v, %u, %w : (i1, felt, felt, felt);
+    } : (i1, felt, felt, felt) -> (felt, felt, felt);
+    builtin.ret %first, %second : (felt, felt);
+};
+builtin.function public extern("C") @switch(%index: u32, %a: felt, %b: felt) -> felt {
+    %result = scf.index_switch %index
+    case 9 { scf.yield %a : (felt); }
+    case 7 { scf.yield %b : (felt); }
+    case 8 { scf.yield %a : (felt); }
+    default { scf.yield %b : (felt); } : felt;
+    builtin.ret %result : (felt);
+};
+builtin.function public extern("C") @terminal(%flag: i1, %a: felt) -> felt {
+    cf.cond_br %flag ^first(%a : felt), ^second : (i1);
+^first(%value: felt):
+    builtin.ret %value : (felt);
+^second:
+    builtin.ret_imm 77 : felt;
+};
+builtin.function public extern("C") @casts(%a: u32) -> i32 {
+    %ptr = hir.int_to_ptr %a <{ ty = #builtin.type<ptr<u32, byte>> }>;
+    %bits = hir.ptr_to_int %ptr <{ ty = #builtin.type<u32> }>;
+    %result = hir.bitcast %bits <{ ty = #builtin.type<i32> }>;
+    builtin.ret %result : (i32);
+};
+builtin.function public extern("C") @trapping_before(%trap: i1, %go: i1, %a: felt) -> felt {
+    %result = scf.while %a before {
+    ^before(%value: felt):
+        %chosen = scf.if %trap then {
+            ub.unreachable;
+        } else {
+            scf.yield %value : (felt);
+        } : (i1) -> felt;
+        scf.condition %go, %chosen : (i1, felt);
+    } after {
+    ^after(%next: felt):
+        scf.yield %next : (felt);
+    } : (felt) -> felt;
+    builtin.ret %result : (felt);
+};
+};
 };

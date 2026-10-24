@@ -134,6 +134,8 @@ fn checked_case(
     let mut bindings = preparation.bindings.clone();
     bindings.extend(second.bindings);
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts: BTreeMap::from([(SegmentId(0), super::edges::contract(all, vec![]))]),
         segment_actions: BTreeMap::from([(SegmentId(0), actions)]),
@@ -632,6 +634,22 @@ fn victim_classes_prefer_dead_then_backed_then_new_stores() {
         assert!(!preparation.state.stack_atoms().any(|a| a == atom(victim)));
         assert_eq!(preparation.actions.iter().filter(|a| matches!(a, PlanAction::Drop)).count(), 1);
         assert!(!preparation.actions.iter().any(|a| matches!(a, PlanAction::StoreLane(_))));
+        assert_eq!(preparation.victims.len(), 1);
+        assert_eq!(preparation.victims[0].atom, atom(victim));
+        assert_eq!(
+            preparation.victims[0].reason,
+            if dead.is_some() {
+                VictimReason::Redundant
+            } else {
+                VictimReason::Backed
+            }
+        );
+        let repeated =
+            prepare_unit(&initial, &unit(vec![atom(16)], vec![]), &live, &context).unwrap();
+        assert_eq!(
+            alloc::format!("{:?}", preparation.victims),
+            alloc::format!("{:?}", repeated.victims)
+        );
     }
 }
 
@@ -795,4 +813,24 @@ proptest! {
         let (_, full, _) = checked_case(types, vec![], unit(inputs.clone(), vec![]), live, forced(SchedulingTier::Normalization));
         prop_assert_eq!(fast.state.stack_atoms().take(inputs.len()).collect::<Vec<_>>(), full.state.stack_atoms().take(inputs.len()).collect::<Vec<_>>());
     }
+}
+
+#[test]
+fn selective_trace_records_actual_store_victims() {
+    let values = values(16);
+    let mut context = context(&values);
+    context.options.force_tier = Some(SchedulingTier::Selective);
+    let initial = state((0..16).map(atom).collect(), vec![]);
+    let request = unit((0..16).map(atom).collect(), vec![]);
+    let preparation =
+        prepare_unit(&initial, &request, &(0..16).map(ValueId).collect(), &context).unwrap();
+    assert_eq!(preparation.tier, SchedulingTier::Selective);
+    assert_eq!(preparation.victims.len(), 16);
+    assert!(
+        preparation
+            .victims
+            .iter()
+            .all(|decision| decision.reason == VictimReason::NeedsStore)
+    );
+    assert_eq!(preparation.state.slots.len(), 16);
 }

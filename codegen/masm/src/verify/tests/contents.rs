@@ -110,6 +110,8 @@ fn fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
         })
         .collect();
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts,
         segment_actions,

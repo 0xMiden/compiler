@@ -40,6 +40,12 @@ pub(super) struct Cursor {
     pub active: Option<ActiveUnit>,
 }
 
+/// Ephemeral evidence about this execution's actual paired bounds, never a token capability.
+struct ExactSourceInterval {
+    start: u32,
+    width: u32,
+}
+
 /// One verification run borrowing immutable claims and owning independent proof state.
 /// Its liveness and scratch demand are recomputed from sealed source semantics.
 pub(super) struct Verifier<'a> {
@@ -1138,6 +1144,33 @@ impl<'a> Verifier<'a> {
         Ok(())
     }
 
+    fn target_effect(
+        &self,
+        instruction: &Instruction,
+        state: &State,
+        cursor: &Cursor,
+    ) -> Result<StackEffect, VerificationError> {
+        if let Some(active) = &cursor.active {
+            match (self.plan.selected.evidence(active.id)?.generated_event, instruction) {
+                (Some(GeneratedEvent::Dynamic(id)), Instruction::Emit) => {
+                    let effect = TargetEffects::generated_event(false);
+                    effect.validate()?;
+                    if state.prefix(usize::from(effect.consumed))?[0] != state.token(id)? {
+                        return Err(error("generic event ID differs from selected input binding"));
+                    }
+                    return Ok(effect);
+                }
+                (Some(GeneratedEvent::Immediate), Instruction::EmitImm(_)) => {
+                    let effect = TargetEffects::generated_event(true);
+                    effect.validate()?;
+                    return Ok(effect);
+                }
+                _ => {}
+            }
+        }
+        TargetEffects::instruction(instruction)
+    }
+
     /// Apply a registered target or call rule, checking source effect authority and pointer
     /// provenance before mutating raw state. The boolean reports whether normal execution remains.
     pub fn instruction(
@@ -1157,6 +1190,40 @@ impl<'a> Verifier<'a> {
             self.call(instruction, state, cursor)?;
             return Ok(true);
         }
+        let effect = self.target_effect(instruction, state, cursor)?;
+        if effect.may_trap {
+            let active = cursor.active.as_ref().ok_or_else(|| error("trap outside lowering"))?;
+            if !self.unit(active.id)?.effects.may_trap {
+                return Err(error("undeclared trapping instruction"));
+            }
+        }
+        if matches!(instruction, Instruction::CDrop | Instruction::CDropW) {
+            let predicate = state.prefix(effect.consumed.into())?[0];
+            if self.tokens.constant(predicate).is_some_and(|value| value > 1) {
+                return Ok(false);
+            }
+        }
+        if matches!(instruction, Instruction::AssertEqw | Instruction::AssertEqwWithError(_)) {
+            let inputs = state.prefix(8)?.to_vec();
+            let equal = (0..4).all(|lane| {
+                match (self.tokens.constant(inputs[lane]), self.tokens.constant(inputs[lane + 4])) {
+                    (Some(left), Some(right)) => left == right,
+                    _ => true,
+                }
+            });
+            state.replace(8, vec![], &effect.floor)?;
+            return Ok(equal);
+        }
+        if matches!(instruction, Instruction::AssertEq | Instruction::AssertEqWithError(_)) {
+            // Eq followed by Assert consumes both real lanes, including both floor updates.
+            // Unknown values may be equal; do not invent an identity from normal completion.
+            let right = state.pop()?;
+            let left = state.pop()?;
+            return Ok(match (self.tokens.constant(left), self.tokens.constant(right)) {
+                (Some(left), Some(right)) => left == right,
+                _ => true,
+            });
+        }
         if matches!(
             instruction,
             Instruction::Assert
@@ -1164,10 +1231,6 @@ impl<'a> Verifier<'a> {
                 | Instruction::AssertWithError(_)
                 | Instruction::AssertzWithError(_)
         ) {
-            let active = cursor.active.as_ref().ok_or_else(|| error("assert outside lowering"))?;
-            if !self.unit(active.id)?.effects.may_trap {
-                return Err(error("undeclared trapping instruction"));
-            }
             let token = state.pop()?;
             let desired = u64::from(matches!(
                 instruction,
@@ -1185,55 +1248,89 @@ impl<'a> Verifier<'a> {
         state: &mut State,
         cursor: &Cursor,
     ) -> Result<(), VerificationError> {
-        let effect = TargetEffects::instruction(instruction)?;
+        let effect = self.target_effect(instruction, state, cursor)?;
+        effect.validate()?;
         let inputs = state.prefix(effect.consumed.into())?.to_vec();
-        let memory = match effect.memory {
-            MemoryEffect::Read(region) | MemoryEffect::Write(region) => Some(self.memory_region(
-                region,
-                &inputs,
-                state,
-                cursor,
-                matches!(effect.memory, MemoryEffect::Write(_)),
-            )?),
-            MemoryEffect::None => None,
+        // Strict observations precede both paired proofs and every pre-read shortcut.
+        for observation in &effect.observed_inputs {
+            if let Observation::Value(index) = *observation
+                && self.tokens.origins(inputs[usize::from(index)]).compiler()
+            {
+                return Err(fail(
+                    DiagnosticCategory::IllegalStackAccess,
+                    "observed input exposes compiler storage provenance",
+                ));
+            }
+        }
+        let interval = if let Some(MemoryRead::SourceRange { start, end }) = effect.memory.read {
+            self.source_bounds(inputs[usize::from(start)], inputs[usize::from(end)])?
+        } else {
+            None
         };
-        let mut loaded = Vec::new();
-        if let MemoryEffect::Read(region) = effect.memory {
-            let width = match region {
-                MemoryRegion::Frame { width, .. }
-                | MemoryRegion::Indirect { width, .. }
-                | MemoryRegion::SourceUnknown { width } => width,
+        // Validate the entire footprint before constructing outputs or performing writes.
+        // Only output-demanded fixed lanes need identities; repeated references share a token.
+        let mut loaded = BTreeMap::new();
+        if let Some(read) = effect.memory.read {
+            let memory = match read {
+                MemoryRead::Fixed(region) => self
+                    .memory_region(region, &inputs, cursor, false)?
+                    .map(|offset| (offset, u32::from(region.width()))),
+                MemoryRead::Circuit {
+                    address,
+                    read_count,
+                    eval_count,
+                } => self.circuit_read(&inputs, address, read_count, eval_count, cursor)?,
+                MemoryRead::PrintLn { address, length } => {
+                    self.println_read(
+                        inputs[usize::from(address)],
+                        inputs[usize::from(length)],
+                        cursor,
+                    )?;
+                    None
+                }
+                MemoryRead::SourceRange { start, end } => {
+                    self.source_range_read(
+                        inputs[usize::from(start)],
+                        inputs[usize::from(end)],
+                        interval,
+                        cursor,
+                    )?;
+                    None
+                }
+                MemoryRead::DeferredRegisterData {
+                    tag,
+                    address,
+                    chunks,
+                } => {
+                    self.deferred_data_read(&inputs, tag, address, chunks, cursor)?;
+                    None
+                }
             };
-            for lane in 0..width {
-                loaded.push(if let Some(Some(offset)) = memory {
-                    memory::read(state, offset + u32::from(lane), self.frame)?
-                } else {
-                    self.tokens.fresh()
-                });
+            if let Some((offset, width)) = memory {
+                for cell in offset..offset + width {
+                    memory::read(state, cell, self.frame)?;
+                }
+            }
+            for lane in &effect.outputs {
+                if let LaneEffect::Memory { lane } = *lane {
+                    loaded.entry(lane).or_insert_with(|| {
+                        if let Some((offset, _)) = memory {
+                            // The full footprint has already been checked above.
+                            state.cells[&(offset + u32::from(lane))]
+                        } else {
+                            self.tokens.fresh()
+                        }
+                    });
+                }
             }
         }
-        if matches!(effect.memory, MemoryEffect::Write(_))
-            && memory == Some(None)
-            && effect
-                .memory_inputs
-                .iter()
-                .any(|input| self.tokens.origins(inputs[usize::from(*input)]).compiler())
-        {
-            return Err(fail(
-                DiagnosticCategory::InvalidSpillSlotRead,
-                "compiler address escapes into source memory",
-            ));
-        }
-        if matches!(effect.memory, MemoryEffect::Write(_))
-            && let Some(Some(offset)) = memory
-        {
-            for (lane, input) in effect.memory_inputs.iter().enumerate() {
-                state.cells.insert(offset + lane as u32, inputs[usize::from(*input)]);
-                state.written.insert(offset + lane as u32);
-            }
-        }
+        let origins =
+            inputs.iter().fold(super::tokens::Origins::default(), |mut origins, token| {
+                origins.union(self.tokens.origins(*token));
+                origins
+            });
         let address = if effect.outputs.iter().any(|lane| matches!(lane, LaneEffect::Computed(_)))
-            && inputs.iter().any(|token| self.tokens.origins(*token).has_frame())
+            && origins.has_frame()
         {
             let value = match instruction {
                 Instruction::Add => {
@@ -1256,6 +1353,7 @@ impl<'a> Verifier<'a> {
                         .and_then(|delta| offset.checked_sub(delta))
                 }),
                 Instruction::Eq | Instruction::Neq => None,
+                _ if !origins.compiler() => None,
                 _ => {
                     return Err(fail(
                         DiagnosticCategory::IllegalStackAccess,
@@ -1263,7 +1361,10 @@ impl<'a> Verifier<'a> {
                     ));
                 }
             };
-            if !matches!(instruction, Instruction::Eq | Instruction::Neq) && value.is_none() {
+            if origins.compiler()
+                && !matches!(instruction, Instruction::Eq | Instruction::Neq)
+                && value.is_none()
+            {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "compiler address arithmetic is not exact",
@@ -1278,19 +1379,73 @@ impl<'a> Verifier<'a> {
                 memory::check_range(*offset, 1, self.frame)?;
             }
         }
-        let outputs = effect
+        let outputs: Vec<_> = effect
             .outputs
             .iter()
             .map(|lane| match *lane {
                 LaneEffect::Input(index) => inputs[usize::from(index)],
                 LaneEffect::Literal(value) => self.tokens.literal(value),
-                LaneEffect::Memory { lane } => loaded[usize::from(lane)],
+                LaneEffect::Memory { lane } => loaded[&lane],
                 LaneEffect::FrameAddress(offset) => {
                     self.tokens.intern(Identity::FrameAddress(offset))
                 }
-                LaneEffect::Computed(_) => address.unwrap_or_else(|| self.tokens.fresh()),
+                LaneEffect::Computed(_) => address.unwrap_or_else(|| {
+                    let token = self.tokens.fresh();
+                    // Opaque source arithmetic retains may-origin, without inventing equality
+                    // or an exact frame offset. Compiler/mixed arithmetic is rejected above.
+                    if !matches!(instruction, Instruction::Eq | Instruction::Neq) {
+                        self.tokens.add_origins(token, origins);
+                    }
+                    token
+                }),
+                LaneEffect::Conditional {
+                    condition,
+                    if_true,
+                    if_false,
+                } => {
+                    let yes = inputs[usize::from(if_true)];
+                    let no = inputs[usize::from(if_false)];
+                    match self.tokens.constant(inputs[usize::from(condition)]) {
+                        Some(1) => yes,
+                        Some(0) => no,
+                        _ if yes == no => yes,
+                        _ => {
+                            // Value equality is unknown, but either candidate may carry a
+                            // compiler address. Keep its provenance even after abstraction.
+                            let token = self.tokens.fresh();
+                            self.tokens.add_origins(token, self.tokens.origins(yes));
+                            self.tokens.add_origins(token, self.tokens.origins(no));
+                            token
+                        }
+                    }
+                }
             })
             .collect();
+        if let Some(write) = &effect.memory.write {
+            let destination = self.memory_region(write.region, &inputs, cursor, true)?;
+            let values = write
+                .values
+                .iter()
+                .map(|value| match *value {
+                    WriteValue::Input(i) => inputs[usize::from(i)],
+                    WriteValue::Output(i) => outputs[usize::from(i)],
+                })
+                .collect::<Vec<_>>();
+            if destination.is_none()
+                && values.iter().any(|token| self.tokens.origins(*token).compiler())
+            {
+                return Err(fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "compiler address escapes into source memory",
+                ));
+            }
+            if let Some(offset) = destination {
+                for (lane, token) in values.into_iter().enumerate() {
+                    state.cells.insert(offset + lane as u32, token);
+                    state.written.insert(offset + lane as u32);
+                }
+            }
+        }
         state.replace(effect.consumed.into(), outputs, &effect.floor)
     }
 
@@ -1298,12 +1453,11 @@ impl<'a> Verifier<'a> {
         &self,
         region: MemoryRegion,
         inputs: &[Token],
-        _state: &State,
         cursor: &Cursor,
         write: bool,
     ) -> Result<Option<u32>, VerificationError> {
         let (offset, width) = match region {
-            MemoryRegion::Frame { offset, width } => (Some(offset), width),
+            MemoryRegion::Frame { offset, width } => (Some(offset), u32::from(width)),
             MemoryRegion::Indirect { address, width } => {
                 let token = inputs[usize::from(address)];
                 let offset = self.tokens.frame_address(token);
@@ -1313,20 +1467,204 @@ impl<'a> Verifier<'a> {
                         "compiler memory address is not precisely resolved",
                     ));
                 }
-                (offset, width)
+                (offset, u32::from(width))
             }
-            MemoryRegion::SourceUnknown { width } => (None, width),
+            MemoryRegion::SourceUnknown { width } => (None, u32::from(width)),
         };
+        self.memory_access(offset, Some(width), width == 4, cursor, write)
+    }
+
+    fn source_bounds(
+        &self,
+        start: Token,
+        end: Token,
+    ) -> Result<Option<ExactSourceInterval>, VerificationError> {
+        if !self.tokens.origins(start).compiler() && !self.tokens.origins(end).compiler() {
+            return Ok(None);
+        }
+        match (self.tokens.frame_address(start), self.tokens.frame_address(end)) {
+            (Some(start), Some(end)) if start <= end && end <= self.frame.source().extent => {
+                Ok(Some(ExactSourceInterval {
+                    start,
+                    width: end
+                        .checked_sub(start)
+                        .ok_or_else(|| error("source interval overflow"))?,
+                }))
+            }
+            _ => Err(fail(
+                DiagnosticCategory::IllegalStackAccess,
+                "observed bounds lack an exact current-frame source interval proof",
+            )),
+        }
+    }
+
+    fn source_range_read(
+        &self,
+        start: Token,
+        end: Token,
+        interval: Option<ExactSourceInterval>,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let start_literal = self.tokens.constant(start);
+        let end_literal = self.tokens.constant(end);
+        if start_literal.is_some_and(|n| n > u64::from(u32::MAX))
+            || end_literal.is_some_and(|n| n > u64::from(u32::MAX))
+            || matches!((start_literal, end_literal), (Some(s), Some(e)) if s > e)
+            || start == end
+        {
+            return Ok(());
+        }
+        let (offset, width) = if let Some(interval) = interval {
+            (Some(interval.start), Some(interval.width))
+        } else {
+            let offset = self.tokens.frame_address(start);
+            let width = match (offset, self.tokens.frame_address(end)) {
+                (Some(start), Some(end)) => end.checked_sub(start),
+                _ => match (start_literal, end_literal) {
+                    (Some(start), Some(end)) => {
+                        end.checked_sub(start).and_then(|n| n.try_into().ok())
+                    }
+                    _ => None,
+                },
+            };
+            (offset, width)
+        };
+        if width == Some(0) {
+            return Ok(());
+        }
+        self.source_only_read(offset, width, cursor)
+    }
+
+    /// The closed framework guards are universal pre-read failures, not a registry interpreter.
+    fn deferred_data_read(
+        &self,
+        inputs: &[Token],
+        tag: [u8; 4],
+        address: u8,
+        chunks: u8,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let n = self.tokens.constant(inputs[usize::from(chunks)]);
+        let tag = tag.map(|i| self.tokens.constant(inputs[usize::from(i)]));
+        let pointer = inputs[usize::from(address)];
+        let ptr = self.tokens.constant(pointer);
+        if n.is_some_and(|n| n == 0 || n > 131071)
+            || tag[0] == Some(0)
+            || matches!(tag[0], Some(1 | 2))
+                && tag[1..].iter().any(|arg| arg.is_some_and(|n| n != 0))
+            || tag[0] == Some(1) && n.is_some_and(|n| n != 1)
+            || ptr.is_some_and(|p| p > u64::from(u32::MAX) || !p.is_multiple_of(4))
+            || matches!((ptr, n), (Some(p), Some(n))
+                if p.checked_add(8 * n).is_none_or(|end| end > u64::from(u32::MAX)))
+        {
+            return Ok(());
+        }
+        // The preceding count guard bounds the largest possible width to 1048568.
+        let width = n.map(|n| (8 * n) as u32);
+        self.source_only_read(self.tokens.frame_address(pointer), width, cursor)
+    }
+
+    /// Packed bytes have no frame-relative identity in the source-memory ABI.
+    fn println_read(
+        &self,
+        pointer: Token,
+        length: Token,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        let pointer = self.tokens.constant(pointer);
+        let length = self.tokens.constant(length);
+        if pointer.is_some_and(|p| p > u64::from(u32::MAX))
+            || length.is_some_and(|n| n == 0 || n > 524288)
+        {
+            return Ok(());
+        }
+        // Absolute pointer/4 is not a frame offset. Native FrameAddress facts likewise
+        // cannot be divided by four: floor((base+offset)/4) is not base+offset/4.
+        // The guards bound this arithmetic to at most 131073 cells; unknown residues
+        // leave the exact width unresolved, except when every possible residue gives the same width.
+        let width = match (pointer, length) {
+            (Some(p), Some(n)) => Some(((p % 4 + n).div_ceil(4)) as u32),
+            (_, Some(n)) if n % 4 == 1 => Some((n.div_ceil(4)) as u32),
+            _ => None,
+        };
+        self.source_only_read(None, width, cursor)
+    }
+
+    /// Footprint-only source reads never initialize, load tokens, or enter compiler storage.
+    fn source_only_read(
+        &self,
+        offset: Option<u32>,
+        width: Option<u32>,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        self.memory_access(offset, width, false, cursor, false)?;
+        Ok(())
+    }
+
+    /// Circuit guards run before memory in the VM. Known invalid counts have no footprint.
+    fn circuit_read(
+        &self,
+        inputs: &[Token],
+        address: u8,
+        read_count: u8,
+        eval_count: u8,
+        cursor: &Cursor,
+    ) -> Result<Option<(u32, u32)>, VerificationError> {
+        let width = match (
+            self.tokens.constant(inputs[usize::from(read_count)]),
+            self.tokens.constant(inputs[usize::from(eval_count)]),
+        ) {
+            (Some(read), Some(eval)) => {
+                if read.saturating_add(eval) > 32768
+                    || read == 0
+                    || !read.is_multiple_of(2)
+                    || eval == 0
+                    || !eval.is_multiple_of(4)
+                {
+                    return Ok(None);
+                }
+                // Guarded canonical counts bound the successful footprint to 65532 cells.
+                Some(
+                    read.checked_mul(2)
+                        .and_then(|n| n.checked_add(eval))
+                        .and_then(|n| u32::try_from(n).ok())
+                        .ok_or_else(|| error("circuit read extent overflow"))?,
+                )
+            }
+            _ => None,
+        };
+        let token = inputs[usize::from(address)];
+        let offset = self.tokens.frame_address(token);
+        if offset.is_none() && self.tokens.origins(token).compiler() {
+            return Err(fail(
+                DiagnosticCategory::InvalidSpillSlotRead,
+                "compiler memory address is not precisely resolved",
+            ));
+        }
+        self.memory_access(offset, width, true, cursor, false)
+            .map(|offset| offset.zip(width))
+    }
+
+    fn memory_access(
+        &self,
+        offset: Option<u32>,
+        width: Option<u32>,
+        word_aligned: bool,
+        cursor: &Cursor,
+        write: bool,
+    ) -> Result<Option<u32>, VerificationError> {
         if let Some(offset) = offset {
-            if width == 4 && offset % 4 != 0 {
+            if word_aligned && offset % 4 != 0 {
                 return Err(fail(
                     DiagnosticCategory::IllegalStackAccess,
                     "unaligned word memory access",
                 ));
             }
-            memory::check_range(offset, width, self.frame)?;
+            // An unresolved SourceLocal extent retains its exact base and origin. Checking
+            // that base still prevents a known crossing from being erased by unknown counts.
+            memory::check_range(offset, width.unwrap_or(1), self.frame)?;
             if offset < self.frame.source().extent {
-                if offset + u32::from(width) > self.frame.source().extent {
+                if width.is_some_and(|width| offset + width > self.frame.source().extent) {
                     return Err(fail(
                         DiagnosticCategory::InvalidSpillSlotRead,
                         "source access crosses into compiler storage",
@@ -1341,9 +1679,14 @@ impl<'a> Verifier<'a> {
                 }
                 return Ok(None);
             }
-
+            let width = width.ok_or_else(|| {
+                fail(
+                    DiagnosticCategory::InvalidSpillSlotRead,
+                    "compiler memory read extent is not precisely resolved",
+                )
+            })?;
             if let Some(active) = &cursor.active {
-                if (offset..offset + u32::from(width))
+                if (offset..offset + width)
                     .any(|offset| active.readonly.contains_key(&offset) && write)
                 {
                     return Err(fail(
@@ -1352,7 +1695,7 @@ impl<'a> Verifier<'a> {
                     ));
                 }
                 let unit = self.unit(active.id)?;
-                let allowed = (offset..offset + u32::from(width)).all(|cell| {
+                let allowed = (offset..offset + width).all(|cell| {
                     active.readonly.contains_key(&cell) && !write
                         || unit.scratch.iter().any(|requirement| {
                             let allocation = &self.frame.scratch()[&requirement.id];
@@ -1365,7 +1708,7 @@ impl<'a> Verifier<'a> {
                         "undeclared compiler-storage access inside lowering",
                     ));
                 }
-            } else if !(offset..offset + u32::from(width))
+            } else if !(offset..offset + width)
                 .all(|cell| self.frame.spills().values().any(|offset| *offset == cell))
             {
                 return Err(fail(

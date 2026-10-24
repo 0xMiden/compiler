@@ -22,8 +22,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n >= $min,
             "invalid integer size: expected size in bits greater than or equal to {}, got {}",
-            $n,
-            $min
+            $min,
+            $n
         );
     };
 
@@ -32,8 +32,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n >= $min,
             "invalid integer size: expected size in bits greater than or equal to {}, got {}",
-            $n,
-            $min
+            $min,
+            $n
         );
     };
 
@@ -42,8 +42,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n <= $max,
             "invalid integer size: expected size in bits less than or equal to {}, got {}",
-            $n,
-            $max
+            $max,
+            $n
         );
     };
 
@@ -52,8 +52,8 @@ macro_rules! assert_valid_integer_size {
         assert!(
             $n <= $max,
             "invalid integer size: expected size in bits less than or equal to {}, got {}",
-            $n,
-            $max
+            $max,
+            $n
         );
     };
 }
@@ -95,70 +95,15 @@ pub mod smallint;
 pub mod unary;
 
 use alloc::collections::BTreeSet;
-use core::ops::{Deref, DerefMut};
 
 use miden_assembly::ast::InvokeKind;
-use midenc_hir::{Context, Immediate, Operation, Overflow, SourceSpan, Type, ValueRef};
+use midenc_hir::{Context, Immediate, Overflow, SourceSpan, Type};
 
 use super::{Operand, OperandStack};
 use crate::{
     Event,
     masm::{self as masm, Op},
 };
-
-/// This structure is used to emit the Miden Assembly ops corresponding to an IR instruction.
-///
-/// When dropped, it ensures that the operand stack is updated to reflect the results of the
-/// instruction it was created on behalf of.
-pub struct InstOpEmitter<'a> {
-    inst: &'a Operation,
-    emitter: OpEmitter<'a>,
-}
-impl<'a> InstOpEmitter<'a> {
-    #[inline(always)]
-    pub fn new(
-        inst: &'a Operation,
-        invoked: &'a mut BTreeSet<masm::Invoke>,
-        block: &'a mut Vec<masm::Op>,
-        stack: &'a mut OperandStack,
-    ) -> Self {
-        Self {
-            inst,
-            emitter: OpEmitter::new(invoked, block, stack),
-        }
-    }
-}
-impl<'a> Deref for InstOpEmitter<'a> {
-    type Target = OpEmitter<'a>;
-
-    #[inline(always)]
-    fn deref(&self) -> &Self::Target {
-        &self.emitter
-    }
-}
-impl DerefMut for InstOpEmitter<'_> {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.emitter
-    }
-}
-impl Drop for InstOpEmitter<'_> {
-    fn drop(&mut self) {
-        // A lowering that panicked leaves the stack in an arbitrary state; binding results to it
-        // would only turn the unwinding into an abort.
-        if std::thread::panicking() {
-            return;
-        }
-        // Bind the results to the operands the lowering left on top of the stack. The operands
-        // are retyped, not just renamed: a lowering may push a result's bit pattern as a value of
-        // another type of the same size (e.g. a pointer as a `u32` immediate), and the element
-        // types recorded on the stack must be those of the result. An operand of another size, or
-        // a missing one, is a bug in the lowering (see `BlockEmitter::inst_emitter`).
-        for (i, result) in self.inst.results().iter().copied().enumerate() {
-            self.emitter.stack.retype(i, result as ValueRef);
-        }
-    }
-}
 
 /// This structure is used to emit Miden Assembly ops into a given function and block.
 ///
@@ -416,6 +361,7 @@ impl<'a> OpEmitter<'a> {
     /// Duplicate an item on the stack to the top
     #[inline]
     #[track_caller]
+    #[cfg(test)]
     pub fn dup(&mut self, i: u8, span: SourceSpan) {
         assert_valid_stack_index!(i);
         let index = i as usize;
@@ -433,6 +379,7 @@ impl<'a> OpEmitter<'a> {
     /// Move an item on the stack to the top
     #[inline]
     #[track_caller]
+    #[cfg(test)]
     pub fn movup(&mut self, i: u8, span: SourceSpan) {
         assert_valid_stack_index!(i);
         let index = i as usize;
@@ -450,6 +397,7 @@ impl<'a> OpEmitter<'a> {
     /// Move an item from the top of the stack to the `n`th position
     #[inline]
     #[track_caller]
+    #[cfg(test)]
     pub fn movdn(&mut self, i: u8, span: SourceSpan) {
         assert_valid_stack_index!(i);
         let index = i as usize;
@@ -517,6 +465,7 @@ impl<'a> OpEmitter<'a> {
     /// Drop the top operand on the stack
     #[inline]
     #[track_caller]
+    #[cfg(test)]
     pub fn drop(&mut self, span: SourceSpan) {
         let elem = self.stack.pop().expect("operand stack is empty");
         match elem.size() {
@@ -557,6 +506,7 @@ impl<'a> OpEmitter<'a> {
     }
 
     /// Remove all but the top `n` values on the operand stack
+    #[cfg(test)]
     pub fn truncate_stack(&mut self, n: usize, span: SourceSpan) {
         let stack_size = self.stack.len();
         let num_to_drop = stack_size - n;
@@ -600,6 +550,7 @@ impl<'a> OpEmitter<'a> {
     }
 
     /// Remove the `n`th value from the top of the operand stack
+    #[cfg(test)]
     pub fn drop_operand_at_position(&mut self, n: usize, span: SourceSpan) {
         match n {
             0 => {
@@ -623,6 +574,7 @@ impl<'a> OpEmitter<'a> {
     /// stack, this function may leave it on top of the stack instead, since the order of the
     /// operands is not strict. This can result in fewer stack manipulation instructions in some
     /// scenarios.
+    #[cfg(test)]
     pub fn copy_operand_to_position(
         &mut self,
         n: usize,
@@ -662,6 +614,7 @@ impl<'a> OpEmitter<'a> {
     /// on the stack, this function may leave the operand in it's current position if it is
     /// already one of the first two items on the stack, since the order of the operands is not
     /// strict. This can result in fewer stack manipulation instructions in some scenarios.
+    #[cfg(test)]
     pub fn move_operand_to_position(
         &mut self,
         n: usize,
@@ -3508,6 +3461,86 @@ mod tests {
                 push.255
                 u32and
             "#]],
+        );
+    }
+}
+
+#[cfg(test)]
+mod integer_size_diagnostics {
+    fn assert_panic_message(f: impl FnOnce() + std::panic::UnwindSafe, expected: &str) {
+        let panic = std::panic::catch_unwind(f).expect_err("invalid width must panic");
+        let actual = panic
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| panic.downcast_ref::<&str>().copied());
+        assert_eq!(actual, Some(expected));
+    }
+
+    #[test]
+    fn literal_minimum() {
+        assert_panic_message(
+            || {
+                let n = 4u32;
+                assert_valid_integer_size!(n, 8);
+            },
+            "invalid integer size: expected size in bits greater than or equal to 8, got 4",
+        );
+    }
+
+    #[test]
+    fn identifier_minimum() {
+        assert_panic_message(
+            || {
+                let n = 4u32;
+                let min = 8;
+                assert_valid_integer_size!(n, min);
+            },
+            "invalid integer size: expected size in bits greater than or equal to 8, got 4",
+        );
+    }
+
+    #[test]
+    fn literal_maximum() {
+        assert_panic_message(
+            || {
+                let n = 64u32;
+                assert_valid_integer_size!(n, 8, 32);
+            },
+            "invalid integer size: expected size in bits less than or equal to 32, got 64",
+        );
+    }
+
+    #[test]
+    fn identifier_maximum() {
+        assert_panic_message(
+            || {
+                let n = 64u32;
+                let min = 8;
+                assert_valid_integer_size!(n, min, 32);
+            },
+            "invalid integer size: expected size in bits less than or equal to 32, got 64",
+        );
+    }
+
+    #[test]
+    fn zero() {
+        assert_panic_message(
+            || {
+                let n = 0u32;
+                assert_valid_integer_size!(n);
+            },
+            "invalid integer size: size in bits must be non-zero",
+        );
+    }
+
+    #[test]
+    fn non_power_of_two() {
+        assert_panic_message(
+            || {
+                let n = 3u32;
+                assert_valid_integer_size!(n);
+            },
+            "invalid integer size: size in bits must be a power of two, got 3",
         );
     }
 }

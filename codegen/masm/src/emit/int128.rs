@@ -244,38 +244,103 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Not, span);
     }
 
-    /// Pop two i128 values off the stack, `b` and `a`, and place the result of  `a + b` on the
-    /// stack.
+    /// Add two unsigned 128-bit values represented by four U32 limbs each.
     ///
-    /// The core library takes its operands in this order, `b` on top: `[b0, b1, b2, b3, a0, a1,
-    /// a2, a3]`.
+    /// Checked mode traps on unsigned overflow; overflowing mode leaves the flag above the four
+    /// result limbs. Wrapping mode keeps the low 128 bits; unchecked mode requires the source
+    /// result to fit. The eight input limbs are consumed and the deeper suffix is preserved.
+    /// Typed-stack bookkeeping belongs to the calling operation emitter.
+    pub fn add_u128(&mut self, overflow: Overflow, span: SourceSpan) {
+        self.arithmetic_u128("add", overflow, span);
+    }
+
+    /// Subtract two unsigned 128-bit values represented by four U32 limbs each.
     ///
-    /// Wrapping addition does not depend on signedness, so this serves `u128` values too. For now
-    /// only wrapping addition is supported.
-    #[inline]
+    /// Checked mode traps on unsigned overflow; overflowing mode leaves the flag above the four
+    /// result limbs. Wrapping mode keeps the low 128 bits; unchecked mode requires the source
+    /// result to fit. The eight input limbs are consumed and the deeper suffix is preserved.
+    /// Typed-stack bookkeeping belongs to the calling operation emitter.
+    pub fn sub_u128(&mut self, overflow: Overflow, span: SourceSpan) {
+        self.arithmetic_u128("sub", overflow, span);
+    }
+
+    /// Multiply two unsigned 128-bit values represented by four U32 limbs each.
+    ///
+    /// Checked mode traps on unsigned overflow; overflowing mode leaves the flag above the four
+    /// result limbs. Wrapping mode keeps the low 128 bits; unchecked mode requires the source
+    /// result to fit. The eight input limbs are consumed and the deeper suffix is preserved.
+    /// Typed-stack bookkeeping belongs to the calling operation emitter.
+    pub fn mul_u128(&mut self, overflow: Overflow, span: SourceSpan) {
+        self.arithmetic_u128("mul", overflow, span);
+    }
+
+    /// Add two signed 128-bit values represented by four U32 limbs each.
+    ///
+    /// Checked mode traps on signed overflow; overflowing mode leaves the flag above the four
+    /// result limbs. Wrapping mode keeps the low 128 bits; unchecked mode requires the source
+    /// result to fit. The eight input limbs are consumed and the deeper suffix is preserved.
+    /// Typed-stack bookkeeping belongs to the calling operation emitter.
     pub fn add_i128(&mut self, overflow: Overflow, span: SourceSpan) {
-        assert!(
-            matches!(overflow, Overflow::Wrapping),
-            "Only 128bit *wrapping* adds implemented as yet."
-        );
-        self.raw_exec("::miden::core::math::u128::wrapping_add", span);
+        self.arithmetic_i128("add", overflow, span);
     }
 
-    /// Pops two i128 values off the stack, `b` and `a`, and performs `a - b`.
+    /// Subtract two signed 128-bit values represented by four U32 limbs each.
     ///
-    /// Wrapping subtraction does not depend on signedness, so this serves `u128` values too. For
-    /// now only wrapping subtraction is supported.
+    /// Checked mode traps on signed overflow; overflowing mode leaves the flag above the four
+    /// result limbs. Wrapping mode keeps the low 128 bits; unchecked mode requires the source
+    /// result to fit. The eight input limbs are consumed and the deeper suffix is preserved.
+    /// Typed-stack bookkeeping belongs to the calling operation emitter.
     pub fn sub_i128(&mut self, overflow: Overflow, span: SourceSpan) {
-        assert!(
-            matches!(overflow, Overflow::Wrapping),
-            "Only 128bit *wrapping* subs implemented as yet."
-        );
-        self.raw_exec("::miden::core::math::u128::wrapping_sub", span);
+        self.arithmetic_i128("sub", overflow, span);
     }
 
-    /// Pops two i128 values off the stack, `b` and `a`, and performs `a * b`.
-    #[inline]
-    pub fn mul_i128(&mut self, span: SourceSpan) {
-        self.raw_exec("::miden::core::math::u128::wrapping_mul", span);
+    /// Multiply two signed 128-bit values represented by four U32 limbs each.
+    ///
+    /// Checked mode traps on signed overflow; overflowing mode leaves the flag above the four
+    /// result limbs. Wrapping mode keeps the low 128 bits; unchecked mode requires the source
+    /// result to fit. The eight input limbs are consumed and the deeper suffix is preserved.
+    /// Typed-stack bookkeeping belongs to the calling operation emitter.
+    pub fn mul_i128(&mut self, overflow: Overflow, span: SourceSpan) {
+        self.arithmetic_i128("mul", overflow, span);
+    }
+
+    fn arithmetic_u128(&mut self, op: &str, overflow: Overflow, span: SourceSpan) {
+        if overflow == Overflow::Checked {
+            // Core u128 arithmetic assumes u32 limbs. Validate exactly the two operand words.
+            self.emit_all(
+                [
+                    masm::Instruction::U32AssertW,
+                    masm::Instruction::SwapW1,
+                    masm::Instruction::U32AssertW,
+                    masm::Instruction::SwapW1,
+                ],
+                span,
+            );
+        }
+        let mode = match overflow {
+            Overflow::Unchecked | Overflow::Wrapping => "wrapping",
+            Overflow::Checked | Overflow::Overflowing => "overflowing",
+        };
+        self.raw_exec(&format!("::miden::core::math::u128::{mode}_{op}"), span);
+        if overflow == Overflow::Checked {
+            self.emit(Self::assertz_with_message_inst(format!("u128 {op} overflow"), span), span);
+        }
+    }
+
+    fn arithmetic_i128(&mut self, op: &str, overflow: Overflow, span: SourceSpan) {
+        match overflow {
+            // The low result bits are independent of signedness. Unchecked retains its
+            // existing source precondition that the mathematical result fits.
+            Overflow::Unchecked | Overflow::Wrapping => self.arithmetic_u128(op, overflow, span),
+            Overflow::Checked | Overflow::Overflowing => {
+                self.raw_exec(&format!("::intrinsics::i128::overflowing_{op}"), span);
+                if overflow == Overflow::Checked {
+                    self.emit(
+                        Self::assertz_with_message_inst(format!("i128 {op} overflow"), span),
+                        span,
+                    );
+                }
+            }
+        }
     }
 }

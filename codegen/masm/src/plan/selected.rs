@@ -103,10 +103,6 @@ pub(crate) struct LoweringEffects {
     pub may_trap: bool,
     /// Whether the unit has a normal continuation on which its outputs must be published.
     pub normal_return: bool,
-    /// Optional invocation summary, checked against every registered call site's ABI effect.
-    /// Target, arguments, and results remain source obligations in `UnitEvidence::calls`;
-    /// this summary grants no authority for them. A replayed invocation requires `Some`.
-    pub call: Option<CallEffect>,
 }
 impl Default for LoweringEffects {
     fn default() -> Self {
@@ -114,7 +110,6 @@ impl Default for LoweringEffects {
             memory: SourceMemoryEffects::default(),
             may_trap: false,
             normal_return: true,
-            call: None,
         }
     }
 }
@@ -156,8 +151,6 @@ pub(crate) enum EdgeKind {
     Forward,
     True,
     False,
-    Case(u32),
-    Default,
     Backedge,
     Return,
     Trap,
@@ -205,12 +198,15 @@ pub(crate) enum ControlTree {
         on_false: EdgeId,
         else_body: alloc::boxed::Box<ControlTree>,
     },
+    /// Run `before` to compute the predicate at the header, then repeat through the
+    /// listed backedges while the true edge selects `body`.
     Loop {
         id: ControlId,
         condition: ControlId,
         on_true: EdgeId,
         on_false: EdgeId,
         header: SegmentId,
+        before: alloc::boxed::Box<ControlTree>,
         predicate: Atom,
         body: alloc::boxed::Box<ControlTree>,
         backedges: Vec<EdgeId>,

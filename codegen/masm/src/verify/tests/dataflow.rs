@@ -59,12 +59,16 @@ mod reference_live {
                         }
                     }
                     ControlTree::Loop {
-                        header,
+                        on_true,
                         predicate,
+                        before,
                         body,
                         ..
                     } => {
-                        out.entry(*header).or_default().insert(*predicate);
+                        let source =
+                            program.edges.iter().find(|edge| edge.id == *on_true).unwrap().source;
+                        out.entry(source).or_default().insert(*predicate);
+                        conditions(before, program, out);
                         conditions(body, program, out);
                     }
                     _ => {}
@@ -522,4 +526,53 @@ fn backward_queue_visits_chains_linearly_and_deduplicates_parallel_edges() {
     program.edges.push(edge(999, 7, Some(10)));
     program.edges.push(edge(1000, 10, Some(10)));
     assert_eq!(propagation_visits(&program), vec![1, 0, 1]);
+}
+
+// Loop conditions are evaluated after the `before` tree. Its nested
+// branch predicates and the loop predicate can therefore belong to distinct segments.
+#[test]
+fn loop_before_predicates_are_demanded_at_their_actual_sources() {
+    let mut program = Fixture::new(2, 0).instantiate(&[]).unwrap().program;
+    let nested = Atom::new(ValueId(0), 0);
+    let predicate = Atom::new(ValueId(1), 0);
+    program.segments = vec![
+        segment(80, blank_unit(0)),
+        segment(4, blank_unit(1)),
+        segment(99, blank_unit(2)),
+        segment(700, blank_unit(3)),
+    ];
+    // Kill the loop predicate at the header so the backedge cannot mask a misplaced use.
+    program.segments[0].units[0].outputs = vec![predicate];
+    program.edges = vec![
+        edge(500, 80, Some(4)),
+        edge(501, 80, Some(4)),
+        edge(900, 4, Some(99)),
+        edge(901, 4, Some(700)),
+        edge(77, 99, Some(80)),
+        edge(88, 700, None),
+    ];
+    program.structure = ControlTree::Loop {
+        id: ControlId(0),
+        condition: ControlId(1),
+        header: SegmentId(80),
+        on_true: EdgeId(900),
+        on_false: EdgeId(901),
+        predicate,
+        before: alloc::boxed::Box::new(ControlTree::If {
+            id: ControlId(2),
+            predicate: nested,
+            on_true: EdgeId(500),
+            on_false: EdgeId(501),
+            then_body: alloc::boxed::Box::new(ControlTree::Sequence(vec![])),
+            else_body: alloc::boxed::Box::new(ControlTree::Sequence(vec![])),
+        }),
+        body: alloc::boxed::Box::new(ControlTree::Sequence(vec![])),
+        backedges: vec![EdgeId(77)],
+    };
+    assert_reference(&program);
+    let live = Liveness::derive(&program);
+    assert!(live.exit[&SegmentId(80)].contains(&nested));
+    assert!(live.exit[&SegmentId(4)].contains(&predicate));
+    // The loop edge originates in segment 4, after the nested branch at header 80.
+    // A header-only predicate insertion leaves segment 4's exit missing this use.
 }

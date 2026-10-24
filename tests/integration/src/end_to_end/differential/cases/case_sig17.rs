@@ -1,6 +1,6 @@
-// A helper whose argument list is seventeen felts — one u32 and eight u64s
-// passed BY VALUE — called from a loop. Ordinary Rust (a round function over
-// an eight-word state), but one felt over the 16-felt call-signature limit.
+// A same-context helper accepts seventeen argument lanes even though only
+// sixteen are directly addressable. The loop checks argument order and keeps
+// wide values live across calls by comparing the full result with native Rust.
 #[inline(never)]
 fn round(i: u32, s0: u64, s1: u64, s2: u64, s3: u64, s4: u64, s5: u64, s6: u64, s7: u64) -> u64 {
     let k = i as u64;

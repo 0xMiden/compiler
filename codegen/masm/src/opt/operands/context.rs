@@ -1,11 +1,15 @@
 use alloc::collections::BTreeMap;
 use core::num::NonZeroU8;
 
-use midenc_hir::{self as hir, FxHashMap, hashbrown};
+#[cfg(test)]
+use midenc_hir as hir;
+use midenc_hir::{FxHashMap, hashbrown};
 use smallvec::SmallVec;
 
 use super::{SolverError, SolverOptions, Stack, ValueOrAlias};
-use crate::{Constraint, OperandStack};
+use crate::Constraint;
+#[cfg(test)]
+use crate::OperandStack;
 
 /// The stack and copy obligations for one operand-shuffle search.
 ///
@@ -20,6 +24,7 @@ pub struct SolverContext {
     copies: CopyInfo,
 }
 impl SolverContext {
+    #[cfg(test)]
     pub fn new(
         expected: &[hir::ValueRef],
         constraints: &[Constraint],
@@ -241,13 +246,6 @@ impl CopyInfo {
                 value.copy(unsafe { NonZeroU8::new_unchecked(*next_id) })
             }
         }
-    }
-
-    /// Returns true if `value` has at least one copy
-    pub fn has_copies(&self, value: &ValueOrAlias) -> bool {
-        // Make sure we're checking for copies of the unaliased value
-        let value = value.unaliased();
-        self.copies.get(&value).map(|count| *count > 0).unwrap_or(false)
     }
 
     /// Returns true if any of the values seen so far have copies

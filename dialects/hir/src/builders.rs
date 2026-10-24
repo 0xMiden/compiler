@@ -2,7 +2,7 @@ use midenc_hir::{
     AsCallableSymbolRef, Builder, CompactString, Felt, Immediate, Op, OpBuilder, PointerType,
     Report, SmallVec, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
     dialects::builtin::{
-        attributes::{Array, LocalVariable, Signature},
+        attributes::{LocalVariable, Signature},
         *,
     },
 };
@@ -1007,22 +1007,24 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Invoke a foreign account procedure via the transaction kernel FPI executor.
     ///
-    /// `prefix_locals` must reference the six felt locals holding the executor prefix in protocol
-    /// order (account id suffix, account id prefix, procedure root felts), stored to before this
-    /// op; `inputs` are the flattened procedure input felts (at most
-    /// [`crate::ops::ExecFpi::MAX_INPUT_FELTS`]).
+    /// `prefix` contains account id suffix, account id prefix, and four procedure-root felts
+    /// in executor order. `inputs` contains at most sixteen procedure input felts. All operands
+    /// must have type `felt`; the backend assigns their storage.
     fn exec_fpi<A>(
         &mut self,
-        prefix_locals: [LocalVariable; crate::ops::ExecFpi::PREFIX_FELTS],
+        prefix: [ValueRef; crate::ops::ExecFpi::PREFIX_FELTS],
         inputs: A,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ExecFpi>, Report>
     where
         A: IntoIterator<Item = ValueRef>,
     {
-        let prefix_locals = Array::from(prefix_locals);
-        let op_builder = self.builder_mut().create::<crate::ops::ExecFpi, (_, A)>(span);
-        op_builder(prefix_locals, inputs)
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::ExecFpi, ([ValueRef; crate::ops::ExecFpi::PREFIX_FELTS], A)>(
+                span,
+            );
+        op_builder(prefix, inputs)
     }
 
     fn call<C, A>(

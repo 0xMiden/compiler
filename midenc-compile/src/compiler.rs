@@ -538,7 +538,7 @@ pub struct UnstableOptions {
     ///
     /// * `symbol:*`              - matches any symbol
     ///
-    /// * `symbol:<pattern>`      - matches any symbol whose name contains <pattern>
+    /// * `symbol:<pattern>`      - matches any symbol whose name contains `<pattern>`
     ///
     /// * `op:<dialect>.<opcode>` - matches any instance of the given operation name
     #[cfg_attr(

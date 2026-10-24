@@ -22,6 +22,7 @@ const SOURCES: &[(&str, &str)] = &[
     ("::intrinsics::advice", include_str!("../intrinsics/advice.masm")),
     ("::intrinsics::i32", include_str!("../intrinsics/i32.masm")),
     ("::intrinsics::i64", include_str!("../intrinsics/i64.masm")),
+    ("::intrinsics::i128", include_str!("../intrinsics/i128.masm")),
     ("::intrinsics::mem", include_str!("../intrinsics/mem.masm")),
 ];
 
@@ -135,7 +136,13 @@ mod tests {
         assert_eq!(package.version.to_string(), "0.9.0");
         let exports: Vec<alloc::string::String> =
             package.manifest.exports().map(|e| e.path().to_string()).collect();
-        for expected in ["::intrinsics::mem::heap_init", "::intrinsics::i64::checked_div"] {
+        for expected in [
+            "::intrinsics::mem::heap_init",
+            "::intrinsics::i64::checked_div",
+            "::intrinsics::i128::overflowing_add",
+            "::intrinsics::i128::overflowing_sub",
+            "::intrinsics::i128::overflowing_mul",
+        ] {
             assert!(exports.iter().any(|e| e == expected), "missing {expected}");
         }
         let core_dep = package

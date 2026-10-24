@@ -91,7 +91,8 @@ impl RewritePattern for SimplifyBrToReturn {
             successor.get_single_predecessor().is_some_and(|pred| pred == parent);
 
         // If we're the sole predecessor, we can merge the successor entirely
-        if is_sole_predecessor {
+        // Preserve the entry interface supplied by initial region activation.
+        if is_sole_predecessor && !successor.is_entry_block() {
             drop(successor);
 
             // Merge the successor into the current block and erase the branch.

@@ -75,6 +75,15 @@ pub proc entry(base: felt, exponent: u32) -> felt
 end
 "#;
     assert_roundtrip_outputs(source, &[3, 5], 1);
+    for exponent in [0, u32::MAX as u64] {
+        assert_roundtrip_outputs(source, &[exponent, 3], 1);
+    }
+    let context = e2e_context();
+    let original = assemble_original_program(source, &context);
+    let roundtripped = assemble_roundtripped_program(source, context);
+    let inputs = [Felt::new_unchecked(1 << 32), Felt::new_unchecked(3)];
+    assert!(try_execute_program(&original, &inputs, &[], 1).is_err());
+    assert!(try_execute_program(&roundtripped, &inputs, &[], 1).is_err());
 
     let emitted = render_roundtripped_masm(source, e2e_context());
     assert!(emitted.contains("exp.u32"), "{emitted}");
@@ -328,6 +337,13 @@ end
     }
 }
 
+#[test]
+fn e2e_roundtrip_u16_return_as_felt() {
+    for value in [0, u16::MAX as u64] {
+        assert_roundtrip_outputs("pub proc entry(a: u16) -> felt\n    nop\nend", &[value], 1);
+    }
+}
+
 /// `u32test` followed by `assert` is lifted as one range assertion; a value in range passes
 /// through it unchanged.
 #[test]
@@ -476,10 +492,19 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
         disassemble_source(source, "test", &DisassemblerConfig::default(), context.clone())
             .expect("MASM should disassemble to HIR");
 
+    let target = miden_project::Target::library(
+        MasmPath::new("test")
+            .to_absolute()
+            .expect("a target namespace is an absolute path"),
+        Uri::new("test.masm"),
+    );
     let analysis_manager = AnalysisManager::new(disassembled.world.as_operation_ref(), None);
     let world = disassembled.world.borrow();
     let masm_component = world
-        .to_masm_component(analysis_manager)
+        .to_masm_component(
+            analysis_manager,
+            midenc_codegen_masm::EmissionNamespace::Target(&target),
+        )
         .expect("HIR should lower back to MASM");
     let source_manager = context.session().source_manager.clone();
     let mut assembler = Assembler::new(source_manager.clone());
@@ -503,12 +528,6 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
     // `MasmComponent::source_inputs` roots one of those at its target's namespace: with a relative
     // namespace it would dutifully rewrite this component's absolute module paths to relative
     // ones, and the assembler would reject every call in it as an "invalid relative item path".
-    let target = miden_project::Target::library(
-        MasmPath::new("test")
-            .to_absolute()
-            .expect("a target namespace is an absolute path"),
-        Uri::new("test.masm"),
-    );
     let inputs = masm_component.source_inputs(&target, context.session()).unwrap();
     let library = assembler
         .assemble_library("test", inputs.root, inputs.support)
@@ -547,7 +566,7 @@ fn render_roundtripped_masm(source: &str, context: Rc<Context>) -> String {
     disassembled
         .world
         .borrow()
-        .to_masm_component(analysis_manager)
+        .to_masm_component(analysis_manager, midenc_codegen_masm::EmissionNamespace::Source)
         .expect("HIR should lower back to MASM")
         .to_string()
 }
@@ -558,6 +577,15 @@ fn execute_program(
     advice: &[u64],
     num_outputs: usize,
 ) -> Vec<Felt> {
+    try_execute_program(program, inputs, advice, num_outputs).expect("program should execute")
+}
+
+fn try_execute_program(
+    program: &Package,
+    inputs: &[Felt],
+    advice: &[u64],
+    num_outputs: usize,
+) -> Result<Vec<Felt>, String> {
     let stack_inputs = StackInputs::new(inputs).expect("test inputs should fit on VM stack");
     let advice_stack = AdviceStack::try_from_values(advice.iter().copied())
         .expect("test advice inputs should be canonical field elements");
@@ -577,6 +605,6 @@ fn execute_program(
         FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())
             .expect("test processor should initialize")
             .execute_sync(&program, &mut host)
-            .expect("program should execute");
-    output.stack.get_num_elements(num_outputs).to_vec()
+            .map_err(|err| err.to_string())?;
+    Ok(output.stack.get_num_elements(num_outputs).to_vec())
 }

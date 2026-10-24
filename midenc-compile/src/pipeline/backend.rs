@@ -8,7 +8,7 @@
 //! [`codegen`] — for callers that have no assembler and therefore no [`TargetContext`]: the
 //! manifest Rust entry point's WebAssembly leg, and
 //! `midenc-compile/tests/codegen_legalization.rs`. They run one phase and nothing else. Codegen
-//! comes after spill placement and so rewrites nothing: a caller that reaches it without
+//! consumes final HIR and rewrites nothing: a caller that reaches it without
 //! [`apply_rewrites`] runs [`legalize_for_masm`] first.
 //!
 //! No *stop policy* lives here, in either form. How far a build runs is the request's goal,
@@ -20,7 +20,7 @@ use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
 use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
-use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
+use midenc_dialect_hir::transforms::Local2Reg;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{
@@ -129,7 +129,11 @@ pub fn masm_from_transformed_hir(
         component,
         sections,
         source_provenance,
-    } = codegen(hir, context)?;
+    } = codegen(
+        hir,
+        context,
+        midenc_codegen_masm::EmissionNamespace::Target(cx.assembly().target),
+    )?;
     let session = cx.session();
     let sources = component.source_inputs(cx.assembly().target, &session)?;
     Ok(match cx.checkpoint(CheckpointId::MASM_LOWERED, ArtifactId::MASM, sources)? {
@@ -244,24 +248,15 @@ pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<
 
 /// The rewrite pipeline [`apply_rewrites`] runs over `world`.
 ///
-/// # Spill placement comes last
+/// # Final HIR precedes physical allocation
 ///
-/// Each function pipeline ends in operand sinking and spill placement (`TransformSpills`), and
-/// no rewrite may follow that last spill placement. Rewrites almost always change live ranges,
-/// and spill placement is what keeps the operand stack within the 16 elements an instruction
-/// can reach, which it can only do for the live ranges it sees. That is why it is one of the
-/// last things done before lowering, and why codegen only checks legality ([`codegen`]). The
-/// spill placement before `LiftControlFlowToSCF` is not the last one: the passes after it
-/// change the code again, and spills are placed once more at the end, for the live ranges as
-/// they finally are.
-///
-/// So [`LegalizeForMasm`], which rewrites the shapes MASM codegen would lower unsafely, runs
-/// over each component between the last canonicalization and operand sinking: the ops it
-/// creates are sunk, and spill placement sees the live ranges they make.
+/// Representation legalization and optional operand sinking finish before selection. The
+/// backend then selects the final semantic graph and assigns physical stack/frame locations;
+/// no HIR rewrite follows selection.
 ///
 /// # What is outside a component
 ///
-/// Only a component's functions get the rewrites and spill placement above. But codegen lowers
+/// A component's functions get the semantic rewrite pipeline above. But codegen lowers
 /// more than the component, and checks all of it: the modules and functions a world holds
 /// beside its component are lowered with it (a component's supporting modules), and a world
 /// with no component is lowered as it stands. They are legalized too — beside a component, its
@@ -292,7 +287,6 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(SinkOperandDefs));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             func_pm.add_pass(Box::new(Local2Reg));
-            func_pm.add_pass(Box::new(TransformSpills));
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
@@ -306,27 +300,24 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(SinkOperandDefs));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             func_pm.add_pass(Box::new(Local2Reg));
-            func_pm.add_pass(Box::new(TransformSpills));
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
-        // The last rewrite, before operand sinking and spill placement
+        // Representation legalization precedes final optional operand sinking
         component_pm.add_pass(Box::new(LegalizeForMasm));
-        // Operand sinking and spill placement for module-level functions, then component-level
+        // Optional operand sinking for module-level functions, then component-level
         // ones: the last passes before lowering
         {
             let mut module_pm = component_pm.nest::<builtin::Module>();
             let mut func_pm = module_pm.nest::<builtin::Function>();
             func_pm.add_pass(Box::new(SinkOperandDefs));
-            func_pm.add_pass(Box::new(TransformSpills));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             //func_pm.add_pass(Box::new(DeadCodeElimination));
         }
         {
             let mut func_pm = component_pm.nest::<builtin::Function>();
             func_pm.add_pass(Box::new(SinkOperandDefs));
-            func_pm.add_pass(Box::new(TransformSpills));
             //func_pm.add_pass(Box::new(ControlFlowSink));
             //func_pm.add_pass(Box::new(DeadCodeElimination));
         }
@@ -361,7 +352,11 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
 ///
 /// Emits `--emit=masm` on the way past, which is the one output this phase owns: it is the
 /// only point at which the lowered component exists in a form the session can write.
-pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<CodegenOutput> {
+pub fn codegen(
+    hir: MidenComponent,
+    context: Rc<Context>,
+    namespace: midenc_codegen_masm::EmissionNamespace<'_>,
+) -> CompilerResult<CodegenOutput> {
     let MidenComponent {
         world,
         component,
@@ -372,16 +367,18 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
 
     log::debug!("lowering miden component to masm");
 
-    // Spill placement has been done, so nothing may be rewritten here: legality is checked, and
-    // a shape `LegalizeForMasm` rewrites is an error saying that it must run before spill
-    // placement. See `rewrite_pipeline`.
+    // Selection consumes final HIR, so this boundary checks legality without rewriting.
+    // Representation changes belong to `rewrite_pipeline` before physical allocation.
     let anchor = component.map(|c| c.as_operation_ref()).unwrap_or(world.as_operation_ref());
     check_masm_legality(anchor, context.clone())?;
 
     let analysis_manager = AnalysisManager::new(anchor, None);
     let masm_component = match component {
-        Some(component) => component.borrow().to_masm_component(analysis_manager).map(Box::new)?,
-        None => world.borrow().to_masm_component(analysis_manager).map(Box::new)?,
+        Some(component) => component
+            .borrow()
+            .to_masm_component(analysis_manager, namespace)
+            .map(Box::new)?,
+        None => world.borrow().to_masm_component(analysis_manager, namespace).map(Box::new)?,
     };
 
     let session = context.session();
@@ -413,8 +410,8 @@ fn check_masm_legality(anchor: OperationRef, context: Rc<Context>) -> CompilerRe
 /// Rewrite `hir` into the subset code generation can lower, for a caller that reaches
 /// [`codegen`] without [`apply_rewrites`], which does it otherwise.
 ///
-/// It rewrites, so it is correct only where no spill placement has run: on HIR built by hand or
-/// translated without the rewrites. On HIR [`apply_rewrites`] has rewritten, there is nothing
+/// It rewrites, so it runs before selection: on HIR built by hand or translated without
+/// the semantic rewrite pipeline. On HIR [`apply_rewrites`] has rewritten, there is nothing
 /// left for it to do.
 pub fn legalize_for_masm(hir: &MidenComponent, context: Rc<Context>) -> CompilerResult<()> {
     let anchor = hir
@@ -773,17 +770,14 @@ mod tests {
         alloc::format!("{}", Textual(pm))
     }
 
-    /// The MASM legalization rewrites, so it runs before the last spill placement: over each
-    /// component, after the last canonicalization of its functions and before their operand
-    /// sinking and spill placement, which end the component's pipeline. The world's own modules
-    /// and functions, lowered beside the component without any of that, are legalized after it.
+    /// Representation legalization and sinking finish before final HIR selection.
     #[test]
-    fn the_masm_legalization_runs_before_the_last_spill_placement() {
+    fn the_masm_legalization_precedes_final_operand_sinking() {
         let (component, context) = build_component();
         let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
-        let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,transform-spills,\
-                         cfg-to-scf,canonicalizer";
-        let last = "sink-operand-defs,transform-spills";
+        let functions =
+            "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,canonicalizer";
+        let last = "sink-operand-defs";
         assert_eq!(
             pipeline,
             alloc::format!(
@@ -807,7 +801,7 @@ mod tests {
         assert!(err.contains("runs over a `builtin.world`"), "{err}");
     }
 
-    /// A world without a component has no rewrites and no spill placement, but is lowered all
+    /// A world without a component is lowered directly and legalized all
     /// the same, so it is legalized as a whole.
     #[test]
     fn a_world_without_a_component_is_legalized_as_a_whole() {
@@ -828,7 +822,8 @@ mod tests {
         let component = minimal_component(&context);
 
         legalize_for_masm(&component, context.clone()).expect("there is nothing to rewrite");
-        codegen(component, context).expect("-Clink-only is the caller's policy, not ours");
+        codegen(component, context, midenc_codegen_masm::EmissionNamespace::Source)
+            .expect("-Clink-only is the caller's policy, not ours");
     }
 
     // -------------------------------------------------------------------------------------

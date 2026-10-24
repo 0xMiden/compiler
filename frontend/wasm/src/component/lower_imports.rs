@@ -19,7 +19,7 @@ use midenc_hir::{
 use midenc_session::diagnostics::Report;
 
 use super::{
-    ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS,
+    ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_RESULTS,
     canon_abi_utils::{load, offset_addr, store, validate_flat_variants},
     canonical_abi_info, canonical_flat_types, contains_unsupported_canonical_abi_type,
     flat::{
@@ -31,7 +31,6 @@ use super::{
 use crate::{
     callable::CallableFunction,
     error::WasmResult,
-    fpi::store_fpi_prefix_locals,
     module::function_builder_ext::{
         FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
     },
@@ -85,10 +84,7 @@ pub fn generate_import_lowering_function(
 ) -> WasmResult<CallableFunction> {
     let import_func_path = &import.cm_path;
     let context = module_builder.builder().context_rc();
-    // FPI imports bypass canonical ABI validation and classification: they use their own
-    // typed-signature checks, and oversized argument lists take the FPI indirect lowering
-    // path instead of tupled parameters. The typed checks run before canonical flattening so
-    // unsupported types fail with FPI diagnostics instead of flattening errors.
+    // Special imports validate their typed protocol shape before canonical source flattening.
     let is_fpi = is_fpi_import(import_func_path, &import_func_ty.ir)?;
     let call_kind = if is_dyncall_import(import_func_path, &import_func_ty.ir)? {
         ImportCallKind::Dyncall
@@ -100,57 +96,36 @@ pub fn generate_import_lowering_function(
     } else {
         reject_unsupported_import_canonical_abi_types(import_func_path, import_func_ty)?;
     }
-    // A dyncall import's leading `word` is the callee's root, not an argument: it is split off
-    // so canonical flattening and classification see the argument list alone, and spliced back
-    // into the flattened signature afterwards, as the guest passes it to the lowering function.
-    let (budgeted_ty, root_flat_params) = match call_kind {
-        ImportCallKind::Call => (import_func_ty.ir.clone(), Vec::new()),
-        ImportCallKind::Dyncall => {
-            split_dyncall_root(&context, import_func_path, &import_func_ty.ir)?
-        }
-    };
-    let mut import_lowered_sig =
-        flatten_function_type(&context, &budgeted_ty, CanonicalAbiMode::Import).wrap_err_with(
-            || {
-                format!(
-                    "failed to generate component import lowering: signature of \
-                     '{import_func_path}' requires flattening"
-                )
-            },
-        )?;
+    // Canonical source classification includes all parameters, including a dyncall root.
+    let import_lowered_sig =
+        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
+            .wrap_err_with(|| format!("failed to flatten component import '{import_func_path}'"))?;
     let transformation = if is_fpi {
         None
     } else {
-        let transformation =
-            classify_function_type(&context, &budgeted_ty).wrap_err_with(|| {
-                format!(
-                    "failed to generate component import lowering: signature of \
-                     '{import_func_path}' requires classification"
-                )
-            })?;
-        // A dyncall import's felt budget is checked before the tuple rejection below so that every
-        // over-budget stored procedure gets the tailored diagnostic: an argument list far enough
-        // past the budget is collapsed into a tuple pointer by canonical flattening, and would
-        // otherwise be reported as an (unsupported) tupled parameter list instead.
-        if call_kind == ImportCallKind::Dyncall {
-            reject_oversized_dyncall_call_site(
-                &context,
-                import_func_path,
-                &budgeted_ty,
-                transformation,
-            )?;
-        }
-        // Import flattening appends a result out-pointer after tuple classification, so the
-        // final flattened parameter list can exceed the budget even when classification
-        // reported no parameter tuple.
-        if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
+        let transformation = classify_function_type(&context, &import_func_ty.ir)?;
+        if call_kind == ImportCallKind::Call && transformation.has_param_tuple() {
             return reject_tuple_parameter_import_lowering(import_func_path);
         }
+        check_core_wasm_signature_equivalence(
+            &core_func_sig,
+            &expected_core_signature(&import_lowered_sig),
+        )
+        .map_err(|message| {
+            Report::msg(format!(
+                "component import lowering for '{import_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        })?;
+        let target_ty = match call_kind {
+            ImportCallKind::Call => import_func_ty.ir.clone(),
+            ImportCallKind::Dyncall => {
+                split_dyncall_root(&context, import_func_path, &import_func_ty.ir)?.0
+            }
+        };
+        validate_import_target_capacity(&context, import_func_path, &target_ty, call_kind)?;
         Some(transformation)
     };
-    // The root is re-attached only here, once the tuple and budget checks above have run on the
-    // argument list alone (see the comment on the split above).
-    import_lowered_sig.params.splice(0..0, root_flat_params);
 
     let core_func_ref = module_builder
         .define_function(stub_name.into(), Visibility::Internal, core_func_sig.clone())
@@ -188,37 +163,19 @@ pub fn generate_import_lowering_function(
         );
     };
 
-    match transformation {
-        CanonicalAbiIndirection::None => generate_direct_lowering(
-            world_builder,
-            call_kind,
-            &import,
-            import_func_ty,
-            core_func_path,
-            core_func_sig,
-            import_lowered_sig,
-            core_func_ref,
-            &mut fb,
-            &args,
-            span,
-        ),
-        CanonicalAbiIndirection::Out => generate_lowering_with_transformation(
-            world_builder,
-            call_kind,
-            &import,
-            import_func_ty,
-            core_func_path,
-            core_func_sig,
-            import_lowered_sig,
-            core_func_ref,
-            &mut fb,
-            &args,
-            span,
-        ),
-        CanonicalAbiIndirection::In | CanonicalAbiIndirection::InOut => {
-            unreachable!("tuple-parameter import lowering was rejected earlier")
-        }
-    }
+    generate_lowering(
+        world_builder,
+        call_kind,
+        &import,
+        import_func_ty,
+        core_func_path,
+        core_func_sig,
+        transformation,
+        core_func_ref,
+        &mut fb,
+        &args,
+        span,
+    )
 }
 
 /// Generates a lowering function for FPI imports backed by `execute_foreign_procedure`.
@@ -245,10 +202,17 @@ fn generate_fpi_lowering(
     let lowered = lower_fpi_canonical_args(&shape, import_func_ty, fb, args, span)
         .wrap_err_with(|| format!("failed to lower FPI import arguments for `{core_func_path}`"))?;
 
-    let prefix_locals =
-        store_fpi_prefix_locals(fb, &lowered.fpi_args[..FPI_ABI_PREFIX_ARGS], span)?;
+    // Wrappers carry prefix before suffix; the executor consumes suffix before prefix.
+    let prefix = [
+        lowered.fpi_args[1],
+        lowered.fpi_args[0],
+        lowered.fpi_args[2],
+        lowered.fpi_args[3],
+        lowered.fpi_args[4],
+        lowered.fpi_args[5],
+    ];
     let procedure_inputs = lowered.fpi_args[FPI_ABI_PREFIX_ARGS..].iter().copied();
-    let exec = fb.exec_fpi(prefix_locals, procedure_inputs, span)?;
+    let exec = fb.exec_fpi(prefix, procedure_inputs, span)?;
     let results: Vec<ValueRef> = {
         let borrow = exec.borrow();
         borrow.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
@@ -404,28 +368,9 @@ fn plan_fpi_call(
 ) -> WasmResult<FpiCallShape> {
     let flattened_params = flatten_types(context, &import_func_ty.params)?;
     let flattened_results = flatten_types(context, &import_func_ty.results)?;
-    // Canonical ABI passes more than 16 flattened parameters indirectly through one pointer; the
-    // generated wrapper reloads that tuple so every FPI call lowers to the same felt-only form.
-    let has_arg_ptr = flattened_params.len() > MAX_FLAT_PARAMS;
+    // Source classification counts canonical values; protocol capacity counts expanded felts.
+    let has_arg_ptr = flat_params_need_tuple(&flattened_params);
     let has_output_ptr = flattened_results.len() > MAX_FLAT_RESULTS;
-
-    if !has_arg_ptr {
-        // The generated wrapper receives all its parameters on the operand stack, so the direct
-        // call shape is limited by the stack's addressable window, independent of the FPI
-        // protocol's own input limit. Check this before comparing against the lowered core
-        // signature: over-budget direct shapes are tupled by canonical ABI flattening, which
-        // would otherwise surface as a confusing shape mismatch.
-        let stack_felts =
-            flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
-                + usize::from(has_output_ptr);
-        if stack_felts > MAX_DIRECT_STACK_FELTS {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
-                 expanding 64-bit values and result pointers, but direct FPI calls support at \
-                 most {MAX_DIRECT_STACK_FELTS}"
-            )));
-        }
-    }
 
     let expected_params = if has_arg_ptr {
         1 + usize::from(has_output_ptr)
@@ -441,7 +386,7 @@ fn plan_fpi_call(
 
     if has_arg_ptr && !import_lowered_sig.params()[0].ty.is_pointer() {
         return Err(midenc_session::diagnostics::Report::msg(
-            "FPI import with more than 16 flattened params must lower to an argument pointer",
+            "FPI import exceeding the direct parameter budget must lower to an argument pointer",
         ));
     }
     if has_output_ptr {
@@ -526,7 +471,8 @@ fn lower_fpi_canonical_args(
     let fpi_args = if shape.has_arg_ptr {
         let arg_ptr = *args.first().ok_or_else(|| {
             midenc_session::diagnostics::Report::msg(
-                "FPI import with more than 16 flattened params did not receive an argument pointer",
+                "FPI import exceeding the direct parameter budget did not receive an argument \
+                 pointer",
             )
         })?;
         lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.ir.params, span)?
@@ -575,20 +521,15 @@ fn lower_fpi_direct_args(
     Ok(fpi_args)
 }
 
-/// Loads the felt-only protocol argument list from a canonical ABI argument tuple pointer.
-///
-/// Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
-/// generated wrapper reloads every flattened value here, so all FPI calls reach the backend in
-/// the same direct, felt-only form. Each parameter is loaded with the canonical ABI load
-/// algorithm, which switches over variant discriminants to load the active case payload
-/// (trapping on out-of-range discriminants) and zero-fills unused payload lanes.
-fn lower_fpi_indirect_args(
+/// Loads canonical arguments, retaining their typed carriers and canonical tuple layout.
+/// Recursive loading validates variants and zero-fills unused joined payload positions.
+fn load_canonical_args(
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     arg_ptr: ValueRef,
     params: &[Type],
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
-    let mut fpi_args = Vec::new();
+    let mut args = Vec::new();
     let mut offset = 0u32;
     for param in params {
         let param_offset = canonical_abi_info(param)?.next_field32(&mut offset);
@@ -597,18 +538,29 @@ fn lower_fpi_indirect_args(
         load(fb, param_addr, param, &mut values, span)?;
         let flat_types = canonical_flat_types(param)?;
         if values.len() != flat_types.len() {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "FPI argument load for `{param}` produced {} values, but its canonical flat shape \
-                 has {}",
+            return Err(Report::msg(format!(
+                "canonical argument load for `{param}` produced {} values, but its flat shape has \
+                 {}",
                 values.len(),
                 flat_types.len()
             )));
         }
-        for (value, flat_ty) in values.into_iter().zip(flat_types.iter()) {
-            push_fpi_arg_felts(fb, flat_ty, value, &mut fpi_args, span)?;
-        }
+        args.extend(values);
     }
-    Ok(fpi_args)
+    Ok(args)
+}
+
+/// Expands typed canonical tuple values to the felt-only FPI protocol representation.
+fn lower_fpi_indirect_args(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    arg_ptr: ValueRef,
+    params: &[Type],
+    span: SourceSpan,
+) -> WasmResult<Vec<ValueRef>> {
+    let args = load_canonical_args(fb, arg_ptr, params, span)?;
+    let context = HirOpBuilder::builder(fb).context_rc();
+    let flat_params = flatten_types(&context, params)?;
+    lower_fpi_direct_args(fb, &flat_params, &args, span)
 }
 
 /// Appends the FPI felt representation for one canonical ABI flat value.
@@ -883,14 +835,8 @@ fn leads_with_proc_root_word(params: &[Type]) -> bool {
 
 /// Splits a dyncall import's leading procedure-root parameter off its IR type.
 ///
-/// Returns the type of the arguments alone, which is what canonical flattening and classification
-/// are applied to, and the root's flat parameters (four felts) to re-prepend to the flattened
-/// signature so it keeps matching the core Wasm import.
-///
-/// The budget is checked on the argument type by [`reject_oversized_dyncall_call_site`].
-/// The bound wit-bindgen flattened against (twelve argument values, the canonical ABI's sixteen
-/// flat parameters less the root's four) needs no check of its own, as every flat value costs at
-/// least one felt and the shim's argument budget is the same twelve felts.
+/// Returns the payload type and the root's four flat parameters. The payload type is used only
+/// for actual target budgeting; canonical source classification retains the complete root.
 fn split_dyncall_root(
     context: &Rc<Context>,
     import_func_path: &SymbolPath,
@@ -909,52 +855,31 @@ fn split_dyncall_root(
     Ok((arguments_ty, root_flat_params))
 }
 
-/// Rejects dyncall imports whose lowering function cannot be called within the operand stack
-/// window.
-///
-/// The guest reaches the lowering function with an ordinary same-context call whose operands are
-/// its full flattened signature: the procedure root, the flattened arguments, and the canonical
-/// result pointer when the results do not fit a single flat value. All of them travel through
-/// Miden's directly addressable operand stack window, so an over-wide signature has to be
-/// diagnosed here rather than left to spilling, which cannot serve a same-context call this wide.
-///
-/// The arguments are measured by flattening `arguments_ty`, the import's type with the procedure
-/// root split off, rather than by summing the flattened signature: canonical flattening collapses
-/// an argument list that is far enough over the budget into a single tuple pointer, which hides
-/// the very width reported here.
-fn reject_oversized_dyncall_call_site(
+/// Checks actual target arguments and results independently of canonical source indirection.
+fn validate_import_target_capacity(
     context: &Rc<Context>,
     import_func_path: &SymbolPath,
-    arguments_ty: &FunctionType,
-    transformation: CanonicalAbiIndirection,
+    target_ty: &FunctionType,
+    call_kind: ImportCallKind,
 ) -> WasmResult<()> {
-    let arg_felts: usize = flatten_types(context, &arguments_ty.params)
-        .wrap_err_with(|| format!("failed to flatten the arguments of '{import_func_path}'"))?
-        .iter()
-        .map(|param| param.ty.size_in_felts())
-        .sum();
-    // Import flattening appends the result pointer to the parameters exactly when classification
-    // reports output indirection, whether or not the parameters are tupled as well.
-    let result_ptr_felts = usize::from(matches!(
-        transformation,
-        CanonicalAbiIndirection::Out | CanonicalAbiIndirection::InOut
-    ));
-    let stack_felts = DYNCALL_ROOT_FELTS + arg_felts + result_ptr_felts;
-    if stack_felts <= MAX_DIRECT_STACK_FELTS {
-        return Ok(());
+    for (kind, types) in [
+        ("argument", target_ty.params.as_slice()),
+        ("result", target_ty.results.as_slice()),
+    ] {
+        let felts: usize =
+            flatten_types(context, types)?.iter().map(|p| p.ty.size_in_felts()).sum();
+        if felts > MAX_DIRECT_STACK_FELTS {
+            let label = match call_kind {
+                ImportCallKind::Call => "component import",
+                ImportCallKind::Dyncall => "stored procedure",
+            };
+            return Err(Report::msg(format!(
+                "unsupported {label} signature for '{import_func_path}': {felts} {kind} field \
+                 elements exceed the {MAX_DIRECT_STACK_FELTS}-element context {kind} ABI"
+            )));
+        }
     }
-    let max_arg_felts = MAX_DIRECT_STACK_FELTS - DYNCALL_ROOT_FELTS - result_ptr_felts;
-    let result_ptr = if result_ptr_felts == 0 {
-        ""
-    } else {
-        " and the result pointer"
-    };
-    Err(Report::msg(format!(
-        "unsupported stored procedure signature for '{import_func_path}': {arg_felts} argument \
-         field elements plus the {DYNCALL_ROOT_FELTS} procedure-root elements{result_ptr} exceed \
-         Miden's {MAX_DIRECT_STACK_FELTS}-element operand stack window; use at most \
-         {max_arg_felts} argument field elements"
-    )))
+    Ok(())
 }
 
 /// Emits the call from a lowering function to its import and returns the call's results.
@@ -996,10 +921,8 @@ fn build_import_call(
                 cc: import_func_sig.cc,
             };
 
-            // The arguments fit the operand stack window by construction: the lowering function
-            // is only generated once its own, wider, call site passed
-            // `reject_oversized_dyncall_call_site`. Hand-written HIR reaching `hir.dyncall`
-            // without that check is still caught by codegen's indirect call legalization.
+            // Only the actual callee arguments consume the context-call window. The root
+            // and wrapper result pointer have separate storage and source-call obligations.
             let call = fb.dyncall(root, signature, call_args.to_vec(), span)?;
             let call = call.borrow();
             call.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
@@ -1015,237 +938,49 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
     )))
 }
 
-/// Generates a lowering function for component imports that require transformation.
-///
-/// `call_kind` selects how the import is reached: a declared `hir.call` target, or a
-/// `hir.dyncall` to the procedure root passed as the leading arguments (see
-/// [`build_import_call`]).
-///
-/// This function handles the case where a Component Model import needs to be "lowered" to match
-/// core WebAssembly conventions. This is necessary when importing functions that return complex
-/// types (structs, records, tuples) which must be transformed to use pointer-based returns in
-/// core WASM due to canonical ABI limitations.
-///
-/// The transformation converts from Component Model style (returning structured data) to core
-/// WASM style (storing results via an output pointer parameter).
-///
-/// # Arguments
-///
-/// * `call_kind` - How the import is reached (see [`build_import_call`]).
-///
-/// * `import` - The component-model and Miden paths of the imported function. A
-///   [`ImportCallKind::Call`] import is declared in the stub component named by the parent of its
-///   Miden path; a dyncall import declares nothing.
-///
-/// * `import_func_ty` - The original Component Model function type with high-level types
-///   (structs, records) before any flattening or transformation.
-///
-/// * `core_func_path` - The symbol path for the core WASM function being generated. This is
-///   the lowered function that will be called from core WASM code.
-///
-/// * `core_func_sig` - The signature of the generated lowered core function, which includes a pointer
-///   parameter for returning complex results according to canonical ABI rules.
-///
-/// * `import_func_sig_flat` - The flattened signature after applying canonical lowering. Contains
-///   the pointer parameter for struct returns when needed.
-///
-/// * `core_func_ref` - Reference to the core function being built. This is the function that
-///   will contain the lowering logic.
-///
-/// * `args` - The arguments passed to the core function, including the output pointer as the
-///   last argument for storing results.
-///
+/// Normalizes the complete canonical source arguments before constructing the target call.
+/// Tuple and output pointers belong to this same-context wrapper, never to the target payload.
 #[allow(clippy::too_many_arguments)]
-fn generate_lowering_with_transformation(
+fn generate_lowering(
     world_builder: &mut WorldBuilder,
     call_kind: ImportCallKind,
     import: &ComponentImportPath,
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
-    import_func_sig_flat: Signature,
-    core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    transformation: CanonicalAbiIndirection,
+    core_func_ref: FunctionRef,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
-    let import_func_path = &import.cm_path;
-    assert!(
-        import_func_sig_flat.params().last().unwrap().is_sret_param(),
-        "The flattened component import function {import_func_path} signature should have the \
-         last parameter a pointer"
-    );
-
-    // The lowered core function takes the flattened parameters with the result out-pointer
-    // passed as a core Wasm i32 pointer, and returns nothing.
-    let expected_core_sig = expected_core_signature(&import_func_sig_flat);
-    check_core_wasm_signature_equivalence(&core_func_sig, &expected_core_sig).map_err(
-        |message| {
-            Report::msg(format!(
-                "component import lowering for '{import_func_path}' has core Wasm signature \
-                 mismatch: {message}"
-            ))
-        },
-    )?;
-
-    // The import function's results are passed via a pointer parameter.
-    // This happens when the result type would flatten to more than 1 value
-
-    // The import function should have the lifted signature (returns tuple)
-    // not the lowered signature with pointer parameter
-    let context = world_builder.context_rc();
-
-    // Extract the actual result types from the import function type
-    let flattened_results =
-        flatten_types(&context, &import_func_ty.ir.results).wrap_err_with(|| {
-            format!("failed to flatten result types for import function '{import_func_path}'")
-        })?;
-
-    // Remove the pointer parameter that was added for the flattened signature
-    let params_without_ptr =
-        import_func_sig_flat.params[..import_func_sig_flat.params.len() - 1].to_vec();
-    let new_import_func_sig = Signature {
-        params: params_without_ptr,
-        results: flattened_results,
-        cc: import_func_sig_flat.cc,
+    let has_output_ptr =
+        matches!(transformation, CanonicalAbiIndirection::Out | CanonicalAbiIndirection::InOut);
+    // Exact core source equivalence was checked before creating the wrapper or reading arguments.
+    let output_ptr = has_output_ptr.then(|| *args.last().expect("validated source output pointer"));
+    let canonical_args = if transformation.has_param_tuple() {
+        load_canonical_args(fb, args[0], &import_func_ty.ir.params, span)?
+    } else {
+        let inputs = &args[..args.len() - usize::from(has_output_ptr)];
+        validate_flat_variants(fb, &import_func_ty.ir.params, inputs, span)?;
+        inputs.to_vec()
     };
-    // Import lowering: The lowered function takes a pointer as the last parameter
-    // where results should be stored. The import function returns a pointer to the result.
-    // We need to:
-    // 1. Call the import function (it returns a tuple to the flattened result)
-    // 2. Store the data from the tuple to the output pointer which expect to hold
-    //    flattened result
-
-    // Get the pointer argument (last argument) where we need to store results
-    let output_ptr = args.last().expect("expected pointer argument");
-    let args_without_ptr: Vec<_> = args[..args.len() - 1].to_vec();
-
-    validate_flat_variants(fb, &import_func_ty.ir.params, &args_without_ptr, span)?;
-
-    // Call the import function - it will return a tuple to the flattened result
-    let results = build_import_call(
-        world_builder,
-        call_kind,
-        import,
-        new_import_func_sig,
-        args_without_ptr,
-        fb,
-        span,
-    )?;
+    let context = world_builder.context_rc();
+    let target_sig = Signature {
+        params: flatten_types(&context, &import_func_ty.ir.params)?,
+        results: flatten_types(&context, &import_func_ty.ir.results)?,
+        cc: midenc_hir::CallConv::ComponentModel,
+    };
+    let results =
+        build_import_call(world_builder, call_kind, import, target_sig, canonical_args, fb, span)?;
     validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
-
-    // Store values recursively based on the component-level type
-    // This follows the canonical ABI store algorithm from:
-    // https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#storing
-    assert_eq!(import_func_ty.ir.results.len(), 1, "expected a single result type");
-    let result_type = &import_func_ty.ir.results[0];
-    let mut results_iter = results.into_iter();
-
-    store(fb, *output_ptr, result_type, &mut results_iter, span)?;
-
-    let exit_block = fb.create_block();
-    fb.br(exit_block, [], span)?;
-    fb.seal_block(exit_block);
-    fb.switch_to_block(exit_block);
-    fb.ret([], span)?;
-
-    Ok(CallableFunction::Function {
-        wasm_id: core_func_path,
-        function_ref: core_func_ref,
-        signature: core_func_sig,
-    })
-}
-
-/// Generates a lowering function for component imports that don't require transformation.
-///
-/// This function handles the simple case where a Component Model import can be directly
-/// called from core WebAssembly without signature transformation. This occurs when:
-/// - The function returns a single primitive value (fits in 64 bits)
-/// - The function returns nothing (void)
-/// - All parameters are simple types that don't need flattening
-///
-/// No pointer-based parameter passing or result storing is needed in this case.
-///
-/// # Arguments
-///
-/// * `call_kind` - How the import is reached: a declared `hir.call` target, or a `hir.dyncall` to
-///   the procedure root passed as the leading arguments (see [`build_import_call`]).
-///
-/// * `import` - The component-model and Miden paths of the imported function. A
-///   [`ImportCallKind::Call`] import is declared in the stub component named by the parent of its
-///   Miden path; a dyncall import declares nothing.
-///
-/// * `import_func_ty` - The Component Model function type. In this case, it should be simple
-///   enough to not require transformation.
-///
-/// * `core_func_path` - The symbol path for the generated core WASM function that performs
-///   the lowering.
-///
-/// * `core_func_sig` - The lowered signature of the core function, which should be compatible with
-///   the component import (no transformation needed).
-///
-/// * `import_func_sig_flat` - The flattened signature of the component import.
-///
-/// * `core_func_ref` - Reference to the core function being built.
-///
-/// * `args` - The arguments to pass directly to the component import function.
-///
-/// # Implementation Details
-///
-/// The generated lowering function is a simple pass-through that:
-/// 1. Receives arguments from core WASM caller
-/// 2. Calls the component import (or, for a dyncall import, the procedure root passed as the
-///    leading arguments) with the same arguments
-/// 3. Returns the result unchanged (at most one simple value)
-///
-#[allow(clippy::too_many_arguments)]
-fn generate_direct_lowering(
-    world_builder: &mut WorldBuilder,
-    call_kind: ImportCallKind,
-    import: &ComponentImportPath,
-    import_func_ty: &ComponentFunctionType,
-    core_func_path: SymbolPath,
-    core_func_sig: Signature,
-    import_func_sig_flat: Signature,
-    core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
-    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
-    args: &[ValueRef],
-    span: SourceSpan,
-) -> WasmResult<CallableFunction> {
-    let import_func_path = &import.cm_path;
-    validate_flat_variants(fb, &import_func_ty.ir.params, args, span)?;
-
-    check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig_flat).map_err(
-        |message| {
-            Report::msg(format!(
-                "component import lowering for '{import_func_path}' has core Wasm signature \
-                 mismatch: {message}"
-            ))
-        },
-    )?;
-    let results = build_import_call(
-        world_builder,
-        call_kind,
-        import,
-        import_func_sig_flat,
-        args.to_vec(),
-        fb,
-        span,
-    )?;
-    assert!(
-        results.len() <= 1,
-        "For direct lowering the component import function {import_func_path} expected a single \
-         result or none"
-    );
-    validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
-
-    let exit_block = fb.create_block();
-    fb.br(exit_block, vec![], span)?;
-    fb.seal_block(exit_block);
-    fb.switch_to_block(exit_block);
-    let returning = results.first().cloned();
-    fb.ret(returning, span).expect("failed ret");
-
+    if let Some(output_ptr) = output_ptr {
+        assert_eq!(import_func_ty.ir.results.len(), 1, "canonical source has one result type");
+        store(fb, output_ptr, &import_func_ty.ir.results[0], &mut results.into_iter(), span)?;
+        fb.ret([], span)?;
+    } else {
+        fb.ret(results, span)?;
+    }
     Ok(CallableFunction::Function {
         wasm_id: core_func_path,
         function_ref: core_func_ref,
@@ -1356,10 +1091,13 @@ mod tests {
     };
 
     use super::*;
-    use crate::component::test_support::{
-        count_ops, count_validation_ops, mixed_payload_variant_type, pointer_payload_variant_type,
-        scalar_payload_variant_type, two_field_record_type, unit_only_variant_type,
-        world_with_core_module,
+    use crate::component::{
+        MAX_FLAT_PARAMS,
+        test_support::{
+            count_ops, count_validation_ops, mixed_payload_variant_type,
+            pointer_payload_variant_type, scalar_payload_variant_type, two_field_record_type,
+            unit_only_variant_type, world_with_core_module,
+        },
     };
 
     fn test_import_path(name: &str) -> SymbolPath {
@@ -1838,25 +1576,24 @@ mod tests {
     }
 
     #[test]
-    fn plan_fpi_call_rejects_direct_calls_past_the_stack_window() {
+    fn plan_fpi_call_preserves_thirteen_flat_nineteen_felt_source_shape() {
         let context = Rc::new(Context::default());
-        // Six `u64` values plus one felt fit in 13 canonical flat parameters (direct shape), but
-        // expand to 19 operand stack felts on the wrapper call.
+        // Six u64 values plus one felt expand to thirteen payload lanes and nineteen wrapper lanes.
         let import_func_ty = FunctionType::new(
             CallConv::ComponentModel,
             fpi_params_with_user_args((0..6).map(|_| Type::U64).chain([Type::Felt])),
             vec![Type::Felt],
         );
-
-        let err = plan_fpi_call_for(&context, &import_func_ty, "fpi-echo-six-u64-record")
-            .expect_err("expected FPI validation to reject wide direct wrapper calls");
-        let message = err.to_string();
-
-        assert!(
-            message.contains("lowers to 19 operand stack felts")
-                && message.contains("direct FPI calls support at most 16"),
-            "unexpected error message: {message}"
-        );
+        let shape = plan_fpi_call_for(&context, &import_func_ty, "fpi-echo-six-u64-record")
+            .expect("prefix lanes do not consume payload capacity");
+        assert!(!shape.has_arg_ptr);
+        assert_eq!(shape.flattened_arg_felts, 19);
+        let flat =
+            flatten_function_type(&context, &import_func_ty, CanonicalAbiMode::Import).unwrap();
+        assert_eq!(flat.params().len(), 13);
+        assert_eq!(expected_core_signature(&flat).params()[6].ty, Type::I64);
+        let scalar_params = flatten_types(&context, &import_func_ty.params).unwrap();
+        assert_eq!(scalar_params.len(), 13);
     }
 
     #[test]
@@ -1995,7 +1732,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_import_lowering_when_result_out_pointer_exceeds_param_budget() {
+    fn ordinary_import_result_pointer_does_not_consume_target_payload() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = two_field_record_type();
@@ -2019,15 +1756,7 @@ mod tests {
             core_func_sig,
         );
 
-        match result {
-            Ok(_) => panic!("expected import out-pointer overflow to be rejected"),
-            Err(err) => {
-                assert!(
-                    err.to_string().contains("tuple-parameter import lowering"),
-                    "unexpected diagnostic: {err}"
-                );
-            }
-        }
+        result.expect("sixteen target arguments plus a wrapper result pointer are supported");
     }
 
     #[test]
@@ -2101,6 +1830,56 @@ mod tests {
             unreachable_count, 2,
             "invalid transformed import result tag should be unreachable before storing"
         );
+    }
+
+    #[test]
+    fn fpi_direct_wrapper_preserves_executor_prefix_and_payload_order() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+        let import_func_ty = ComponentFunctionType {
+            ir: FunctionType::new(
+                CallConv::ComponentModel,
+                fpi_params_with_user_args([Type::Felt]),
+                vec![Type::Felt],
+            ),
+        };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::Felt); 7],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::Wasm,
+        };
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            import_paths(test_import_path("fpi-order")),
+            &import_func_ty,
+            core_function_path("fpi-order"),
+            SymbolName::intern("stub"),
+            core_func_sig,
+        )
+        .expect("FPI wrapper builds");
+        let function = lowered.function_ref().unwrap().borrow();
+        let args = function
+            .entry_block()
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<Vec<_>>();
+        let mut count = 0;
+        function.as_operation().postwalk_all(|op| {
+            assert!(op.downcast_ref::<midenc_dialect_hir::StoreLocal>().is_none());
+            if let Some(exec) = op.downcast_ref::<ExecFpi>() {
+                count += 1;
+                let prefix = exec
+                    .prefix()
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<Vec<_>>();
+                assert_eq!(prefix, [args[1], args[0], args[2], args[3], args[4], args[5]]);
+                assert_eq!(exec.inputs()[0].borrow().as_value_ref(), args[6]);
+            }
+        });
+        assert_eq!(count, 1);
     }
 
     #[test]
@@ -2495,7 +2274,6 @@ mod tests {
         extra_felts: usize,
         result: Option<Type>,
     ) -> (ComponentFunctionType, Signature) {
-        let returned_by_pointer = result.is_some();
         let mut ir = FunctionType::new(
             CallConv::Fast,
             core::iter::once(word_type())
@@ -2505,177 +2283,41 @@ mod tests {
             result.into_iter().collect::<Vec<_>>(),
         );
         ir.abi = CallConv::ComponentModel;
-        let core_func_sig = Signature {
-            params: (0..4)
-                .map(|_| AbiParam::new(Type::Felt))
-                // Core Wasm spells the `u64` arguments as `i64`
-                .chain((0..num_u64).map(|_| AbiParam::new(Type::I64)))
-                .chain((0..extra_felts).map(|_| AbiParam::new(Type::Felt)))
-                .chain(returned_by_pointer.then(|| AbiParam::new(Type::I32)))
-                .collect(),
-            results: vec![],
-            cc: CallConv::ComponentModel,
-        };
+        let context = Rc::new(Context::default());
+        let core_func_sig = expected_core_signature(
+            &flatten_function_type(&context, &ir, CanonicalAbiMode::Import).unwrap(),
+        );
         (ComponentFunctionType { ir }, core_func_sig)
     }
 
     #[test]
-    fn dyncall_import_accepts_twelve_argument_felts() {
-        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // Six `u64` values are 12 argument felts, which together with the root's four elements
-        // exactly fill the operand stack window the guest calls the lowering function through
-        let (import_func_ty, core_func_sig) = wide_dyncall_import(6, 0, None);
-
-        let lowered = generate_import_lowering_function(
-            &mut world_builder,
-            &mut module_builder,
-            component_import_path("dyncall-wide"),
-            &import_func_ty,
-            core_function_path("dyncall-wide"),
-            SymbolName::intern("stub"),
-            core_func_sig,
-        )
-        .expect("a 12-felt argument list should be accepted");
-
-        let signatures =
-            dyncall_signatures(lowered.function_ref().expect("expected function lowering"));
-        assert_eq!(signatures.len(), 1);
-        assert_eq!(signatures[0].params.len(), 6);
-    }
-
-    #[test]
-    fn dyncall_import_rejects_thirteen_argument_felts() {
-        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // Six `u64` values and one felt are 13 argument felts, one past what the root leaves
-        let (import_func_ty, core_func_sig) = wide_dyncall_import(6, 1, None);
-
-        let result = generate_import_lowering_function(
-            &mut world_builder,
-            &mut module_builder,
-            component_import_path("dyncall-wide"),
-            &import_func_ty,
-            core_function_path("dyncall-wide"),
-            SymbolName::intern("stub"),
-            core_func_sig,
-        );
-
-        match result {
-            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
-            Err(err) => {
-                let message = err.to_string();
-                assert!(
-                    message
-                        .contains("13 argument field elements plus the 4 procedure-root elements")
-                        && message.contains("use at most 12 argument field elements"),
-                    "unexpected diagnostic: {message}"
-                );
-            }
+    fn dyncall_import_actual_payload_boundary_excludes_root_and_result_pointer() {
+        for (u64s, extra, result) in
+            [(6, 1, None), (8, 0, None), (7, 1, Some(two_field_record_type()))]
+        {
+            let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+            let (import_func_ty, core_func_sig) = wide_dyncall_import(u64s, extra, result);
+            let lowered = generate_import_lowering_function(
+                &mut world_builder,
+                &mut module_builder,
+                component_import_path("dyncall-wide"),
+                &import_func_ty,
+                core_function_path("dyncall-wide"),
+                SymbolName::intern("stub"),
+                core_func_sig,
+            )
+            .expect("root is excluded and the result pointer fits the canonical source budget");
+            let signatures = dyncall_signatures(lowered.function_ref().unwrap());
+            assert_eq!(signatures.len(), 1);
+            assert_eq!(signatures[0].params.len(), u64s + extra);
         }
     }
 
     #[test]
-    fn dyncall_import_past_the_operand_stack_window_is_rejected() {
+    fn dyncall_import_accepts_full_payload_with_source_result_pointer() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // Eight `u64` values are 16 argument felts, which leave no room for the root's elements
-        let (import_func_ty, core_func_sig) = wide_dyncall_import(8, 0, None);
-
-        let result = generate_import_lowering_function(
-            &mut world_builder,
-            &mut module_builder,
-            component_import_path("dyncall-wide"),
-            &import_func_ty,
-            core_function_path("dyncall-wide"),
-            SymbolName::intern("stub"),
-            core_func_sig,
-        );
-
-        match result {
-            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
-            Err(err) => {
-                let message = err.to_string();
-                assert!(
-                    message
-                        .contains("16 argument field elements plus the 4 procedure-root elements")
-                        && message.contains("use at most 12 argument field elements"),
-                    "unexpected diagnostic: {message}"
-                );
-            }
-        }
-    }
-
-    /// An argument list far enough past the budget is collapsed into a tuple pointer by canonical
-    /// flattening; the stored-procedure diagnostic has to win over the generic tuple rejection.
-    #[test]
-    fn dyncall_import_tupled_by_flattening_is_rejected_with_the_budget_diagnostic() {
-        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // Nine `u64` values are 18 argument felts, past the sixteen flat felts above which
-        // canonical flattening replaces the whole parameter list with a tuple pointer
-        let (import_func_ty, core_func_sig) = wide_dyncall_import(9, 0, None);
-
-        let result = generate_import_lowering_function(
-            &mut world_builder,
-            &mut module_builder,
-            component_import_path("dyncall-wide"),
-            &import_func_ty,
-            core_function_path("dyncall-wide"),
-            SymbolName::intern("stub"),
-            core_func_sig,
-        );
-
-        match result {
-            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
-            Err(err) => {
-                let message = err.to_string();
-                assert!(
-                    message
-                        .contains("18 argument field elements plus the 4 procedure-root elements")
-                        && message.contains("use at most 12 argument field elements"),
-                    "unexpected diagnostic: {message}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn dyncall_import_returning_through_a_pointer_accepts_eleven_argument_felts() {
-        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // Five `u64` values and one felt are 11 argument felts, which with the root's four
-        // elements and the result pointer exactly fill the operand stack window
         let (import_func_ty, core_func_sig) =
-            wide_dyncall_import(5, 1, Some(two_field_record_type()));
-
-        let lowered = generate_import_lowering_function(
-            &mut world_builder,
-            &mut module_builder,
-            component_import_path("dyncall-wide"),
-            &import_func_ty,
-            core_function_path("dyncall-wide"),
-            SymbolName::intern("stub"),
-            core_func_sig,
-        )
-        .expect("an 11-felt argument list with a returned pointer should be accepted");
-
-        let signatures =
-            dyncall_signatures(lowered.function_ref().expect("expected function lowering"));
-        assert_eq!(signatures.len(), 1);
-        // The out pointer is consumed by the lowering function, not passed to the callee
-        assert_eq!(signatures[0].params.len(), 6);
-        assert_eq!(signatures[0].results.len(), 2);
-    }
-
-    #[test]
-    fn dyncall_import_returning_through_a_pointer_rejects_twelve_argument_felts() {
-        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // The result pointer takes the element the twelfth argument felt would need
-        let (import_func_ty, core_func_sig) =
-            wide_dyncall_import(6, 0, Some(two_field_record_type()));
-
+            wide_dyncall_import(8, 0, Some(two_field_record_type()));
         let result = generate_import_lowering_function(
             &mut world_builder,
             &mut module_builder,
@@ -2685,65 +2327,59 @@ mod tests {
             SymbolName::intern("stub"),
             core_func_sig,
         );
+        let lowered = result.expect("source result pointer is separate from sixteen payload lanes");
+        let sigs = dyncall_signatures(lowered.function_ref().unwrap());
+        assert_eq!(sigs.len(), 1);
+        assert_eq!(sigs[0].params.iter().map(|p| p.ty.size_in_felts()).sum::<usize>(), 16);
+    }
 
-        match result {
-            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
-            Err(err) => {
-                let message = err.to_string();
-                assert!(
-                    message.contains(
-                        "12 argument field elements plus the 4 procedure-root elements and the \
-                         result pointer"
-                    ) && message.contains("use at most 11 argument field elements"),
-                    "unexpected diagnostic: {message}"
-                );
-            }
+    #[test]
+    fn dyncall_import_rejects_actual_payload_past_sixteen_lanes() {
+        for (u64s, extra, expected) in [(8, 1, 17), (9, 0, 18)] {
+            let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+            let (import_func_ty, core_func_sig) = wide_dyncall_import(u64s, extra, None);
+            let result = generate_import_lowering_function(
+                &mut world_builder,
+                &mut module_builder,
+                component_import_path("dyncall-wide"),
+                &import_func_ty,
+                core_function_path("dyncall-wide"),
+                SymbolName::intern("stub"),
+                core_func_sig,
+            );
+            let message = match result {
+                Ok(_) => panic!("oversized actual payload accepted"),
+                Err(err) => err.to_string(),
+            };
+            assert!(message.contains(&format!("{expected} argument field elements")), "{message}");
+            assert!(message.contains("16-element context argument ABI"), "{message}");
         }
     }
 
     #[test]
-    fn dyncall_import_past_the_budget_is_rejected_before_the_core_signature_check() {
-        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
-
-        // Thirteen felt arguments plus the root's four elements are 17 stack felts: wit-bindgen
-        // spilled them to memory on the guest side, so the core import takes a single pointer.
-        // The budget diagnostic has to win over the core signature mismatch that spill leaves
-        let mut ir = FunctionType::new(
-            CallConv::Fast,
-            core::iter::once(word_type())
-                .chain((0..13).map(|_| Type::Felt))
-                .collect::<Vec<_>>(),
-            vec![],
-        );
-        ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType { ir };
-        let core_func_sig = Signature {
-            params: vec![AbiParam::new(Type::I32)],
-            results: vec![],
-            cc: CallConv::ComponentModel,
-        };
-
-        let result = generate_import_lowering_function(
-            &mut world_builder,
-            &mut module_builder,
-            component_import_path("dyncall-wide"),
-            &import_func_ty,
-            core_function_path("dyncall-wide"),
-            SymbolName::intern("stub"),
-            core_func_sig,
-        );
-
-        match result {
-            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
-            Err(err) => {
-                let message = err.to_string();
-                assert!(
-                    message
-                        .contains("13 argument field elements plus the 4 procedure-root elements")
-                        && message.contains("use at most 12 argument field elements"),
-                    "unexpected diagnostic: {message}"
-                );
+    fn dyncall_import_retains_core_signature_validation() {
+        for same_arity in [false, true] {
+            let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+            let (import_func_ty, mut core_func_sig) = wide_dyncall_import(6, 1, None);
+            if same_arity {
+                core_func_sig.params[4] = AbiParam::new(Type::I32);
+            } else {
+                core_func_sig.params = vec![AbiParam::new(Type::I32)];
             }
+            let result = generate_import_lowering_function(
+                &mut world_builder,
+                &mut module_builder,
+                component_import_path("dyncall-wide"),
+                &import_func_ty,
+                core_function_path("dyncall-wide"),
+                SymbolName::intern("stub"),
+                core_func_sig,
+            );
+            let message = match result {
+                Ok(_) => panic!("incorrect core signature accepted"),
+                Err(err) => err.to_string(),
+            };
+            assert!(message.contains("core Wasm signature mismatch"), "{message}");
         }
     }
 
@@ -2888,5 +2524,156 @@ mod tests {
         let function_ref = lowered.function_ref().expect("expected function lowering");
         assert_eq!(function_ref.borrow().name().as_str(), "test_roundtrip");
         assert!(module_builder.get_function("miden:test@1.0.0#roundtrip").is_none());
+    }
+    #[test]
+    fn dyncall_source_shape_counts_root_and_separates_result_pointer() {
+        for result_ty in [None, Some(two_field_record_type())] {
+            let (context, mut world, mut module) = world_with_core_module();
+            let ir = FunctionType::new(
+                CallConv::ComponentModel,
+                core::iter::once(word_type()).chain(vec![Type::Felt; 16]).collect::<Vec<_>>(),
+                result_ty.into_iter().collect::<Vec<_>>(),
+            );
+            let sig = expected_core_signature(
+                &flatten_function_type(&context, &ir, CanonicalAbiMode::Import).unwrap(),
+            );
+            assert_eq!(sig.params().len(), 1 + usize::from(!ir.results.is_empty()));
+            let lowered = generate_import_lowering_function(
+                &mut world,
+                &mut module,
+                component_import_path("dyncall-full-tuple"),
+                &ComponentFunctionType { ir },
+                core_function_path("dyncall-full-tuple"),
+                SymbolName::intern("stub"),
+                sig,
+            )
+            .expect("full canonical tuple is loaded before dyncall");
+            let sigs = dyncall_signatures(lowered.function_ref().unwrap());
+            assert_eq!(sigs[0].params.len(), 16);
+            assert!(sigs[0].params.iter().all(|p| p.ty == Type::Felt));
+        }
+    }
+
+    #[test]
+    fn ordinary_import_target_capacity_is_independent_of_canonical_shape() {
+        for (u64s, extra, results, expected) in [
+            (8, 0, vec![], None),
+            (8, 1, vec![], Some("17 argument field elements")),
+            (
+                0,
+                0,
+                vec![Type::from(StructType::new(vec![Type::Felt; 17]))],
+                Some("17 result field elements"),
+            ),
+        ] {
+            let (context, mut world, mut module) = world_with_core_module();
+            let ir = FunctionType::new(
+                CallConv::ComponentModel,
+                vec![Type::U64; u64s]
+                    .into_iter()
+                    .chain(vec![Type::Felt; extra])
+                    .collect::<Vec<_>>(),
+                results,
+            );
+            let sig = expected_core_signature(
+                &flatten_function_type(&context, &ir, CanonicalAbiMode::Import).unwrap(),
+            );
+            let outcome = generate_import_lowering_function(
+                &mut world,
+                &mut module,
+                component_import_path("ordinary-capacity"),
+                &ComponentFunctionType { ir },
+                core_function_path("ordinary-capacity"),
+                SymbolName::intern("stub"),
+                sig,
+            );
+            if let Some(expected) = expected {
+                let message = outcome.err().expect("actual target overflow must fail").to_string();
+                assert!(
+                    message.contains(expected)
+                        && message.contains("16-element")
+                        && message.contains("ordinary-capacity"),
+                    "{message}"
+                );
+            } else {
+                outcome.expect("sixteen actual lanes are supported");
+            }
+        }
+    }
+
+    #[test]
+    fn dyncall_canonical_tuple_preserves_typed_carriers_and_layout() {
+        let (context, mut world, mut module) = world_with_core_module();
+        let nested = Type::from(StructType::new(vec![Type::U8, Type::U64, Type::Felt]));
+        let variant = mixed_payload_variant_type();
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            core::iter::once(word_type())
+                .chain([nested, variant])
+                .chain(vec![Type::Felt; 8])
+                .collect::<Vec<_>>(),
+            vec![],
+        );
+        let expected = flatten_types(&context, &ir.params[1..]).unwrap();
+        let source = flatten_function_type(&context, &ir, CanonicalAbiMode::Import).unwrap();
+        assert!(source.params()[0].ty.is_pointer());
+        let core_sig = expected_core_signature(&source);
+        let lowered = generate_import_lowering_function(
+            &mut world,
+            &mut module,
+            component_import_path("dyncall-typed-tuple"),
+            &ComponentFunctionType { ir },
+            core_function_path("dyncall-typed-tuple"),
+            SymbolName::intern("stub"),
+            core_sig,
+        )
+        .expect("typed tuple arguments normalize before dyncall");
+        let actual = dyncall_signatures(lowered.function_ref().unwrap());
+        assert_eq!(actual[0].params, expected);
+        assert_eq!(actual[0].params[1].ty, Type::I64);
+    }
+
+    #[test]
+    fn dyncall_canonical_tuple_validates_variants() {
+        let (context, mut world, mut module) = world_with_core_module();
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            core::iter::once(word_type())
+                .chain([scalar_payload_variant_type()])
+                .chain(vec![Type::Felt; 11])
+                .collect::<Vec<_>>(),
+            vec![],
+        );
+        let source = flatten_function_type(&context, &ir, CanonicalAbiMode::Import).unwrap();
+        assert!(source.params()[0].ty.is_pointer());
+        let lowered = generate_import_lowering_function(
+            &mut world,
+            &mut module,
+            component_import_path("dyncall-variant-tuple"),
+            &ComponentFunctionType { ir },
+            core_function_path("dyncall-variant-tuple"),
+            SymbolName::intern("stub"),
+            expected_core_signature(&source),
+        )
+        .expect("tuple variants load with validation");
+        let (switches, traps) = count_validation_ops(lowered.function_ref().unwrap());
+        assert_eq!((switches, traps), (1, 1));
+    }
+
+    #[test]
+    fn fpi_genuine_canonical_tuple_preserves_payload_and_result_pointer() {
+        let context = Rc::new(Context::default());
+        for result in [Type::Felt, two_field_record_type()] {
+            let ir = FunctionType::new(
+                CallConv::ComponentModel,
+                fpi_params_with_user_args(vec![Type::Felt; 11]),
+                vec![result],
+            );
+            let shape = plan_fpi_call_for(&context, &ir, "fpi-genuine-tuple").unwrap();
+            assert!(shape.has_arg_ptr);
+            assert_eq!(shape.flattened_params.len(), 17);
+            assert_eq!(shape.flattened_arg_felts, 17);
+            assert_eq!(shape.has_output_ptr, ir.results[0] != Type::Felt);
+        }
     }
 }

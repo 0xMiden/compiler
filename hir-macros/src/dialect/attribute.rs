@@ -111,7 +111,7 @@ impl quote::ToTokens for Attribute {
             #[doc = #struct_doc]
             ///
             /// It is not possible to construct values of this type directly, instead you must
-            /// allocate them using a [Context](::midenc_hir::Context) via `Self::create`.
+            /// allocate them using a [`::midenc_hir::Context`] via `Self::create`.
             #[derive(Clone, PartialEq, Eq, Hash)]
             #[repr(C)]
             pub struct #attr_struct_name #ty_generics {

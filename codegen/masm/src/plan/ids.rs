@@ -72,6 +72,7 @@ impl SpillSlotId {
     }
 
     /// Temporary used while arranging or executing one lowering unit.
+    #[cfg(test)]
     pub const fn temporary(step: SelectedStepId, index: u32) -> Self {
         Self {
             owner: SlotOwner::Unit(step),
@@ -80,6 +81,7 @@ impl SpillSlotId {
     }
 
     /// Temporary used while transferring values along one selected edge.
+    #[cfg(test)]
     pub const fn edge_temporary(edge: EdgeId, index: u32) -> Self {
         Self {
             owner: SlotOwner::Edge(edge),

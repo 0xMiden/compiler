@@ -81,7 +81,7 @@ impl<OperandHasher, ResultHasher> OpEquivalence<OperandHasher, ResultHasher> {
 
     /// Compare if two operations are equivalent using the current equivalence configuration.
     ///
-    /// This is equivalent to calling [compute_equivalence] with `are_values_equivalent` set to
+    /// This is equivalent to calling [Self::compute_equivalence] with `are_values_equivalent` set to
     /// `ValueRef::ptr_eq`, and `on_value_equivalence` to a no-op.
     #[inline]
     pub fn are_equivalent(&self, lhs: &OperationRef, rhs: &OperationRef) -> bool {
@@ -120,7 +120,7 @@ impl<OperandHasher, ResultHasher> OpEquivalence<OperandHasher, ResultHasher> {
 
     /// Compare if two regions are equivalent using the current equivalence configuration.
     ///
-    /// See [compute_equivalence] for more details.
+    /// See [Self::compute_equivalence] for more details.
     pub fn compute_region_equivalence<VE, OVE>(
         &self,
         lhs: &RegionRef,

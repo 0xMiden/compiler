@@ -1,10 +1,8 @@
 // Ten independent u64 values (20 stack felts) live across a two-way branch,
 // consumed in different orders in each arm, with four of them still live after
-// the join. Operand-stack pressure > 16 felts spans a multi-block CFG, so the
-// first (pre-SCF) TransformSpills pass must insert spills/reloads across
-// control-flow edges and restore SSA form with block-parameter phis
-// (rewrite_cfg_spills / insert_required_phis), not just the straight-line
-// single-block path that case_stack_pressure exercises.
+// the join. Operand-stack pressure exceeds the addressable sixteen-lane window,
+// so physical allocation must preserve live values through both branch edges
+// and their join, beyond the straight-line case_stack_pressure shape.
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let m = (input1 | 1) as u64;
@@ -37,10 +35,6 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     };
     // Join-block uses of values reloaded inside the arms: the reload in either
     // arm does not dominate these uses, forcing phi insertion at the join.
-    let r = t
-        ^ v0.rotate_left(25)
-        ^ v3.rotate_left(33)
-        ^ v6.rotate_left(41)
-        ^ v9.rotate_left(49);
+    let r = t ^ v0.rotate_left(25) ^ v3.rotate_left(33) ^ v6.rotate_left(41) ^ v9.rotate_left(49);
     (r as u32) ^ ((r >> 32) as u32)
 }

@@ -136,19 +136,24 @@ impl Verifier<'_> {
             .first()
             .ok_or_else(|| error("procedure has no entry"))?
             .id;
+        let dominators = super::reconstruction::dominators(&self.plan.selected);
+        let definitions = super::reconstruction::Definitions::new(&self.plan.selected);
         let mut incoming = BTreeMap::<SegmentId, Padding>::new();
         let mut origins = BTreeMap::<SegmentId, OriginFacts>::new();
-        let entry_state = self.abi_entry(entry)?;
-        incoming.insert(entry, entry_state.padding.clone());
-        // Token induction is local to each pass; only the finite padding possibilities flow.
+        incoming.insert(entry, self.abi_entry(entry)?.padding);
+        // Only token-free padding and origin facts cross independent segment replays.
         loop {
             let previous = incoming.clone();
             let previous_origins = origins.clone();
             for segment in &self.plan.selected.segments {
+                // Every hypothesis starts an independent identity proof. Keep this arena
+                // through the segment and all outgoing edges, then discard it: no State
+                // or Cursor survives the iteration, and transferred facts contain no tokens.
+                self.tokens = Tokens::new(self.frame.source().extent);
                 let mut state = if segment.id == entry {
                     self.abi_entry(entry)?
                 } else {
-                    self.hypothesis(segment.id)?
+                    self.hypothesis(segment.id, &dominators, &definitions)?
                 };
                 if let Some(padding) = incoming.get(&segment.id) {
                     state.padding = padding.clone();
@@ -279,7 +284,12 @@ impl Verifier<'_> {
         Ok(State::new(stack, names))
     }
 
-    fn hypothesis(&mut self, id: SegmentId) -> Result<State, VerificationError> {
+    fn hypothesis(
+        &mut self,
+        id: SegmentId,
+        dominators: &super::reconstruction::Dominators,
+        definitions: &super::reconstruction::Definitions,
+    ) -> Result<State, VerificationError> {
         let contract = &self.plan.contracts[&id];
         let mut names = BTreeMap::new();
         let mut atoms = self.live.entry[&id].clone();
@@ -331,7 +341,14 @@ impl Verifier<'_> {
                 self.tokens.intern(Identity::FrameAddress(offset)),
             );
         }
-        super::reconstruction::seed(&self.plan.selected, id, &mut names, &mut self.tokens)?;
+        super::reconstruction::seed(
+            &self.plan.selected,
+            id,
+            dominators,
+            definitions,
+            &mut names,
+            &mut self.tokens,
+        )?;
         let stack = contract
             .stack_top_first
             .iter()
@@ -399,13 +416,14 @@ impl Verifier<'_> {
                     predicate,
                     on_true,
                     on_false,
+                    before,
                     body,
                     ..
                 } => {
                     if *on_true == edge.id || *on_false == edge.id {
                         Some(*predicate)
                     } else {
-                        find(body, edge)
+                        find(before, edge).or_else(|| find(body, edge))
                     }
                 }
                 ControlTree::Sequence(children) => {
@@ -427,7 +445,12 @@ impl Verifier<'_> {
 
 fn is_header(tree: &ControlTree, id: SegmentId) -> bool {
     match tree {
-        ControlTree::Loop { header, body, .. } => *header == id || is_header(body, id),
+        ControlTree::Loop {
+            header,
+            before,
+            body,
+            ..
+        } => *header == id || is_header(before, id) || is_header(body, id),
         ControlTree::Sequence(children) => children.iter().any(|tree| is_header(tree, id)),
         ControlTree::If {
             then_body,
@@ -439,7 +462,12 @@ fn is_header(tree: &ControlTree, id: SegmentId) -> bool {
 }
 fn is_exit(tree: &ControlTree, id: EdgeId) -> bool {
     match tree {
-        ControlTree::Loop { on_false, body, .. } => *on_false == id || is_exit(body, id),
+        ControlTree::Loop {
+            on_false,
+            before,
+            body,
+            ..
+        } => *on_false == id || is_exit(before, id) || is_exit(body, id),
         ControlTree::Sequence(children) => children.iter().any(|tree| is_exit(tree, id)),
         ControlTree::If {
             then_body,
@@ -534,7 +562,9 @@ mod hypothesis_tests {
     fn hypothesis_omits_unrelated_segment_values() {
         let (plan, frame, _) = super::super::tests::loops::loop_fixture(true);
         let mut verifier = Verifier::new(&plan, &frame).unwrap();
-        let state = verifier.hypothesis(SegmentId(1)).unwrap();
+        let dominators = super::super::reconstruction::dominators(&plan.selected);
+        let definitions = super::super::reconstruction::Definitions::new(&plan.selected);
+        let state = verifier.hypothesis(SegmentId(1), &dominators, &definitions).unwrap();
         assert!(state.names.contains_key(&Atom::new(ValueId(10), 0)));
         assert!(state.names.contains_key(&Atom::new(ValueId(11), 0)));
         assert!(!state.names.contains_key(&Atom::new(ValueId(40), 0)));

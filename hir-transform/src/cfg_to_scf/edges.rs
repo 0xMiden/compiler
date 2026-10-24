@@ -93,7 +93,7 @@ impl Iterator for SuccessorEdges {
 /// Structure containing the entry, exit and back edges of a cycle.
 ///
 /// A cycle is a generalization of a loop that may have multiple entry edges. See also
-/// https://llvm.org/docs/CycleTerminology.html.
+/// <https://llvm.org/docs/CycleTerminology.html>.
 #[derive(Debug, Default)]
 pub struct CycleEdges {
     /// All edges from a block outside the cycle to a block inside the cycle.

@@ -28,6 +28,8 @@ impl SelectedLowering {
 impl ProcedurePlan {
     fn fixture(actions: Vec<PlanAction>) -> Self {
         Self {
+            debug_locations: Default::default(),
+            decisions: Default::default(),
             selected: crate::verify::tests::empty_program(),
             contracts: BTreeMap::new(),
             segment_actions: BTreeMap::from([(SegmentId(0), actions)]),

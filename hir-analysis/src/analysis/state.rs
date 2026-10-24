@@ -17,7 +17,7 @@ pub use self::{
 };
 use crate::{DataFlowAnalysis, LatticeAnchor, LatticeAnchorRef};
 
-/// The identifier for a uniqued [AnalysisStateKeyImpl]
+/// Identifies an analysis state by its concrete type and lattice anchor.
 #[derive(Copy, Clone)]
 pub struct AnalysisStateKey {
     type_id: core::any::TypeId,

@@ -183,7 +183,7 @@ where
 
     /// Get the next successor of this node, and advance the `next_child` index
     ///
-    /// It is expected that the caller has already checked [is_empty]. Failing to do so
+    /// It is expected that the caller has already checked [Self::is_empty]. Failing to do so
     /// will cause this function to panic once all successors have been visited.
     pub fn pop_successor(&mut self) -> T {
         self.successors.pop().unwrap()

@@ -16,7 +16,7 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
     /// [Interface::canonical_name] does.
     ///
     /// Returns an error when Miden Assembly cannot spell `name`, or it contains `::`, or the
-    /// interface cannot be defined where it is inserted (see [ensure_definable]).
+    /// interface cannot be defined where it is inserted.
     fn create_interface(&mut self, name: Ident) -> Result<InterfaceRef, Report> {
         let name = Ident::new(Interface::canonical_name(name.name)?, name.span);
         ensure_definable::<Interface, _>(self.builder(), name.name)?;
@@ -28,7 +28,7 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
     /// does.
     ///
     /// Returns an error when Miden Assembly cannot spell `name`, or it contains `::`, or the
-    /// module cannot be defined where it is inserted (see [ensure_definable]).
+    /// module cannot be defined where it is inserted.
     fn create_module(&mut self, name: Ident) -> Result<ModuleRef, Report> {
         let name = Ident::new(Module::canonical_name(name.name)?, name.span);
         ensure_definable::<Module, _>(self.builder(), name.name)?;
@@ -38,8 +38,7 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Create a [Function] named `name`.
     ///
-    /// Returns an error when the function cannot be defined where it is inserted (see
-    /// [ensure_definable]).
+    /// Returns an error when the function cannot be defined where it is inserted.
     fn create_function(
         &mut self,
         name: Ident,
@@ -53,8 +52,7 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Create a [FunctionAlias] referring to `target`.
     ///
-    /// Returns an error when the alias cannot be defined where it is inserted (see
-    /// [ensure_definable]).
+    /// Returns an error when the alias cannot be defined where it is inserted.
     fn create_function_alias<C: AsCallableSymbolRef>(
         &mut self,
         name: Ident,
@@ -68,8 +66,7 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Create a [GlobalVariable] named `name`.
     ///
-    /// Returns an error when the global cannot be defined where it is inserted (see
-    /// [ensure_definable]).
+    /// Returns an error when the global cannot be defined where it is inserted.
     fn create_global_variable(
         &mut self,
         name: Ident,
@@ -83,8 +80,7 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Create a [FunctionTable] with `num_slots` slots and no initialized entries.
     ///
-    /// Returns an error when the table cannot be defined where it is inserted (see
-    /// [ensure_definable]).
+    /// Returns an error when the table cannot be defined where it is inserted.
     fn create_function_table(
         &mut self,
         name: Ident,

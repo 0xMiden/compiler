@@ -1,0 +1,18 @@
+// RUN: midenc %s --emit=masm=- | filecheck %s
+// CHECK-DAG: proc dispatch
+// CHECK-DAG: procref
+
+builtin.world {
+builtin.module public @table_test {
+    builtin.function private extern("C") @callee(%value: felt) -> felt {
+        builtin.ret %value : (felt);
+    };
+    builtin.function_table private @table : 2 {
+        builtin.function_table_entry 1 @callee tag 7;
+    };
+    builtin.function public extern("C") @dispatch(%index: u32, %value: felt) -> felt {
+        %result = hir.exec_indirect @table[%index](%value) : extern("C") (felt) -> felt tag 7;
+        builtin.ret %result : (felt);
+    };
+};
+};
