@@ -181,7 +181,7 @@ impl Indirect {
                         })?
                         .into(),
                 ));
-                b.emit(masm::Instruction::DynCall);
+                b.invoke(masm::Instruction::DynCall);
                 b.emit_all(context_result_cleanup(
                     u8::try_from(*results).map_err(|_| invalid("context results exceed window"))?,
                 )?);
@@ -192,9 +192,7 @@ impl Indirect {
                     .get(&StoredInputId(0))
                     .ok_or_else(|| invalid("missing checked table address"))?;
                 b.emit(masm::Instruction::LocLoad(frame.resolve(FrameRef::Spill(*slot))?.into()));
-                b.emit(masm::Instruction::EmitImm(crate::Event::FrameStart.into()));
-                b.emit(masm::Instruction::DynExec);
-                b.emit(masm::Instruction::EmitImm(crate::Event::FrameEnd.into()));
+                b.invoke(masm::Instruction::DynExec);
             }
         }
         Ok(annotate_raw(&b.ops, unit.id))
@@ -256,11 +254,9 @@ impl Direct {
             }
             .expand(unit, bindings, frame, env);
         }
-        let mut body = AnnotatedMasmBody::new();
-        body.push_instruction(masm::Instruction::EmitImm(crate::Event::FrameStart.into()), unit.id);
-        body.push_instruction(self.instruction.clone(), unit.id);
-        body.push_instruction(masm::Instruction::EmitImm(crate::Event::FrameEnd.into()), unit.id);
-        Ok(body)
+        let mut b = raw::Builder::new(Default::default());
+        b.invoke(self.instruction.clone());
+        Ok(annotate_raw(&b.ops, unit.id))
     }
 }
 

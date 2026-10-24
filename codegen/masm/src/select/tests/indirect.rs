@@ -551,3 +551,33 @@ fn table_matching_tag_requires_complete_convention() {
     let error = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
     assert!(alloc::format!("{error:?}").contains("mismatched stack contract"), "{error:?}");
 }
+
+#[test]
+fn source_dyncall_preserves_debugger_frames_with_full_argument_window() {
+    use alloc::sync::Arc;
+    let params = (0..16).map(|i| format!("%a{i}: felt")).collect::<Vec<_>>().join(", ");
+    let args = (0..16).map(|i| format!("%a{i}")).collect::<Vec<_>>().join(", ");
+    let types = vec!["felt"; 16].join(", ");
+    let f = parse(&format!(
+        "builtin.function public extern(\"C\") @dispatch(%r0: felt,%r1: felt,%r2: felt,%r3: \
+         felt,{params}) -> felt {{ %result=hir.dyncall [%r0,%r1,%r2,%r3]({args}) : \
+         extern(\"component-model\") ({types}) -> felt; builtin.ret %result : (felt); }};"
+    ));
+    let selected = selected_procedure(&f, &SelectEnv::default());
+    let manager = Arc::new(miden_assembly::DefaultSourceManager::default());
+    let code = format!(
+        "proc callee nop end {selected} begin {} procref.callee exec.selected push.11 assert_eq \
+         end",
+        crate::plan::tests::lowering_units::push_top(&(11..27).collect::<Vec<_>>()),
+    );
+    let package = miden_assembly::Assembler::new(manager.clone())
+        .assemble_program("source_dyncall_debug_frames", code)
+        .unwrap();
+    crate::plan::tests::lowering_units::assert_debugger_call_frames(
+        package.into(),
+        manager,
+        [],
+        "selected",
+    )
+    .unwrap();
+}

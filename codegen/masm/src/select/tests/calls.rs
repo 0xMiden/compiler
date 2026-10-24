@@ -546,3 +546,24 @@ fn kernel_descendant_module_is_not_a_kernel_procedure_owner() {
     // Source selection checks the callee's convention before physical return normalization.
     checked(&f, &SelectEnv::default());
 }
+
+#[test]
+fn source_direct_call_preserves_debugger_frames() {
+    use alloc::sync::Arc;
+    let f = direct("call", "component-model");
+    let selected =
+        selected_procedure(&f, &SelectEnv::default()).replace("::direct_test::callee", "callee");
+    let manager = Arc::new(miden_assembly::DefaultSourceManager::default());
+    let code =
+        format!("proc callee nop end {selected} begin push.42 exec.selected push.42 assert_eq end");
+    let package = miden_assembly::Assembler::new(manager.clone())
+        .assemble_program("source_direct_call_debug_frames", code)
+        .unwrap();
+    crate::plan::tests::lowering_units::assert_debugger_call_frames(
+        package.into(),
+        manager,
+        [],
+        "selected",
+    )
+    .unwrap();
+}
