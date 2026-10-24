@@ -31,10 +31,16 @@ struct OriginFacts {
 impl OriginFacts {
     fn include(&mut self, state: &State, tokens: &Tokens) {
         for (atom, token) in &state.names {
-            self.names.entry(*atom).or_default().union(tokens.origins(*token));
+            let origin = tokens.origins(*token);
+            if origin.has_frame() {
+                self.names.entry(*atom).or_default().union(origin);
+            }
         }
         for (offset, token) in &state.cells {
-            self.cells.entry(*offset).or_default().union(tokens.origins(*token));
+            let origin = tokens.origins(*token);
+            if origin.has_frame() {
+                self.cells.entry(*offset).or_default().union(origin);
+            }
         }
     }
 
@@ -276,10 +282,44 @@ impl Verifier<'_> {
     fn hypothesis(&mut self, id: SegmentId) -> Result<State, VerificationError> {
         let contract = &self.plan.contracts[&id];
         let mut names = BTreeMap::new();
-        for value in self.plan.selected.values.values() {
-            for lane in 0..value.layout.lanes() {
-                names.insert(Atom::new(value.id, lane), self.tokens.fresh());
+        let mut atoms = self.live.entry[&id].clone();
+        let segment = self.plan.selected.segments.iter().find(|segment| segment.id == id).unwrap();
+        // Parameters and outgoing bindings are checked even when semantically dead.
+        for value in segment.parameters.iter().copied().chain(
+            self.plan
+                .selected
+                .edges
+                .iter()
+                .filter(|edge| edge.source == id)
+                .flat_map(|edge| edge.bindings.iter().map(|binding| binding.source)),
+        ) {
+            atoms.extend(
+                (0..self.plan.selected.values[&value].layout.lanes())
+                    .map(|lane| Atom::new(value, lane)),
+            );
+        }
+        atoms.extend(contract.stack_top_first.iter().copied());
+        atoms.extend(contract.required_spill_slots.iter().map(|(_, atom)| *atom));
+        atoms.extend(contract.aliases.pairs().iter().flat_map(|(a, b)| [*a, *b]));
+        atoms.extend(contract.required_scratch.iter().filter_map(|fact| match fact.content {
+            ContentRequirement::Atom(atom) => Some(atom),
+            _ => None,
+        }));
+        atoms.extend(contract.address_facts.iter().map(|fact| Atom::new(fact.pointer, 0)));
+        // Recovery follows source aliases recursively, including dependencies without a copy.
+        let mut pending: Vec<_> = atoms.iter().copied().collect();
+        while let Some(atom) = pending.pop() {
+            if let Some(Reconstruction::Alias(sources)) =
+                &self.plan.selected.values[&atom.value].reconstruction
+            {
+                let source = sources[usize::from(atom.lane)];
+                if atoms.insert(source) {
+                    pending.push(source);
+                }
             }
+        }
+        for atom in atoms {
+            names.insert(atom, self.tokens.fresh());
         }
         for fact in &contract.address_facts {
             let offset = u32::from(self.frame.resolve(FrameRef::Scratch {
@@ -457,4 +497,47 @@ fn unify_hypothesis(
         }
     }
     Ok(to)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_data_does_not_create_origin_facts() {
+        let mut tokens = Tokens::new(4);
+        let atom = Atom::new(ValueId(0), 0);
+        let token = tokens.fresh();
+        let mut state = State::new(alloc::vec![token], BTreeMap::from([(atom, token)]));
+        state.cells.insert(0, token);
+        let mut facts = OriginFacts::default();
+        facts.include(&state, &tokens);
+        assert!(facts.names.is_empty());
+        assert!(facts.cells.is_empty());
+
+        let pointer = tokens.intern(Identity::FrameAddress(4));
+        state.names.insert(atom, pointer);
+        state.cells.insert(0, pointer);
+        facts.include(&state, &tokens);
+        assert!(facts.names[&atom].compiler());
+        assert!(facts.cells[&0].compiler());
+        facts.include(&State::new(alloc::vec![token], BTreeMap::from([(atom, token)])), &tokens);
+        assert!(facts.names[&atom].compiler());
+    }
+}
+
+#[cfg(test)]
+mod hypothesis_tests {
+    use super::*;
+
+    #[test]
+    fn hypothesis_omits_unrelated_segment_values() {
+        let (plan, frame, _) = super::super::tests::loops::loop_fixture(true);
+        let mut verifier = Verifier::new(&plan, &frame).unwrap();
+        let state = verifier.hypothesis(SegmentId(1)).unwrap();
+        assert!(state.names.contains_key(&Atom::new(ValueId(10), 0)));
+        assert!(state.names.contains_key(&Atom::new(ValueId(11), 0)));
+        assert!(!state.names.contains_key(&Atom::new(ValueId(40), 0)));
+        assert!(!state.names.contains_key(&Atom::new(ValueId(41), 0)));
+    }
 }

@@ -95,7 +95,7 @@ impl Tokens {
 
     /// Conservatively taint an existing token; report whether the origin set grew.
     pub fn add_origins(&mut self, token: Token, origins: Origins) -> bool {
-        self.origins.entry(token).or_default().union(origins)
+        origins.has_frame() && self.origins.entry(token).or_default().union(origins)
     }
 
     /// Reuse the token for an identical constructor; child tokens must belong to this arena.
@@ -146,5 +146,21 @@ impl Tokens {
             Identity::Literal(value) => Some(*value),
             _ => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_origin_addition_does_not_allocate_a_fact() {
+        let mut tokens = Tokens::new(0);
+        let token = tokens.fresh();
+        assert!(!tokens.add_origins(token, Origins::default()));
+        assert!(tokens.origins.is_empty());
+        assert!(tokens.add_origins(token, Origins(2)));
+        assert!(!tokens.add_origins(token, Origins::default()));
+        assert!(tokens.origins(token).compiler());
     }
 }
