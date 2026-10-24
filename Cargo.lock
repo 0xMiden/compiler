@@ -4272,7 +4272,6 @@ dependencies = [
  "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-hir",
- "midenc-hir-analysis",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
@@ -4341,10 +4340,8 @@ dependencies = [
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-scf",
- "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-hir-transform",
 ]
 
 [[package]]
@@ -4498,10 +4495,7 @@ dependencies = [
  "blink-alloc",
  "log",
  "midenc-dialect-arith",
- "midenc-dialect-cf",
  "midenc-dialect-hir",
- "midenc-dialect-scf",
- "midenc-expect-test",
  "midenc-hir",
 ]
 

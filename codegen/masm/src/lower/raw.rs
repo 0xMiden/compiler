@@ -288,3 +288,38 @@ pub(crate) fn stage_root(
     b.emit(I::DropW);
     b.ops
 }
+
+/// Check a table index and leave its exact slot address, preserving the entire suffix.
+/// Shared by legacy emission and the registered phased indirect-call definition.
+/// `base` is an element address; `num_slots` and `tag` come from linked table metadata. Bounds
+/// and signature/null checks execute before the resulting address can be used for dispatch.
+pub(crate) fn checked_table_address(
+    num_slots: u32,
+    base: u32,
+    tag: u32,
+    span: masm::SourceSpan,
+) -> Vec<masm::Op> {
+    let mut b = Builder::new(span);
+    b.emit(I::Dup0);
+    b.emit_push(num_slots);
+    b.emit(I::U32Lt);
+    b.emit(I::AssertWithError(
+        Arc::<str>::from("indirect call: function table index out of bounds").into(),
+    ));
+    b.emit(I::MulImm(
+        Felt::new_unchecked(crate::linker::FunctionTableLayout::SLOT_SIZE_ELEMENTS as u64).into(),
+    ));
+    b.emit(I::AddImm(Felt::new_unchecked(base as u64).into()));
+    b.emit(I::Dup0);
+    b.emit(I::AddImm(
+        Felt::new_unchecked(crate::linker::FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS as u64)
+            .into(),
+    ));
+    b.emit(I::MemLoad);
+    b.emit_push(tag);
+    b.emit(I::AssertEqWithError(
+        Arc::<str>::from("indirect call: callee signature mismatch or null function reference")
+            .into(),
+    ));
+    b.ops
+}

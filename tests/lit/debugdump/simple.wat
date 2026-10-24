@@ -18,17 +18,17 @@
 
 ;; Function totals include the compiler's intrinsic library.
 ;; CHECK: Functions:
-;; CHECK-NEXT: records:          73
+;; CHECK-NEXT: records:          78
 ;; CHECK-NEXT: with source info: 2
-;; CHECK-NEXT: w/o source info:  71
+;; CHECK-NEXT: w/o source info:  76
 
 ;; CHECK: Source Files:
-;; CHECK-NEXT: records: 4
+;; CHECK-NEXT: records: 5
 
 ;; CHECK: Locations:
 
 ;; CHECK: Source Nodes:
-;; CHECK-NEXT: records: 17
+;; CHECK-NEXT: records: 19
 ;; CHECK-NEXT: roots:   2
 ;; CHECK-NEXT: debug variables (total): 0
 ;; CHECK-NEXT: inline calls (total):    0

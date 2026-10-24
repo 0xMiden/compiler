@@ -14,8 +14,8 @@ pub struct AnalysisStateDescriptor {
     type_id: TypeId,
     /// The vtable pointer for the analysis state
     metadata: core::ptr::DynMetadata<dyn AnalysisState>,
-    /// Offset from the start of [AnalysisStateInfo] to the start of the RawEntity<T> for this
-    /// analsyis type
+    /// Offset from the start of [AnalysisStateInfo] to the start of the `RawEntity<T>` for this
+    /// analysis type
     offset: u32,
 }
 impl AnalysisStateDescriptor {

@@ -29,8 +29,6 @@
 #![feature(iter_next_chunk)]
 #![feature(iter_collect_into)]
 #![feature(trusted_len)]
-#![feature(cast_maybe_uninit)]
-#![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array_transpose)]
 #![feature(array_into_iter_constructors)]
 #![feature(slice_range)]

@@ -127,6 +127,12 @@ fn preemptively_move_endangered_operands_to_top(
     changed
 }
 
+/// This tactic prepares a complete operand prefix inside the directly addressable window.
+/// Wider requests belong to other scheduling strategies, including full normalization.
+fn required_operands_fit_window(expected: &Stack) -> bool {
+    expected.iter().map(|value| value.stack_size()).sum::<usize>() <= MASM_STACK_WINDOW_FELTS
+}
+
 /// Returns `true` if any expected copies are missing from the current stack.
 fn has_missing_expected_copies(builder: &SolutionBuilder) -> bool {
     builder
@@ -232,7 +238,9 @@ impl Tactic for LinearStackWindow {
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult {
         let trace_target = builder.trace_target().clone().with_topic("solver:linear-window");
 
-        if !has_missing_expected_copies(builder) {
+        if !required_operands_fit_window(builder.context().expected())
+            || !has_missing_expected_copies(builder)
+        {
             return Err(TacticError::NotApplicable);
         }
 
@@ -272,6 +280,72 @@ mod tests {
             operands::{Action, SolverOptions},
         },
     };
+
+    #[test]
+    fn linear_stack_window_eligibility_uses_required_raw_width() {
+        for (widths, eligible) in [
+            (vec![1; 15], true),
+            (vec![1; 16], true),
+            (vec![1; 17], false),
+            (vec![4, 4, 4, 2, 1], true),
+            (vec![4, 4, 4, 4], true),
+            (vec![4, 4, 4, 4, 1], false),
+            (vec![17], false),
+        ] {
+            let expected = Stack::from_iter(
+                widths.iter().enumerate().map(|(i, width)| ValueOrAlias::new(i as u32, *width)),
+            );
+            assert_eq!(required_operands_fit_window(&expected), eligible, "{widths:?}");
+        }
+    }
+
+    #[test]
+    fn linear_stack_window_refuses_over_window_mixed_copy_requests() {
+        for widths in [vec![1; 17], vec![4, 4, 4, 4, 1], vec![17]] {
+            let values = widths
+                .iter()
+                .enumerate()
+                .map(|(i, width)| ValueOrAlias::new(i as u32, *width))
+                .collect::<Vec<_>>();
+            let mut constraints = vec![Constraint::Move; values.len()];
+            constraints[0] = Constraint::Copy;
+            if values.len() == 17 {
+                constraints[0] = Constraint::Move;
+                constraints[8] = Constraint::Copy;
+                constraints[16] = Constraint::Copy;
+            }
+            let context = SolverContext::from_layouts(
+                &values,
+                &constraints,
+                &values,
+                SolverOptions::default(),
+            )
+            .unwrap();
+            let mut builder = SolutionBuilder::new(&context);
+            assert!(matches!(
+                LinearStackWindow.apply(&mut builder),
+                Err(TacticError::NotApplicable)
+            ));
+            assert!(builder.take().is_empty());
+        }
+    }
+
+    #[test]
+    fn linear_stack_window_requires_a_missing_copy() {
+        let values = (0..16).map(|i| ValueOrAlias::new(i, 1)).collect::<Vec<_>>();
+        let mut expected = values.clone();
+        expected.swap(0, 1);
+        let context = SolverContext::from_layouts(
+            &expected,
+            &[Constraint::Move; 16],
+            &values,
+            SolverOptions::default(),
+        )
+        .unwrap();
+        let mut builder = SolutionBuilder::new(&context);
+        assert!(matches!(LinearStackWindow.apply(&mut builder), Err(TacticError::NotApplicable)));
+        assert!(builder.take().is_empty());
+    }
 
     /// Apply `actions` to the operand stack and assert that the expected prefix matches.
     fn assert_actions_place_expected_on_top(

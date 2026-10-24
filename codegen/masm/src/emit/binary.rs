@@ -1,5 +1,3 @@
-use core::assert_matches;
-
 use miden_core::Felt;
 use midenc_hir::{Immediate, Overflow, SourceSpan, Type};
 
@@ -346,12 +344,9 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, rhs.ty(), "expected add operands to be the same type");
         match &ty {
-            Type::Felt => {
-                self.emit(masm::Instruction::Add, span);
-            }
-            Type::I128 | Type::U128 => {
-                self.add_i128(overflow, span);
-            }
+            Type::Felt => self.add_felt(overflow, span),
+            Type::I128 => self.add_i128(overflow, span),
+            Type::U128 => self.add_u128(overflow, span),
             Type::U64 => {
                 self.add_u64(overflow, span);
             }
@@ -381,9 +376,9 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, imm.ty(), "expected add operands to be the same type");
         match &ty {
-            Type::Felt if imm == 1 => self.emit(masm::Instruction::Incr, span),
             Type::Felt => {
-                self.emit(masm::Instruction::AddImm(imm.as_felt().unwrap().into()), span);
+                self.emit_push(imm.as_felt().unwrap(), span);
+                self.add_felt(overflow, span);
             }
             Type::U64 => {
                 self.push_immediate(imm, span);
@@ -415,12 +410,9 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, rhs.ty(), "expected sub operands to be the same type");
         match &ty {
-            Type::Felt => {
-                self.emit(masm::Instruction::Sub, span);
-            }
-            Type::I128 | Type::U128 => {
-                self.sub_i128(overflow, span);
-            }
+            Type::Felt => self.sub_felt(overflow, span),
+            Type::I128 => self.sub_i128(overflow, span),
+            Type::U128 => self.sub_u128(overflow, span),
             Type::U64 => {
                 self.sub_u64(overflow, span);
             }
@@ -451,7 +443,8 @@ impl OpEmitter<'_> {
         assert_eq!(ty, imm.ty(), "expected sub operands to be the same type");
         match &ty {
             Type::Felt => {
-                self.emit(masm::Instruction::SubImm(imm.as_felt().unwrap().into()), span);
+                self.emit_push(imm.as_felt().unwrap(), span);
+                self.sub_felt(overflow, span);
             }
             Type::U64 => {
                 self.push_immediate(imm, span);
@@ -483,15 +476,9 @@ impl OpEmitter<'_> {
         let ty = lhs.ty();
         assert_eq!(ty, rhs.ty(), "expected mul operands to be the same type");
         match &ty {
-            Type::Felt => {
-                assert_matches!(
-                    overflow,
-                    Overflow::Unchecked | Overflow::Wrapping,
-                    "only unchecked or wrapping semantics are supported for felt"
-                );
-                self.emit(masm::Instruction::Mul, span);
-            }
-            Type::I128 | Type::U128 => self.mul_i128(span),
+            Type::Felt => self.mul_felt(overflow, span),
+            Type::I128 => self.mul_i128(overflow, span),
+            Type::U128 => self.mul_u128(overflow, span),
             Type::U64 => self.mul_u64(overflow, span),
             Type::I64 => self.mul_i64(overflow, span),
             Type::U32 => self.mul_u32(overflow, span),
@@ -517,12 +504,8 @@ impl OpEmitter<'_> {
         assert_eq!(ty, imm.ty(), "expected mul operands to be the same type");
         match &ty {
             Type::Felt => {
-                assert_matches!(
-                    overflow,
-                    Overflow::Unchecked | Overflow::Wrapping,
-                    "only unchecked or wrapping semantics are supported for felt"
-                );
-                self.emit(masm::Instruction::MulImm(imm.as_felt().unwrap().into()), span);
+                self.emit_push(imm.as_felt().unwrap(), span);
+                self.mul_felt(overflow, span);
             }
             Type::U64 => {
                 self.push_immediate(imm, span);
@@ -1568,12 +1551,12 @@ mod tests {
     use midenc_hir::{Builder, Context, OpBuilder, Report, ValueRef, formatter::PrettyPrint};
 
     use super::*;
-    use crate::{OperandStack, emit::InstOpEmitter};
+    use crate::{OperandStack, emit::OpEmitter};
 
     fn assert_overflowing_result_order(
         build: impl Fn(&mut OpBuilder, ValueRef, ValueRef, SourceSpan) -> (ValueRef, ValueRef),
-        emit: impl Fn(&mut InstOpEmitter<'_>, SourceSpan),
-        emit_imm: impl Fn(&mut InstOpEmitter<'_>, Immediate, SourceSpan),
+        emit: impl Fn(&mut OpEmitter<'_>, SourceSpan),
+        emit_imm: impl Fn(&mut OpEmitter<'_>, Immediate, SourceSpan),
     ) {
         for (ty, imm) in [
             (Type::U32, Immediate::U32(2)),
@@ -1588,9 +1571,7 @@ mod tests {
                 let mut builder = OpBuilder::new(context.clone());
                 builder.set_insertion_point_to_end(block);
                 let span = SourceSpan::UNKNOWN;
-                let (flag, result) = build(&mut builder, lhs, rhs, span);
-                let operation = flag.borrow().get_defining_op().unwrap();
-                let operation = operation.borrow();
+                let _ = build(&mut builder, lhs, rhs, span);
 
                 let mut stack = OperandStack::new(context);
                 if !immediate {
@@ -1600,22 +1581,19 @@ mod tests {
                 let mut invoked = BTreeSet::new();
                 let mut instructions = Vec::new();
                 {
-                    let mut emitter =
-                        InstOpEmitter::new(&operation, &mut invoked, &mut instructions, &mut stack);
+                    let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
                     if immediate {
                         emit_imm(&mut emitter, imm, span);
                     } else {
                         emit(&mut emitter, span);
                     }
-                    // Binding can retype equal-sized operands, so check the unbound model too.
+                    // Raw instruction algorithms preserve the declared result lane order.
                     assert_eq!(emitter.stack()[0].ty(), Type::I1);
                     assert_eq!(emitter.stack()[1].ty(), ty);
                 }
 
                 assert_eq!(stack.len(), 2, "{ty}, immediate = {immediate}");
-                assert_eq!(stack[0].as_value(), Some(flag));
                 assert_eq!(stack[0].ty(), Type::I1);
-                assert_eq!(stack[1].as_value(), Some(result));
                 assert_eq!(stack[1].ty(), ty);
             }
         }
@@ -1914,5 +1892,276 @@ mod tests {
     #[test]
     fn overflowing_mul_imm_u32_preserves_results_in_vm() -> Result<(), Report> {
         assert_overflowing_mul_u32_in_vm(true)
+    }
+
+    /// Exercise the actual shared emitter, linked intrinsics and core, checking every raw lane
+    /// before root cleanup. The suffix exceeds the indexed window to catch accidental tail use.
+    fn check_arithmetic_vm(
+        operands: (Immediate, Immediate),
+        op: &str,
+        mode: Overflow,
+        immediate: bool,
+        expected: Option<&[u64]>,
+        suffix_len: usize,
+    ) -> Result<(), Report> {
+        let (lhs, rhs) = operands;
+        let context = Rc::new(Context::default());
+        let core = midenc_session::LinkLibrary::core().load(&context.session().options)?;
+        let intrinsics = crate::intrinsics::load(context.session())?;
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::new();
+        let mut instructions = Vec::new();
+        let span = SourceSpan::UNKNOWN;
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut instructions, &mut stack);
+            for value in (0..suffix_len).rev() {
+                emitter.literal(1000 + value as u32, span);
+            }
+            emitter.literal(lhs, span);
+            if !immediate {
+                emitter.literal(rhs, span);
+            }
+            match (op, immediate) {
+                ("add", false) => emitter.add(mode, span),
+                ("sub", false) => emitter.sub(mode, span),
+                ("mul", false) => emitter.mul(mode, span),
+                ("add", true) => emitter.add_imm(rhs, mode, span),
+                ("sub", true) => emitter.sub_imm(rhs, mode, span),
+                ("mul", true) => emitter.mul_imm(rhs, mode, span),
+                _ => unreachable!(),
+            }
+            assert_eq!(emitter.stack().len(), suffix_len + 1 + usize::from(mode.is_overflowing()));
+            assert_eq!(
+                emitter.stack()[0].ty(),
+                if mode.is_overflowing() {
+                    Type::I1
+                } else {
+                    lhs.ty()
+                }
+            );
+        }
+        let body = masm::Block::new(span, instructions).to_pretty_string();
+        let assertions = expected
+            .into_iter()
+            .flatten()
+            .copied()
+            .chain((0..suffix_len).filter(|_| expected.is_some()).map(|i| 1000 + i as u64))
+            .map(|lane| format!("push.{lane} assert_eq\n"))
+            .collect::<String>();
+        let mut assembler = miden_assembly::Assembler::default();
+        assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic)?;
+        assembler.link_package(intrinsics.clone(), miden_assembly::Linkage::Dynamic)?;
+        let package = assembler.assemble_program(
+            "arithmetic_modes",
+            format!("begin{body}\n{assertions}exec.::miden::core::sys::truncate_stack end"),
+        )?;
+        let program = package.try_into_program()?;
+        let mut host = crate::plan::tests::lowering_units::host();
+        host.load_library(miden_processor::HostLibrary::from(core))?;
+        host.load_library(miden_processor::HostLibrary::from(intrinsics))?;
+        let output = FastProcessor::new(StackInputs::default()).execute_sync(&program, &mut host);
+        if expected.is_none() {
+            let error = output.expect_err("checked arithmetic must trap on overflow");
+            match error {
+                miden_processor::ExecutionError::OperationError {
+                    err:
+                        miden_processor::operation::OperationError::FailedAssertion { err_code, .. },
+                    ..
+                } => assert_eq!(
+                    err_code,
+                    miden_core::mast::error_code_from_msg(format!("{} {op} overflow", lhs.ty())),
+                    "{lhs:?} {op} {rhs:?}: wrong arithmetic assertion",
+                ),
+                other => panic!("{lhs:?} {op} {rhs:?}: unexpected trap: {other}"),
+            }
+        } else {
+            output.map_err(|error| {
+                Report::msg(format!("{lhs:?} {op} {rhs:?}, {mode:?}, suffix {suffix_len}: {error}"))
+            })?;
+        }
+        Ok(())
+    }
+
+    fn wide_limbs(value: u128) -> Vec<u64> {
+        (0..4).map(|i| ((value >> (32 * i)) as u32) as u64).collect()
+    }
+
+    #[test]
+    fn overflowing_unsigned_128_modes_match_vm() -> Result<(), Report> {
+        for op in ["add", "sub", "mul"] {
+            for (a, b) in [
+                (0, 0),
+                (0, 1),
+                (1, 0),
+                (1, 1),
+                (u128::MAX, 1),
+                (u128::MAX, 2),
+                (u128::MAX, u128::MAX),
+                (1 << 32, 1),
+                ((1 << 32) - 1, 1),
+                (1 << 64, 1),
+                ((1 << 64) - 1, 1),
+                (1 << 96, 1),
+                ((1 << 96) - 1, 1),
+                (0x4444_4444_3333_3333_2222_2222_1111_1111, 0x1234_5678),
+            ] {
+                let (result, flag) = match op {
+                    "add" => a.overflowing_add(b),
+                    "sub" => a.overflowing_sub(b),
+                    "mul" => a.overflowing_mul(b),
+                    _ => unreachable!(),
+                };
+                for mode in [
+                    Overflow::Wrapping,
+                    Overflow::Checked,
+                    Overflow::Overflowing,
+                    Overflow::Unchecked,
+                ] {
+                    if flag && mode == Overflow::Unchecked {
+                        continue;
+                    }
+                    let mut expected = wide_limbs(result);
+                    if mode.is_overflowing() {
+                        expected.insert(0, u64::from(flag));
+                    }
+                    for suffix_len in [0, 20] {
+                        check_arithmetic_vm(
+                            (Immediate::U128(a), Immediate::U128(b)),
+                            op,
+                            mode,
+                            false,
+                            if flag && mode == Overflow::Checked {
+                                None
+                            } else {
+                                Some(&expected)
+                            },
+                            suffix_len,
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn overflowing_signed_128_modes_match_vm() -> Result<(), Report> {
+        for op in ["add", "sub", "mul"] {
+            for (a, b) in [
+                (0, 0),
+                (0, -1),
+                (-1, 0),
+                (-1, -1),
+                (-1, 1),
+                (i128::MAX, 1),
+                (i128::MAX, -1),
+                (i128::MIN, 1),
+                (i128::MIN, -1),
+                (i128::MIN, 0),
+                (i128::MIN, i128::MIN),
+                (i128::MAX, 2),
+                (i128::MAX, i128::MAX),
+                (i128::MIN / 2, 2),
+                (i128::MIN / 2 - 1, 2),
+                (i128::MAX / 3, 3),
+                (i128::MAX / 3 + 1, 3),
+                (0x4444_4444_3333_3333_2222_2222_1111_1111, -0x1234_5678),
+            ] {
+                let (result, flag) = match op {
+                    "add" => a.overflowing_add(b),
+                    "sub" => a.overflowing_sub(b),
+                    "mul" => a.overflowing_mul(b),
+                    _ => unreachable!(),
+                };
+                for mode in [
+                    Overflow::Wrapping,
+                    Overflow::Checked,
+                    Overflow::Overflowing,
+                    Overflow::Unchecked,
+                ] {
+                    if flag && mode == Overflow::Unchecked {
+                        continue;
+                    }
+                    let mut expected = wide_limbs(result as u128);
+                    if mode.is_overflowing() {
+                        expected.insert(0, u64::from(flag));
+                    }
+                    for suffix_len in [0, 20] {
+                        check_arithmetic_vm(
+                            (Immediate::I128(a), Immediate::I128(b)),
+                            op,
+                            mode,
+                            false,
+                            if flag && mode == Overflow::Checked {
+                                None
+                            } else {
+                                Some(&expected)
+                            },
+                            suffix_len,
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn overflowing_felt_canonical_modes_match_vm() -> Result<(), Report> {
+        let p = 0xffff_ffff_0000_0001u128;
+        for op in ["add", "sub", "mul"] {
+            for (a, b) in [
+                (0, 0),
+                (0, 1),
+                (1, 0),
+                (1, 1),
+                (p - 1, 1),
+                (p - 1, p - 1),
+                ((1 << 32) - 1, (1 << 32) + 1),
+                ((1 << 32) - 1, 1 << 32),
+                (3, 5),
+            ] {
+                let (result, flag) = match op {
+                    "add" => ((a + b) % p, a + b >= p),
+                    "sub" => ((a + p - b) % p, a < b),
+                    "mul" => ((a * b) % p, a * b >= p),
+                    _ => unreachable!(),
+                };
+                for mode in [
+                    Overflow::Wrapping,
+                    Overflow::Checked,
+                    Overflow::Overflowing,
+                    Overflow::Unchecked,
+                ] {
+                    if flag && mode == Overflow::Unchecked {
+                        continue;
+                    }
+                    let mut expected = vec![result as u64];
+                    if mode.is_overflowing() {
+                        expected.insert(0, u64::from(flag));
+                    }
+                    for immediate in [false, true] {
+                        for suffix_len in [0, 20] {
+                            check_arithmetic_vm(
+                                (
+                                    Immediate::Felt(Felt::new_unchecked(a as u64)),
+                                    Immediate::Felt(Felt::new_unchecked(b as u64)),
+                                ),
+                                op,
+                                mode,
+                                immediate,
+                                if flag && mode == Overflow::Checked {
+                                    None
+                                } else {
+                                    Some(&expected)
+                                },
+                                suffix_len,
+                            )?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }

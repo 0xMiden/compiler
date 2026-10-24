@@ -303,7 +303,14 @@ fn parse_function_body<B: ?Sized + Builder>(
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
         builder.set_inline_calls(Vec::new());
-        builder.ret(state.stack.first().cloned(), end_span)?;
+        // The function frame starts with an empty operand stack. Its final End replaces
+        // that stack with the typed exit-block arguments, including all function results.
+        assert_eq!(
+            state.stack.len(),
+            builder.signature().results().len(),
+            "reachable function exit must contain exactly the declared result tuple"
+        );
+        builder.ret(state.stack.iter().copied(), end_span)?;
     }
 
     // Discard any remaining values on the stack. Either we just returned them,

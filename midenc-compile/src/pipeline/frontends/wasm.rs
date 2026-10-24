@@ -125,7 +125,7 @@ fn make_wasm(_session: Rc<Session>) -> Rc<dyn Frontend> {
 /// calling the same functions. What it does *not* have is a [`TargetContext`]: no checkpoint is
 /// published, nothing can stop early, and the result is handed straight back as a
 /// [`CodegenOutput`] instead of being stashed for
-/// [`Frontend::post_process`](crate::pipeline::Frontend::post_process).
+/// [`Frontend::post_process`].
 ///
 /// `dependencies` are the interfaces of the declared dependencies of the project whose
 /// WebAssembly this is — see [`dependency_interfaces`] — which the caller computes from the
@@ -158,7 +158,7 @@ pub(crate) fn lower_wasm_input(
     let hir = translate_wasm_input(input, namespace, context.clone(), dependencies)?;
     let hir = backend::analyze(hir, context.clone())?;
     backend::apply_rewrites(hir.world.as_operation_ref(), context.clone())?;
-    backend::codegen(hir, context)
+    backend::codegen(hir, context, midenc_codegen_masm::EmissionNamespace::Source)
 }
 
 /// Translate the WebAssembly `input` into HIR built in `context`, without an assembler.
@@ -435,8 +435,8 @@ impl WasmFrontend {
 
     /// Read the WebAssembly `input` names, decoding WebAssembly text on the way if need be.
     ///
-    /// The counterpart of [`WasmFrontend::read`] for a caller that holds an [`InputFile`] and no
-    /// target: it dispatches on the input's own shape rather than on a resolved target root, and
+    /// The counterpart of [`WasmFrontend::read`] for a caller that holds a
+    /// [`midenc_session::InputFile`] and no target: it dispatches on the input's own shape rather than on a resolved target root, and
     /// so has no root to prefer.
     ///
     /// Two callers, and both hold WebAssembly that no target root names: [`lower_wasm_input`],

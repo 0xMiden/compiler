@@ -1,0 +1,11 @@
+builtin.function public extern("C") @indirect_before(%go: i1, %r0: felt, %r1: felt, %r2: felt, %r3: felt, %input: felt) -> felt {
+    %result = scf.while %input before {
+    ^before(%value: felt):
+        %called = hir.dyncall [%r0, %r1, %r2, %r3](%value) : extern("component-model") (felt) -> felt;
+        scf.condition %go, %called : (i1, felt);
+    } after {
+    ^after(%next: felt):
+        scf.yield %next : (felt);
+    } : (felt) -> felt;
+    builtin.ret %result : (felt);
+};

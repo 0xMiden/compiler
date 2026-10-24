@@ -6,6 +6,7 @@ use alloc::{
 use core::ops::Deref;
 
 use miden_core::Felt;
+use midenc_hir::Op;
 
 use super::{VerificationError, error};
 use crate::{masm::Instruction, plan::*};
@@ -18,15 +19,24 @@ pub(crate) trait GeneratedDefinition {
     /// Reconstruct the complete semantic stages and proof relations, rejecting unsupported
     /// parameter sets rather than weakening the registered definition.
     fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError>;
+    /// Reconstruct observational markers from source; these never supply semantic liveness.
+    fn observations(
+        &self,
+        _parameters: &[Felt],
+    ) -> Result<Vec<crate::lower::debug::Observation>, VerificationError> {
+        Ok(Vec::new())
+    }
 }
 
 /// Trusted source from which selection evidence is reconstructed, supplied independently of
 /// the allocation plan being checked.
 pub(crate) enum SourceContext<'a> {
     Generated(&'a dyn GeneratedDefinition),
-    /// Reserved HIR source context; source checking rejects this variant until HIR rules
-    /// can reconstruct the selected program.
-    Hir,
+    /// Reconstruct HIR selection using the function and its resolved selection environment.
+    Hir {
+        function: &'a midenc_hir::dialects::builtin::Function,
+        env: &'a crate::select::SelectEnv<'a>,
+    },
 }
 
 /// Complete source-derived expectation used to check selection. Implementors must derive
@@ -44,6 +54,8 @@ pub(crate) struct DefinitionEvidence {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UnitEvidence {
     pub aliases: LaneAliases,
+    /// Reconstructed from the registered source, sealed before allocation.
+    pub generated_event: Option<GeneratedEvent>,
     /// Positions in the complete semantic output tuple, independent of machine access depth.
     pub equal_outputs: Vec<(u32, u32)>,
     /// Scratch cells that must equal positions of the unit's complete semantic output tuple.
@@ -52,6 +64,26 @@ pub(crate) struct UnitEvidence {
     pub loops: BTreeMap<ControlId, LoopSchema>,
     /// Ordered source-authorized call sites, with order interpreted within each path.
     pub calls: Vec<CallSite>,
+}
+
+/// Source authority for generic event emission. This permits only the registered event form;
+/// it does not grant typed payload observations or operand-memory access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GeneratedEvent {
+    Dynamic(Atom),
+    Immediate,
+}
+
+/// Closed selector obligations reconstructed from registered source definitions.
+#[derive(Debug, Clone)]
+pub(crate) enum SelectorEvidence {
+    /// Selector is the address of a frame-resident root with these exact stored lanes.
+    FrameRoot {
+        reference: FrameRef,
+        root: Vec<StoredValue>,
+    },
+    /// Selector comes from a source-checked indirect table lookup.
+    CheckedTableSlot(crate::select::TableLookup),
 }
 
 /// One static invocation in a registered unit algorithm. Sites are ordered within their
@@ -72,9 +104,8 @@ pub(crate) struct CallSite {
     pub outputs: Vec<(FrameRef, u32)>,
     /// Semantic atoms that must receive the corresponding full ABI result positions.
     pub publications: Vec<(Atom, u32)>,
-    /// Dynamic selector proof: the declared frame reference and its four expected root lanes.
-    /// Replay checks both that the selector points here and that the cells contain these values.
-    pub selector: Option<(FrameRef, Vec<StoredValue>)>,
+    /// Required root provenance for a dynamic invocation.
+    pub selector: Option<SelectorEvidence>,
 }
 
 /// Source-derived constraint on one raw call argument.
@@ -112,11 +143,36 @@ pub(crate) struct LoopSchema {
 /// Only source checking constructs this wrapper. Its contents cannot be mutated by allocation.
 #[derive(Debug, Clone)]
 pub(crate) struct CheckedSelectedProgram {
+    observations: Vec<crate::lower::debug::Observation>,
     source_locals: SourceLocalLayout,
     program: SelectedProgram,
     units: BTreeMap<SelectedStepId, UnitEvidence>,
 }
 impl CheckedSelectedProgram {
+    /// Source-sealed markers queried by allocation without becoming semantic uses.
+    pub(crate) fn observations(&self) -> &[crate::lower::debug::Observation] {
+        &self.observations
+    }
+
+    /// Identify an independently reconstructed context-return cleanup segment.
+    /// Its allocator contract must expose only result inputs before invoking truncation.
+    pub(crate) fn return_cleanup(&self, segment: SegmentId) -> bool {
+        matches!(
+            self.program.abi.convention(),
+            CallingConvention::Context | CallingConvention::Kernel
+        ) && self.program.segments.iter().find(|s| s.id == segment).is_some_and(|s| {
+            s.units.len() == 1
+                && self.units[&s.units[0].id].calls.len() == 1
+                && self.units[&s.units[0].id].calls[0].truncate
+                && self.program.edges.iter().filter(|edge| edge.source == segment).count() == 1
+                && self.program.edges.iter().any(|edge| {
+                    edge.source == segment
+                        && edge.destination.is_none()
+                        && edge.kind == EdgeKind::Return
+                })
+        })
+    }
+
     /// Sealed source-local layout used to check the assigned physical frame.
     pub(super) fn source_locals(&self) -> &SourceLocalLayout {
         &self.source_locals
@@ -145,17 +201,25 @@ pub(crate) fn check_selection(
     program: SelectedProgram,
     source: &SourceContext<'_>,
 ) -> Result<CheckedSelectedProgram, VerificationError> {
-    let (definition, parameters) = match (&program.origin, source) {
+    let (expected, observations) = match (&program.origin, source) {
         (
             ProcedureOrigin::Generated {
                 definition,
                 parameters,
             },
             SourceContext::Generated(source),
-        ) if *definition == source.id() => (*source, parameters),
+        ) if *definition == source.id() => {
+            (source.instantiate(parameters)?, source.observations(parameters)?)
+        }
+        (ProcedureOrigin::Hir(origin), SourceContext::Hir { function, env })
+            if *origin == function.as_operation_ref() =>
+        {
+            let evidence = crate::select::evidence(function, env)
+                .map_err(|e| error_with_source(&e.to_string()))?;
+            (evidence.source, evidence.observations)
+        }
         _ => return Err(error("unregistered or incompatible source definition")),
     };
-    let expected = definition.instantiate(parameters)?;
     if program != expected.program {
         let mut failure =
             error("selected phases, uses, effects, coverage or control disagree with source");
@@ -183,6 +247,7 @@ pub(crate) fn check_selection(
     }
     validate_graph(&program, &expected.units)?;
     Ok(CheckedSelectedProgram {
+        observations,
         source_locals: expected.source_locals,
         program,
         units: expected.units,
@@ -269,6 +334,28 @@ fn validate_graph(
                     }),
                 ) {
                     validate_atom(program, *atom)?;
+                }
+                if let Some(event) = units[&unit.id].generated_event {
+                    let valid = match event {
+                        GeneratedEvent::Dynamic(id) => {
+                            unit.stack_inputs == [id]
+                                && unit.outputs.len() == 1
+                                && units[&unit.id].aliases
+                                    == LaneAliases::new(vec![(unit.outputs[0], id)])
+                        }
+                        GeneratedEvent::Immediate => {
+                            unit.stack_inputs.is_empty() && unit.outputs.is_empty()
+                        }
+                    };
+                    if !valid
+                        || !unit.effects.may_trap
+                        || !unit.effects.normal_return
+                        || unit.effects.memory != SourceMemoryEffects::default()
+                        || !unit.scratch.is_empty()
+                        || !unit.stored_inputs.is_empty()
+                    {
+                        return Err(error("invalid generated event source contract"));
+                    }
                 }
                 let mut output_lanes = BTreeMap::<ValueId, u8>::new();
                 for atom in &unit.outputs {
@@ -471,6 +558,7 @@ fn walk_tree(
             id,
             condition,
             header,
+            before,
             body,
             backedges,
             on_true,
@@ -483,9 +571,17 @@ fn walk_tree(
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate loop condition edge"));
             }
-            if !segments.insert(*header) {
-                return Err(error("duplicate loop header"));
+            fn entry(tree: &ControlTree) -> Option<SegmentId> {
+                match tree {
+                    ControlTree::Segment(id) => Some(*id),
+                    ControlTree::Sequence(children) => children.first().and_then(entry),
+                    _ => None,
+                }
             }
+            if entry(before) != Some(*header) {
+                return Err(error("loop header disagrees with before-subtree entry"));
+            }
+            walk_tree(before, segments, edges, controls)?;
             walk_tree(body, segments, edges, controls)?;
             for edge in backedges {
                 if !edges.contains(edge) {
@@ -664,13 +760,26 @@ fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
                 header,
                 on_true,
                 on_false,
+                before,
                 body,
                 backedges,
                 ..
             } => {
                 alternatives(program, *on_true, *on_false)?;
-                let header = segment(program, *header, frontier)?;
-                let after = walk(program, body, edge(program, *on_true, &header)?)?;
+                let incoming = walk(
+                    program,
+                    before,
+                    Outcome {
+                        normal: Some(frontier),
+                        returns: false,
+                    },
+                )?;
+                if incoming.returns {
+                    return Err(error("a logical return cannot bypass while flag consumption"));
+                }
+                let condition =
+                    incoming.normal.ok_or_else(|| error("loop lacks its executable condition"))?;
+                let after = walk(program, body, edge(program, *on_true, &condition)?)?;
                 if after.returns {
                     return Err(error("a logical return cannot bypass while flag consumption"));
                 }
@@ -682,14 +791,14 @@ fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
                                 || program.edges.iter().find(|edge| edge.id == *id).is_none_or(
                                     |edge| {
                                         edge.kind != EdgeKind::Backedge
-                                            || edge.destination != header.segment
+                                            || edge.destination != Some(*header)
                                     },
                                 )
                         }))
                 {
                     return Err(error("loop body does not establish its declared backedges"));
                 }
-                edge(program, *on_false, &header)
+                edge(program, *on_false, &condition)
             }
             ControlTree::Sequence(_) => unreachable!(),
         }
@@ -710,4 +819,8 @@ fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
         return Err(error("selected procedure lacks an explicit terminal transfer"));
     }
     Ok(())
+}
+
+fn error_with_source(message: &str) -> VerificationError {
+    PlanError::new(DiagnosticCategory::InvalidSelectedLowering, message)
 }

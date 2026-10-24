@@ -126,7 +126,7 @@ impl UnsafeIntrusiveEntityRef<dyn Symbol> {
     /// Follow aliases in each alias's own symbol table, preserving the stored symbol uses.
     ///
     /// Non-alias symbols are returned unchanged. Cycles and chains requiring more than
-    /// [MAX_ALIAS_DEPTH] alias hops are rejected.
+    /// `MAX_ALIAS_DEPTH` alias hops are rejected.
     pub fn resolve_canonical(self) -> Result<SymbolRef, SymbolResolutionError> {
         let entry = self.borrow().name();
         let mut current = self;

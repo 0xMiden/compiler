@@ -213,29 +213,9 @@ pub fn compile_test_module_with_masm(
     results: impl IntoIterator<Item = Type>,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
 ) -> (String, Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
-    use std::cell::RefCell;
-
-    use midenc_compile::{
-        compile_link_output_to_masm_with_pre_assembly_stage, pipeline::backend::LoweredTarget,
-    };
-
     let (component, context) = build_test_component(params, results, build_fn);
-
-    // A shared cell rather than a borrowed local: the pre-assembly hook is `'static`, because it
-    // travels to the frontend inside a boxed source provider.
-    let masm = std::rc::Rc::new(RefCell::new(None));
-    let sink = std::rc::Rc::clone(&masm);
-    let package = compile_link_output_to_masm_with_pre_assembly_stage(
-        component,
-        move |lowered: &LoweredTarget| {
-            *sink.borrow_mut() = Some(lowered.component.to_string());
-            Ok(())
-        },
-    )
-    .expect("test component should compile")
-    .unwrap_mast();
-
-    let masm = masm.borrow_mut().take().expect("codegen should produce MASM");
+    let (masm, package) = compile_miden_component_to_package_with_masm(component)
+        .expect("test component should compile");
     (masm, package, context)
 }
 
@@ -243,21 +223,36 @@ pub fn compile_test_module_with_masm(
 pub fn compile_miden_component_to_package(
     component: MidenComponent,
 ) -> Result<Arc<miden_mast_package::Package>, TestCaseError> {
+    compile_miden_component_to_package_with_masm(component).map(|(_, package)| package)
+}
+
+/// Compiles a component and captures the actual MASM handed to the production assembler.
+///
+/// The assembly is printed before assembly, preserving the ordinary package helper's
+/// diagnostic output when assembly fails.
+pub fn compile_miden_component_to_package_with_masm(
+    component: MidenComponent,
+) -> Result<(String, Arc<miden_mast_package::Package>), TestCaseError> {
+    use std::cell::RefCell;
+
     use midenc_compile::{
         compile_link_output_to_masm_with_pre_assembly_stage, pipeline::backend::LoweredTarget,
     };
 
-    // Compile to Package. The dump runs before assembly, so a component that fails to assemble
-    // still prints the Miden Assembly a failing proptest case has to be read from.
+    let masm = std::rc::Rc::new(RefCell::new(None));
+    let sink = std::rc::Rc::clone(&masm);
     let artifact = compile_link_output_to_masm_with_pre_assembly_stage(
         component,
-        |lowered: &LoweredTarget| {
-            println!("# Assembled\n{}", lowered.component);
+        move |lowered: &LoweredTarget| {
+            let source = lowered.component.to_string();
+            println!("# Assembled\n{source}");
+            *sink.borrow_mut() = Some(source);
             Ok(())
         },
     )
     .map_err(|err| TestCaseError::fail(format_report(err)))?;
-    Ok(artifact.unwrap_mast())
+    let source = masm.borrow_mut().take().expect("codegen should produce MASM");
+    Ok((source, artifact.unwrap_mast()))
 }
 
 /// This helper exists to handle the boilerplate of compiling/assembling the output of the link

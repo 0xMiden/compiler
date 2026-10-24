@@ -231,7 +231,6 @@ fn borrow_fixture(write: bool, definite: bool) -> (Fixture, Vec<AnnotatedOp>) {
         0,
     ));
     let abi = ProcedureAbi::new(CallingConvention::SameContext, 1, 0).unwrap();
-    fixture.effects.call = Some(abi.invocation(Invocation::Exec).unwrap());
     fixture.scratch_effects = vec![ScratchEffect::Borrow {
         object: ScratchId(0),
         offset: 0,
@@ -494,8 +493,6 @@ impl GeneratedDefinition for RootPhases {
                 .collect();
         }
         let abi = ProcedureAbi::new(CallingConvention::SameContext, 0, 0)?;
-        evidence.program.segments[0].units[1].effects.call =
-            Some(abi.invocation(Invocation::DynExec)?);
         evidence.units.get_mut(&SelectedStepId(1)).unwrap().calls.push(CallSite {
             instruction: Instruction::DynExec,
             abi,
@@ -504,15 +501,15 @@ impl GeneratedDefinition for RootPhases {
             truncate: false,
             outputs: vec![],
             publications: vec![],
-            selector: Some((
-                FrameRef::Scratch {
+            selector: Some(SelectorEvidence::FrameRoot {
+                reference: FrameRef::Scratch {
                     object: ScratchId(0),
                     offset: 0,
                 },
-                [11, 13, 17, 19]
+                root: [11, 13, 17, 19]
                     .map(|value| StoredValue::Literal(Felt::new_unchecked(value)))
                     .to_vec(),
-            )),
+            }),
         });
         for (id, source) in &mut evidence.program.source_map {
             source.origin = SourceOrigin::Generated {

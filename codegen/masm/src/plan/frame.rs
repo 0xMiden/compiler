@@ -78,6 +78,14 @@ pub(crate) enum ContentRequirement {
     /// Cell equals the current token of this semantic lane.
     Atom(Atom),
     /// Cell equals a separately defined scratch-content token.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Retains checked scratch-content bindings; current source rules construct \
+                      atom facts"
+        )
+    )]
     Content(ContentId),
 }
 /// One object-relative scratch cell and the contents required or established there.
@@ -105,6 +113,14 @@ pub(crate) enum ScratchEffect {
     /// Establish the cell fact on normal completion.
     Write(ScratchCellFact),
     /// Allow mutation of a range without proving that previously empty cells become initialized.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Retains possible-write invalidation without initialization; current source \
+                      rules use exact writes"
+        )
+    )]
     PossibleWrite {
         object: ScratchId,
         offset: u32,
@@ -112,6 +128,14 @@ pub(crate) enum ScratchEffect {
     },
     /// Expose a bounded range to a call with these read/write permissions.
     /// A definite write establishes initialization; retaining a compiler pointer is rejected.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "Retains bounded nonretaining-borrow verification; current source rules do \
+                      not borrow compiler scratch"
+        )
+    )]
     Borrow {
         object: ScratchId,
         offset: u32,
@@ -229,6 +253,7 @@ impl FinalFrameLayout {
     }
 
     /// Assignment's shared unit-local workspace descriptor.
+    #[cfg(test)]
     pub fn workspace(&self) -> &FrameWorkspace {
         &self.workspace
     }

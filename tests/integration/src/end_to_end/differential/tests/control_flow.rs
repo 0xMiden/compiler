@@ -280,15 +280,10 @@ fn carried_sets() {
     run_case("carried_sets", include_str!("../cases/case_carried_sets.rs"));
 }
 
-/// Campaign 11 ladder 4 (nesting depth) boundary guard: eight nested loops,
-/// three of them zero-trip-capable, with escapes (continue / labeled breaks
-/// / return) from four different depths. Eight is the deepest nest that
-/// compiles at the default opt-level: cfg-to-scf threads every escaping
-/// value and exit discriminator outward as REGION-OP RESULT columns, so the
-/// widest lifted `scf.if` here already carries fifteen u32 results; one
-/// more level overflows the 16-felt budget (`deep_nest_overflow` below).
-/// The same source fails under `--optimize=size-min` (`nest8_oz` in
-/// `opt_levels.rs`), where LLVM keeps more of the nest as loops.
+/// Eight nested loops, three zero-trip-capable, with continue, labeled break,
+/// and return paths from four depths. Lifted region results retain all exit
+/// values; `deep_nest_overflow` adds a level and `nest8_oz` keeps more loops
+/// under size-min optimization.
 #[test]
 fn nest8() {
     run_case("nest8", include_str!("../cases/case_nest8.rs"));
@@ -624,10 +619,9 @@ fn wide_exits_edges() {
     );
 }
 
-/// Deeply nested control flow must report an unsupported region-exit budget.
-/// The compilation harness panics with the returned diagnostic; a compiler panic does not match.
+/// Wide region exits must preserve all values through deeply nested control
+/// flow, including values temporarily outside the addressable stack window.
 #[test]
-#[should_panic(expected = "its region results")]
 fn deep_nest_overflow() {
     run_case_with_flags(
         "deep_nest_overflow",

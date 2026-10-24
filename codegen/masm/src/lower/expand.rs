@@ -59,11 +59,17 @@ pub(crate) fn expand_allocation_action(
 /// Immutable metadata needed to expand already selected operations.
 /// These lookups supply debug decorators and linked facts, never allocation decisions.
 #[derive(Default)]
-pub(crate) struct ExpansionEnv<'a> {
+pub(crate) struct ExpansionEnv {
     /// Decorators keyed by the debug-location actions in the physical plan.
     pub debug: alloc::collections::BTreeMap<DebugLocationId, DebugDecorator>,
-    /// Linked information available to definitions which require it.
-    pub link_info: Option<&'a crate::linker::LinkInfo>,
+}
+
+impl ExpansionEnv {
+    /// Resolve observational records against the same completed frame as executable accesses.
+    /// This only populates inert decorators; it cannot allocate or modify executable actions.
+    pub fn resolve_debug(&mut self, plan: &actions::ProcedurePlan, frame: &FinalFrameLayout) {
+        self.debug.extend(super::debug::resolve_plan(plan, frame));
+    }
 }
 
 /// Non-executable markers tying the expanded body to selected and allocated program points.
@@ -147,6 +153,7 @@ impl AnnotatedMasmBody {
     ///
     /// Instructions inside `If`, `While`, and `Repeat` bodies are excluded. Consumers that
     /// inspect executable control flow must traverse `ops()` and its nested bodies.
+    #[cfg(test)]
     pub fn top_level_instructions(&self) -> impl Iterator<Item = &masm::Instruction> {
         self.ops.iter().filter_map(|op| match op {
             AnnotatedOp::Instruction { instruction, .. } => Some(instruction),
@@ -241,7 +248,7 @@ pub(crate) fn expand_procedure(
     plan: &actions::ProcedurePlan,
     frame: &FinalFrameLayout,
     registry: &super::units::LoweringRegistry<'_>,
-    env: &ExpansionEnv<'_>,
+    env: &ExpansionEnv,
 ) -> Result<AnnotatedMasmBody, midenc_hir::Report> {
     fn actions(
         out: &mut AnnotatedMasmBody,
@@ -249,7 +256,7 @@ pub(crate) fn expand_procedure(
         plan: &actions::ProcedurePlan,
         frame: &FinalFrameLayout,
         registry: &super::units::LoweringRegistry<'_>,
-        env: &ExpansionEnv<'_>,
+        env: &ExpansionEnv,
     ) -> Result<(), midenc_hir::Report> {
         for action in actions {
             match action {
@@ -313,7 +320,7 @@ pub(crate) fn expand_procedure(
         plan: &actions::ProcedurePlan,
         frame: &FinalFrameLayout,
         registry: &super::units::LoweringRegistry<'_>,
-        env: &ExpansionEnv<'_>,
+        env: &ExpansionEnv,
         loops: &mut Vec<(ControlId, Vec<EdgeId>)>,
     ) -> Result<AnnotatedMasmBody, midenc_hir::Report> {
         let mut out = AnnotatedMasmBody::new();
@@ -363,7 +370,7 @@ pub(crate) fn expand_procedure(
             ControlTree::Loop {
                 id,
                 condition,
-                header,
+                before,
                 body,
                 backedges,
                 on_true,
@@ -371,8 +378,7 @@ pub(crate) fn expand_procedure(
                 ..
             } => {
                 flag(&mut out, *id, true);
-                let mut loop_body =
-                    walk(&ControlTree::Segment(*header), plan, frame, registry, env, loops)?;
+                let mut loop_body = walk(before, plan, frame, registry, env, loops)?;
                 loops.push((*id, backedges.clone()));
                 let mut a = walk(&ControlTree::Edge(*on_true), plan, frame, registry, env, loops)?;
                 a.ops.extend(walk(body, plan, frame, registry, env, loops)?.ops);
@@ -402,9 +408,17 @@ pub(crate) fn finalize(
     plan: &actions::ProcedurePlan,
     frame: &FinalFrameLayout,
     registry: &super::units::LoweringRegistry<'_>,
-    env: &ExpansionEnv<'_>,
+    env: &ExpansionEnv,
+    name: &masm::ProcedureName,
 ) -> Result<crate::verify::VerifiedProcedure, midenc_hir::Report> {
     let mut body = expand_procedure(plan, frame, registry, env)?;
     crate::opt::peephole::simplify_annotated(&mut body);
-    Ok(crate::verify::verify(plan, frame, body)?)
+    let trace_target = midenc_hir::TraceTarget::category("codegen");
+    let started =
+        log::log_enabled!(target: &trace_target, log::Level::Trace).then(std::time::Instant::now);
+    let verified = crate::verify::verify(plan, frame, body);
+    if let Some(started) = started {
+        log::trace!(target: &trace_target, "physical-stage procedure={name} stage=verification elapsed_ns={}", started.elapsed().as_nanos());
+    }
+    Ok(verified?)
 }

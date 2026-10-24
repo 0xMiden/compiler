@@ -304,6 +304,8 @@ fn wide_loop_program() -> SelectedProgram {
                 id: ControlId(0),
                 condition: ControlId(1),
                 header: SegmentId(1),
+
+                before: Box::new(ControlTree::Segment(SegmentId(1))),
                 predicate: atom(10),
                 on_true: EdgeId(1),
                 on_false: EdgeId(2),
@@ -332,6 +334,29 @@ fn independent_wide_while_groups_have_zero_trip_and_cyclic_demand() {
         analysis.next_use.entry[&SegmentId(1)].get(ValueId(31)),
         NextUseDistance::Finite(0)
     );
+}
+
+#[test]
+fn loop_before_subtree_places_predicate_demand_at_the_condition_site() {
+    fn build() -> SelectedProgram {
+        let mut program = wide_loop_program();
+        program.segments.push(segment(4, &[], vec![]));
+        program.edges.push(edge(5, 1, Some(4), EdgeKind::Forward, &[]));
+        program.edges[1].source = SegmentId(4);
+        program.edges[2].source = SegmentId(4);
+        let ControlTree::Sequence(children) = &mut program.structure else {
+            unreachable!()
+        };
+        let ControlTree::Loop { before, .. } = &mut children[2] else {
+            unreachable!()
+        };
+        **before = seq(vec![s(1), e(5), s(4)]);
+        program
+    }
+    let analysis = analyze(&checked(build));
+    assert!(analysis.live_in[&SegmentId(4)].contains(ValueId(10)));
+    assert!(analysis.loops[&ControlId(0)].members.contains(&SegmentId(4)));
+    assert_eq!(analysis.loops[&ControlId(0)].header, SegmentId(1));
 }
 
 fn nested_program() -> SelectedProgram {
@@ -373,6 +398,8 @@ fn nested_program() -> SelectedProgram {
                 id: ControlId(0),
                 condition: ControlId(10),
                 header: SegmentId(1),
+
+                before: Box::new(ControlTree::Segment(SegmentId(1))),
                 predicate: atom(0),
                 on_true: EdgeId(1),
                 on_false: EdgeId(2),
@@ -381,6 +408,8 @@ fn nested_program() -> SelectedProgram {
                         id: ControlId(1),
                         condition: ControlId(11),
                         header: SegmentId(2),
+
+                        before: Box::new(ControlTree::Segment(SegmentId(2))),
                         predicate: atom(1),
                         on_true: EdgeId(3),
                         on_false: EdgeId(4),
@@ -978,6 +1007,8 @@ fn scratch_loop_program() -> SelectedProgram {
                 id: ControlId(0),
                 condition: ControlId(1),
                 header: SegmentId(1),
+
+                before: Box::new(ControlTree::Segment(SegmentId(1))),
                 predicate: atom(0),
                 on_true: EdgeId(1),
                 on_false: EdgeId(2),
@@ -1099,6 +1130,8 @@ fn loop_demand_excludes_terminal_arms_outside_the_cyclic_component() {
                     id: ControlId(0),
                     condition: ControlId(10),
                     header: SegmentId(1),
+
+                    before: Box::new(ControlTree::Segment(SegmentId(1))),
                     predicate: atom(0),
                     on_true: EdgeId(1),
                     on_false: EdgeId(2),

@@ -982,9 +982,9 @@ fn prog_rkscan_guard_o1() {
 /// 1225-pair native boundary grid. Cost: 3999 MASM lines against 2195 for the
 /// reduced `prog_rkscan_guard` (which drops two rotate constants and two
 /// fingerprint words). Moving the search loop into an `#[inline(never)]`
-/// helper also works, but only when the fingerprint words are passed by
-/// reference: by value the call needs a seventeen-felt argument list and
-/// is rejected instead (`calls::sig17` pins that limit).
+/// helper also worked when the fingerprint words were passed by reference.
+/// The formerly rejected seventeen-felt by-value signature is now covered
+/// by the successful `calls::sig17` differential test.
 /// Configuration note: this rescue holds at the default level, `size-min`,
 /// `max` and `basic`, but WITHOUT full guest DWARF the black-boxed scanner
 /// panicked in the F12 class instead (#1419, fixed; `AliasingViolationError` at
@@ -1225,9 +1225,9 @@ fn prog_feistel_guard_edges() {
 /// at ALL FOUR optimization levels (F6, `lowering.rs:109`) — `--optimize`
 /// offers nothing here. Cost: 3840 MASM lines against 804 for
 /// `prog_feistel_guard` (two round keys instead of six). Moving the round loop
-/// into an `#[inline(never)]` helper works as well, but only with the keys
-/// behind a `&[u64; 6]`: passing them by value makes the call argument list
-/// seventeen felts and the compiler rejects it instead (`calls::sig17`).
+/// into an `#[inline(never)]` helper also worked with the keys behind a
+/// `&[u64; 6]`. The formerly rejected seventeen-felt by-value signature is
+/// now covered by the successful `calls::sig17` differential test.
 #[test]
 fn prog_feistel_wa() {
     run_case("prog_feistel_wa", include_str!("../cases/case_prog_feistel_wa.rs"));

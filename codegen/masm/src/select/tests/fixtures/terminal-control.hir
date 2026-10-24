@@ -1,0 +1,7 @@
+builtin.function public extern("C") @terminal(%flag: i1, %a: felt) -> felt {
+    cf.cond_br %flag ^first(%a : felt), ^second : (i1);
+^first(%value: felt):
+    builtin.ret %value : (felt);
+^second:
+    builtin.ret_imm 77 : felt;
+};

@@ -427,8 +427,8 @@ impl<'a> AsmPrinter<'a> {
 
     /// Print a single block
     ///
-    /// An entry block is printed without its label, unless the flags ask for it or branches target
-    /// it (see [Self::is_labelled_entry_target]).
+    /// An entry block is printed without its label unless the flags request it, or the block has
+    /// no arguments and is a branch target.
     pub fn print_block(&mut self, block: &Block) {
         let print_label = !block.is_entry_block()
             || self.flags.print_entry_block_headers

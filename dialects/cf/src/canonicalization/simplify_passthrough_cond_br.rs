@@ -5,7 +5,7 @@ use midenc_hir::{
     *,
 };
 
-use super::simplify_passthrough_br::collapse_branch;
+use super::simplify_passthrough_br::{collapse_branch, retire_unused_forwarding_block};
 use crate::*;
 
 /// Simplify conditional branches to a block from that block's sole predecessor, so long as doing
@@ -85,6 +85,8 @@ impl RewritePattern for SimplifyPassthroughCondBr {
         if new_true_dest.is_none() && new_false_dest.is_none() {
             return Ok(false);
         }
+        let collapsed_true = new_true_dest.is_some();
+        let collapsed_false = new_false_dest.is_some();
         let new_true_dest = new_true_dest.unwrap_or(true_dest);
         let new_false_dest = new_false_dest.unwrap_or(false_dest);
 
@@ -101,6 +103,12 @@ impl RewritePattern for SimplifyPassthroughCondBr {
             span,
         )?;
         rewriter.replace_op(operation, new_cond_br.as_operation_ref());
+        if collapsed_true {
+            retire_unused_forwarding_block(true_dest, rewriter);
+        }
+        if collapsed_false && (!collapsed_true || false_dest != true_dest) {
+            retire_unused_forwarding_block(false_dest, rewriter);
+        }
 
         Ok(true)
     }

@@ -1,0 +1,36 @@
+// RUN: midenc %s --emit=masm=- | filecheck %s
+// CHECK-DAG: proc component_identity
+// CHECK-DAG: proc sibling_shared_return
+// CHECK-DAG: proc sibling_shared_body
+// CHECK-DAG: proc sibling_shared_without_parameters
+
+// Component functions run the semantic rewrite pipeline. Supporting modules beside
+// the component are legalized directly, preserving terminal cf.cond_br successors.
+builtin.world {
+    builtin.component public @terminal_component {
+        builtin.module public @main {
+            builtin.function public extern("C") @component_identity(%value: felt) -> felt {
+                builtin.ret %value : (felt);
+            };
+        };
+    };
+    builtin.module public @terminal_support {
+        builtin.function public extern("C") @sibling_shared_return(%flag: i1, %a: felt, %b: felt) -> felt {
+            cf.cond_br %flag ^exit(%a : felt), ^exit(%b : felt) : (i1);
+        ^exit(%value: felt):
+            builtin.ret %value : (felt);
+        };
+        builtin.function public extern("C") @sibling_shared_body(%flag: i1, %a: u32, %b: u32) -> u32 {
+            cf.cond_br %flag ^exit(%a : u32), ^exit(%b : u32) : (i1);
+        ^exit(%value: u32):
+            %result = arith.add %value, %a <{ overflow = #builtin.overflow<wrapping> }>;
+            builtin.ret %result : (u32);
+        };
+        builtin.function public extern("C") @sibling_shared_without_parameters(%flag: i1, %a: u32, %b: u32) -> u32 {
+            cf.cond_br %flag ^exit, ^exit : (i1);
+        ^exit:
+            %result = arith.add %a, %b <{ overflow = #builtin.overflow<wrapping> }>;
+            builtin.ret %result : (u32);
+        };
+    };
+};

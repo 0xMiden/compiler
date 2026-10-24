@@ -254,6 +254,8 @@ fn spanning_content_definitions_merge_with_physical_cells_at_selected_join() {
         );
     }
     let plan = ProcedurePlan {
+        debug_locations: Default::default(),
+        decisions: Default::default(),
         selected,
         contracts,
         segment_actions: actions,

@@ -58,7 +58,11 @@ impl RewritePattern for RemoveUnusedSinglePredBlockArgs {
         for target in [then_dest, else_dest] {
             // Check that the successor block has a single predecessor.
             let mut succ = target.successor();
-            if succ == parent || succ.borrow().get_single_predecessor().is_none() {
+            // Entry activation supplies arguments independently of explicit CFG predecessors.
+            if succ == parent
+                || succ.borrow().is_entry_block()
+                || succ.borrow().get_single_predecessor().is_none()
+            {
                 continue;
             }
 

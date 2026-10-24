@@ -1,4 +1,6 @@
-use midenc_hir::{self as hir, SourceSpan, TraceTarget};
+#[cfg(test)]
+use midenc_hir as hir;
+use midenc_hir::TraceTarget;
 use smallvec::SmallVec;
 
 use super::{tactics::Tactic, *};
@@ -184,6 +186,7 @@ impl OperandMovementConstraintSolver {
 
     /// Construct a solver for the expected operands and stack, using [SolverOptions] to
     /// customize the search policy.
+    #[cfg(test)]
     pub fn new_with_options(
         expected: &[hir::ValueRef],
         constraints: &[Constraint],
@@ -409,61 +412,6 @@ impl OperandMovementConstraintSolver {
             Err(_) => {
                 log::trace!(target: self.trace_target(), symbol = self.trace_target().relevant_symbol(); "tactic {} could not be applied", tactic.name());
                 Err(SolverError::NoSolution)
-            }
-        }
-    }
-
-    pub fn solve_and_apply(
-        self,
-        emitter: &mut crate::emit::OpEmitter<'_>,
-        span: SourceSpan,
-    ) -> Result<(), SolverError> {
-        match self.context.arity() {
-            // No arguments, nothing to solve
-            0 => Ok(()),
-            // Only one argument, solution is trivial
-            1 => {
-                let expected = self.context.expected()[0];
-                if let Some(current_position) = self.context.stack().position(&expected) {
-                    if current_position > 0 {
-                        emitter.move_operand_to_position(current_position, 0, false, span);
-                    }
-                } else {
-                    assert!(
-                        self.context.copies().has_copies(&expected.unaliased()),
-                        "{:?} was not found on the operand stack copies",
-                        expected.unaliased()
-                    );
-                    let current_position =
-                        self.context.stack().position(&expected.unaliased()).unwrap_or_else(|| {
-                            panic!("{:?} was not found on the operand stack", expected.unaliased())
-                        });
-                    emitter.copy_operand_to_position(current_position, 0, false, span);
-                }
-
-                Ok(())
-            }
-            // Run the solver for more than 1 argument
-            _ => {
-                let actions = self.solve()?;
-                for action in actions {
-                    match action {
-                        Action::Copy(index) => {
-                            emitter.copy_operand_to_position(index as usize, 0, false, span);
-                        }
-                        Action::Swap(index) => {
-                            emitter.swap(index, span);
-                        }
-                        Action::MoveUp(index) => {
-                            emitter.movup(index, span);
-                        }
-                        Action::MoveDown(index) => {
-                            emitter.movdn(index, span);
-                        }
-                    }
-                }
-
-                Ok(())
             }
         }
     }
