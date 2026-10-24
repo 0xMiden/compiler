@@ -397,3 +397,70 @@ fn real_hir_sequential_if_preparation_and_verification_scaling() {
         }
     }
 }
+
+#[test]
+fn real_hir_sequential_ifs_retain_entry_value_until_final_return() {
+    // `%keep` is unused throughout the chain: only backwards propagation from the final
+    // addition can establish that every branch and join must preserve this entry value.
+    // Timings are descriptive; graph size and actual execution are the correctness oracles.
+    for count in [100, 200, 400] {
+        let mut source = alloc::string::String::from(
+            "builtin.function public extern(\"C\") @retained(%p: i1, %a: felt, %b: felt, %keep: \
+             felt) -> felt {\n",
+        );
+        let mut previous = alloc::string::String::from("%a");
+        for index in 0..count {
+            let next = alloc::format!("%x{index}");
+            source.push_str(&alloc::format!(
+                "{next} = scf.if %p then {{ %t{index} = arith.add {previous}, %b <{{ overflow = \
+                 #builtin.overflow<wrapping> }}>; scf.yield %t{index} : (felt); }} else {{ \
+                 %e{index} = arith.sub {previous}, %b <{{ overflow = #builtin.overflow<wrapping> \
+                 }}>; scf.yield %e{index} : (felt); }} : (i1) -> felt;\n"
+            ));
+            previous = next;
+        }
+        source.push_str(&alloc::format!(
+            "%result = arith.add {previous}, %keep <{{ overflow = #builtin.overflow<wrapping> \
+             }}>; builtin.ret %result : (felt); }};"
+        ));
+        let parsed = parse(&source);
+        let env = SelectEnv::default();
+        let start = std::time::Instant::now();
+        let (plan, frame, body) = ready(&parsed, &env);
+        let preparation = start.elapsed();
+        assert_eq!(plan.selected.segments.len(), 3 * count + 1);
+        assert_eq!(plan.selected.values.len(), 3 * count + 5);
+        let start = std::time::Instant::now();
+        let verified = verify::verify(&plan, &frame, body).unwrap();
+        let verification = start.elapsed();
+        std::eprintln!(
+            "retained-entry HIR ifs={count}: preparation={preparation:?}, \
+             verification={verification:?}, segments={}, values={}",
+            plan.selected.segments.len(),
+            plan.selected.values.len(),
+        );
+        // Execute this verified body for both branch outcomes, independently calculating
+        // its arithmetic result and checking the complete caller-owned sixteen-lane suffix.
+        let procedure = verified
+            .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+            .unwrap()
+            .to_pretty_string();
+        let suffix: Vec<_> = (901..917).collect();
+        for flag in [0, 1] {
+            let chain_result = if flag == 1 {
+                10000 + 3 * count
+            } else {
+                10000 - 3 * count
+            };
+            let mut expected = vec![chain_result + 777];
+            expected.extend_from_slice(&suffix);
+            let code = alloc::format!(
+                "{procedure} begin {} {} exec.selected {} end",
+                crate::plan::tests::lowering_units::push_top(&suffix),
+                crate::plan::tests::lowering_units::push_top(&[flag, 10000, 3, 777]),
+                crate::plan::tests::lowering_units::assert_top(&expected),
+            );
+            execute_code(&code).unwrap();
+        }
+    }
+}
