@@ -162,6 +162,15 @@ impl<'a, 'e> Selector<'a, 'e> {
         function: &builtin::Function,
         env: &'a SelectEnv<'e>,
     ) -> Result<HirEvidence, Report> {
+        Self::select_inner(function, env)
+            .map_err(|error| at_operation(error, function.as_operation()))
+    }
+
+    /// Construct evidence, leaving function-wide failures to the source-context boundary.
+    fn select_inner(
+        function: &builtin::Function,
+        env: &'a SelectEnv<'e>,
+    ) -> Result<HirEvidence, Report> {
         function.as_operation().recursively_verify()?;
         if function.as_operation().region(0).is_empty() {
             return Err(super::invalid("cannot select a function declaration"));
@@ -439,7 +448,10 @@ impl<'a, 'e> Selector<'a, 'e> {
     fn cover(&mut self, operation: &Operation) -> Result<(), Report> {
         let source = SourceStepId(index(self.program.source_map.len())?);
         if self.sources.insert(operation.as_operation_ref(), source).is_some() {
-            return Err(super::invalid("HIR operation occurs more than once"));
+            return Err(at_operation(
+                super::invalid("HIR operation occurs more than once"),
+                operation,
+            ));
         }
         self.program.source_map.insert(source, record(operation));
         for region in operation.regions() {
@@ -756,6 +768,23 @@ impl<'a, 'e> Selector<'a, 'e> {
         start: SegmentId,
         yielded: Option<Destination>,
     ) -> Result<Flow, Report> {
+        let mut operation = None;
+        self.block_inner(block, start, yielded, &mut operation)
+            .map_err(|error| match operation {
+                Some(operation) => at_operation(error, &operation.borrow()),
+                None => error,
+            })
+    }
+
+    /// Retain the current source operation for failures from this block's dispatch.
+    /// Recursive blocks use `block` so their precise source context survives unwinding.
+    fn block_inner(
+        &mut self,
+        block: BlockRef,
+        start: SegmentId,
+        yielded: Option<Destination>,
+        operation_context: &mut Option<OperationRef>,
+    ) -> Result<Flow, Report> {
         let ops = block.borrow().body().iter().map(|o| o.as_operation_ref()).collect::<Vec<_>>();
         let mut flow = Flow {
             tree: vec![ControlTree::Segment(start)],
@@ -765,6 +794,7 @@ impl<'a, 'e> Selector<'a, 'e> {
             let Some(current) = flow.current else {
                 break;
             };
+            *operation_context = Some(operation);
             let op = operation.borrow();
             let source = self.sources[&operation];
             if self.inline_calls {
@@ -2034,6 +2064,16 @@ fn lanes(types: impl IntoIterator<Item = Type>) -> Result<u32, Report> {
             .ok_or_else(|| super::invalid("ABI lane count overflows"))
     })
 }
+/// Add actual source provenance only when a planning failure has no nested location.
+fn at_operation(mut report: Report, op: &Operation) -> Report {
+    if let Some(error) = report.downcast_mut::<PlanError>()
+        && error.origin == SourceLocation::default()
+    {
+        error.origin = record(op).location;
+    }
+    report
+}
+
 fn record(op: &Operation) -> SourceRecord {
     SourceRecord {
         origin: SourceOrigin::Hir(op.as_operation_ref()),

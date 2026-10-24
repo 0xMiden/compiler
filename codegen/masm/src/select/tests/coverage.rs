@@ -454,3 +454,71 @@ fn generic_event_any_felt_id_keeps_the_same_source_category() {
         verify::verify(&plan, &frame, body).unwrap();
     }
 }
+
+#[test]
+fn nested_selection_failure_retains_the_actual_operation_span_and_inline_chain() {
+    use midenc_hir::{
+        Spanned,
+        dialects::debuginfo::attributes::{
+            INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr, InlineCallFrame,
+        },
+    };
+    let text = r#"builtin.function public extern("C") @unknown(%p: i1, %a: felt) -> felt {
+        %result = scf.if %p then {
+            test.unregistered_region;
+            scf.yield %a : (felt);
+        } else {
+            scf.yield %a : (felt);
+        } : (i1) -> felt;
+        builtin.ret %result : (felt);
+    };"#;
+    let f = parse(text);
+    let mut unsupported = None;
+    f.borrow().as_operation().prewalk_all(|operation| {
+        if operation.is::<UnregisteredRegion>() {
+            unsupported = Some(operation.as_operation_ref());
+        }
+    });
+    let mut unsupported = unsupported.unwrap();
+    let span = unsupported.borrow().span();
+    assert!(!span.source_id().is_unknown());
+    assert_eq!(span.start().to_u32() as usize, text.find("test.unregistered_region").unwrap());
+    let chain = f
+        .context
+        .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(vec![InlineCallFrame {
+            name: "inlined".into(),
+            linkage_name: None,
+            file: "selection.hir".into(),
+            line: 1,
+            column: 1,
+            call_file: "selection.hir".into(),
+            call_line: 1,
+            call_column: 1,
+        }]))
+        .as_attribute_ref();
+    unsupported.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+    let report = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+    let diagnostic = report.downcast_ref::<PlanError>().unwrap();
+    assert_eq!(diagnostic.category, DiagnosticCategory::InvalidSelectedLowering);
+    assert_eq!(diagnostic.origin.span, span);
+    assert_eq!(diagnostic.origin.inline_chain.len(), 1);
+    assert_eq!(diagnostic.origin.inline_chain[0].source_id(), span.source_id());
+    assert_eq!(diagnostic.origin.inline_chain[0].start().to_u32(), 0);
+    assert_eq!(diagnostic.step, None);
+    assert_eq!(diagnostic.depth, None);
+    assert_eq!(diagnostic.expected, None);
+    assert_eq!(diagnostic.actual, None);
+}
+
+#[test]
+fn unsupported_function_convention_retains_function_source_span() {
+    use midenc_hir::Spanned;
+    let f = parse("builtin.function public extern(\"custom\") @source() { builtin.ret; };");
+    let span = f.borrow().span();
+    assert!(!span.source_id().is_unknown());
+    let report = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+    let diagnostic = report.downcast_ref::<PlanError>().unwrap();
+    assert_eq!(diagnostic.origin.span, span);
+    assert_eq!(diagnostic.step, None);
+    assert_eq!(diagnostic.depth, None);
+}
