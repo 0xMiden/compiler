@@ -9,36 +9,118 @@ use super::{
     *,
 };
 
-/// Segment dominance relation, including each segment itself.
-pub(super) type Dominators = BTreeMap<SegmentId, BTreeSet<SegmentId>>;
+/// Dominator-tree intervals for independently checked selected segments.
+/// The relation is reflexive; unreachable nodes prove no dominance of other nodes.
+/// Storing one interval per node avoids retaining a quadratic ancestor relation.
+pub(super) struct Dominators(BTreeMap<SegmentId, (usize, usize)>);
 
-/// Compute graph dominance with the first selected segment as entry; graph IDs must be checked.
+impl Dominators {
+    pub fn dominates(&self, owner: SegmentId, node: SegmentId) -> bool {
+        let (start, end) = self.0[&owner];
+        let (position, _) = self.0[&node];
+        owner == node || start <= position && position < end
+    }
+}
+
+/// Derive dominance from checked graph IDs, independently of allocator analyses.
+/// Indexed predecessors and reverse postorder feed the iterative immediate-dominator
+/// algorithm. Each update uses current facts, so a chain converges in one forward pass.
+/// Iterative traversals also avoid host-stack limits for deep selected graphs.
 pub(super) fn dominators(program: &SelectedProgram) -> Dominators {
-    let all: BTreeSet<_> = program.segments.iter().map(|segment| segment.id).collect();
-    let mut result: Dominators = all.iter().map(|id| (*id, all.clone())).collect();
-    let Some(entry) = program.segments.first() else {
-        return result;
-    };
-    result.insert(entry.id, BTreeSet::from([entry.id]));
-    loop {
-        let previous = result.clone();
-        for segment in program.segments.iter().skip(1) {
-            let mut incoming = program
-                .edges
-                .iter()
-                .filter(|edge| edge.destination == Some(segment.id))
-                .map(|edge| &previous[&edge.source]);
-            let mut common = incoming.next().cloned().unwrap_or_default();
-            for predecessor in incoming {
-                common.retain(|id| predecessor.contains(id));
-            }
-            common.insert(segment.id);
-            result.insert(segment.id, common);
-        }
-        if result == previous {
-            return result;
+    let count = program.segments.len();
+    if count == 0 {
+        return Dominators(BTreeMap::new());
+    }
+    let indices: BTreeMap<_, _> = program
+        .segments
+        .iter()
+        .enumerate()
+        .map(|(index, segment)| (segment.id, index))
+        .collect();
+    let mut successors = alloc::vec![alloc::vec::Vec::new(); count];
+    let mut predecessors = alloc::vec![alloc::vec::Vec::new(); count];
+    for edge in &program.edges {
+        if let Some(destination) = edge.destination {
+            let from = indices[&edge.source];
+            let to = indices[&destination];
+            successors[from].push(to);
+            predecessors[to].push(from);
         }
     }
+    let mut seen = alloc::vec![false; count];
+    seen[0] = true;
+    let mut traversal = alloc::vec![(0, 0)];
+    let mut order = alloc::vec::Vec::with_capacity(count);
+    while let Some((node, next)) = traversal.last_mut() {
+        if let Some(&child) = successors[*node].get(*next) {
+            *next += 1;
+            if !seen[child] {
+                seen[child] = true;
+                traversal.push((child, 0));
+            }
+        } else {
+            order.push(*node);
+            traversal.pop();
+        }
+    }
+    order.reverse();
+    let mut rank = alloc::vec![usize::MAX; count];
+    for (index, node) in order.iter().enumerate() {
+        rank[*node] = index;
+    }
+    let mut parent = alloc::vec![None; count];
+    parent[0] = Some(0);
+    loop {
+        let mut changed = false;
+        for &node in order.iter().skip(1) {
+            let mut common: Option<usize> = None;
+            for &predecessor in &predecessors[node] {
+                if parent[predecessor].is_none() {
+                    continue;
+                }
+                common = Some(match common {
+                    None => predecessor,
+                    Some(mut left) => {
+                        let mut right = predecessor;
+                        while left != right {
+                            while rank[left] > rank[right] {
+                                left = parent[left].unwrap();
+                            }
+                            while rank[right] > rank[left] {
+                                right = parent[right].unwrap();
+                            }
+                        }
+                        left
+                    }
+                });
+            }
+            if parent[node] != common {
+                parent[node] = common;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let mut children = alloc::vec![alloc::vec::Vec::new(); count];
+    for &node in order.iter().skip(1) {
+        children[parent[node].unwrap()].push(node);
+    }
+    let mut intervals = alloc::vec![(usize::MAX, usize::MAX); count];
+    let mut clock = 0;
+    let mut pending = alloc::vec![(0, false)];
+    while let Some((node, exiting)) = pending.pop() {
+        if exiting {
+            intervals[node].1 = clock;
+        } else {
+            intervals[node].0 = clock;
+            clock += 1;
+            pending.push((node, true));
+            pending.extend(children[node].iter().rev().map(|child| (*child, false)));
+        }
+    }
+    Dominators(indices.into_iter().map(|(id, index)| (id, intervals[index])).collect())
 }
 
 fn definition(
@@ -89,7 +171,7 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
                     let source = sources[usize::from(lane)];
                     validate_atom(program, source)?;
                     let (origin, prior) = definition(program, source)?;
-                    if !dom[&destination].contains(&origin)
+                    if !dom.dominates(origin, destination)
                         || origin == destination
                             && (prior > position || prior == position && position != 0)
                     {
@@ -115,7 +197,7 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
             if program.values[&id].reconstruction.is_some() {
                 for lane in 0..program.values[&id].layout.lanes() {
                     let (owner, prior) = definition(program, Atom::new(id, lane))?;
-                    if !dom[&segment].contains(&owner) || owner == segment && prior >= position {
+                    if !dom.dominates(owner, segment) || owner == segment && prior >= position {
                         return Err(error("reconstruction use precedes its current definition"));
                     }
                 }
@@ -222,7 +304,7 @@ pub(super) fn seed(
             Some(Reconstruction::Literal(lanes)) => tokens.literal(lanes[usize::from(atom.lane)]),
             Some(Reconstruction::Alias(lanes)) => {
                 let (owner, position) = definition(program, atom)?;
-                if dom[&segment].contains(&owner) && (owner != segment || position == 0) {
+                if dom.dominates(owner, segment) && (owner != segment || position == 0) {
                     resolve(
                         program,
                         lanes[usize::from(atom.lane)],

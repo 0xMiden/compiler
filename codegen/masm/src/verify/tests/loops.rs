@@ -158,7 +158,9 @@ impl GeneratedDefinition for LoopDefinition {
         })
     }
 }
-pub(super) fn loop_fixture(repair: bool) -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
+pub(in crate::verify) fn loop_fixture(
+    repair: bool,
+) -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
     let selected = check_selection(
         LoopDefinition.instantiate(&[]).unwrap().program,
         &SourceContext::Generated(&LoopDefinition),

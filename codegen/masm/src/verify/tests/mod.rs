@@ -2,7 +2,8 @@ mod abi;
 mod contents;
 mod control;
 mod diamond;
-mod loops;
+
+pub(super) mod loops;
 mod memory;
 mod mutations;
 mod provenance;

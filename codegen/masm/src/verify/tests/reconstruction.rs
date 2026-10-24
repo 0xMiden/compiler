@@ -473,3 +473,111 @@ fn a_reconstruction_declaration_cannot_invent_an_unpublished_lane() {
         .is_err()
     );
 }
+
+/// A reachability oracle: removing a dominator must disconnect its dominated node.
+/// This does not share the verifier's dominator computation or traversal order.
+fn reachable_without(edges: &[(usize, usize)], count: usize, removed: usize) -> Vec<bool> {
+    let mut seen = vec![false; count];
+    let mut pending = vec![0];
+    while let Some(node) = pending.pop() {
+        if node == removed || seen[node] {
+            continue;
+        }
+        seen[node] = true;
+        pending.extend(edges.iter().filter(|(from, _)| *from == node).map(|(_, to)| *to));
+    }
+    seen
+}
+
+fn dominance_program(count: usize, edges: &[(usize, usize)]) -> SelectedProgram {
+    let mut program = Fixture::new(0, 0).instantiate(&[]).unwrap().program;
+    // IDs deliberately differ from their traversal and storage indices.
+    let id = |index: usize| SegmentId((count - index) as u32 * 7);
+    program.segments = (0..count)
+        .map(|index| SelectedSegment {
+            id: id(index),
+            parameters: vec![],
+            content_parameters: vec![],
+            units: vec![],
+        })
+        .collect();
+    program.edges = edges
+        .iter()
+        .enumerate()
+        .map(|(index, (from, to))| TransferEdge {
+            id: EdgeId(index as u32),
+            source: id(*from),
+            destination: Some(id(*to)),
+            kind: EdgeKind::Forward,
+            bindings: vec![],
+            content_bindings: vec![],
+        })
+        .collect();
+    program
+}
+
+#[test]
+fn dominance_agrees_with_independent_path_removal() {
+    // Every directed four-node graph, including cycles, duplicate entry paths and
+    // irreducible loops. Only compare reachable nodes, as checked graphs require.
+    let pairs: Vec<_> = (0..4)
+        .flat_map(|from| (0..4).filter(move |to| *to != from).map(move |to| (from, to)))
+        .collect();
+    for mask in 0..(1 << pairs.len()) {
+        let edges: Vec<_> = pairs
+            .iter()
+            .enumerate()
+            .filter(|(bit, _)| mask & (1 << bit) != 0)
+            .map(|(_, edge)| *edge)
+            .collect();
+        let reachable = reachable_without(&edges, 4, usize::MAX);
+        if reachable.iter().any(|seen| !seen) {
+            continue;
+        }
+        let program = dominance_program(4, &edges);
+        let dom = super::super::reconstruction::dominators(&program);
+        for owner in 0..4 {
+            let without = reachable_without(&edges, 4, owner);
+            for (node, remains_reachable) in without.iter().enumerate() {
+                assert_eq!(
+                    dom.dominates(program.segments[owner].id, program.segments[node].id),
+                    !remains_reachable,
+                    "edges={edges:?}, owner={owner}, node={node}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn dominance_long_chain_scaling() {
+    for count in [64, 128, 256] {
+        let edges: Vec<_> = (1..count).map(|node| (node - 1, node)).collect();
+        let program = dominance_program(count, &edges);
+        let start = std::time::Instant::now();
+        let dom = super::super::reconstruction::dominators(&program);
+        std::eprintln!("dominance chain {count}: {:?}", start.elapsed());
+        for node in 0..count {
+            assert!(dom.dominates(program.segments[0].id, program.segments[node].id));
+            if node + 1 < count {
+                assert!(!dom.dominates(program.segments[node + 1].id, program.segments[node].id));
+            }
+        }
+    }
+}
+
+#[test]
+fn dominance_handles_empty_graph_and_duplicate_self_edges() {
+    let empty = dominance_program(0, &[]);
+    let _ = super::super::reconstruction::dominators(&empty);
+    let program = dominance_program(3, &[(0, 0), (0, 1), (0, 1), (1, 1), (1, 2), (2, 1)]);
+    let dom = super::super::reconstruction::dominators(&program);
+    for owner in 0..3 {
+        for node in 0..3 {
+            assert_eq!(
+                dom.dominates(program.segments[owner].id, program.segments[node].id),
+                owner <= node
+            );
+        }
+    }
+}

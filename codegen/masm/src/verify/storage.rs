@@ -130,7 +130,7 @@ pub(super) fn validate(program: &SelectedProgram) -> Result<(), VerificationErro
     }
     let available = |id: ContentId, segment: SegmentId, position: usize| {
         definitions.get(&id).is_some_and(|(owner, prior)| {
-            dom[&segment].contains(owner) && (*owner != segment || *prior < position)
+            dom.dominates(*owner, segment) && (*owner != segment || *prior < position)
         })
     };
     for segment in &program.segments {
