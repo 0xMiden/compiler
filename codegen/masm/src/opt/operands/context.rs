@@ -6,7 +6,7 @@ use smallvec::SmallVec;
 use super::{SolverError, SolverOptions, Stack, ValueOrAlias};
 use crate::{Constraint, OperandStack};
 
-/// The context associated with an instance of [OperandMovementConstraintSolver].
+/// The stack and copy obligations for one operand-shuffle search.
 ///
 /// Contained in this context is the current state of the stack, the expected operands, whether the
 /// expected operands may be out of order, the constraints on those operands, and metadata about

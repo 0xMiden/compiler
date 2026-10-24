@@ -18,7 +18,7 @@ use super::*;
 // -------------------------------------------------------------------------------------
 // Fixtures.
 //
-// Task 7's, copied from `midenc-compile/src/pipeline/frontends/hir.rs` rather than shared:
+// These fixtures mirror `midenc-compile/src/pipeline/frontends/hir.rs` rather than being shared:
 // `midenc-compile` depends on this crate, so nothing here can import from it. The component
 // name `hir_ns::test` is a two-segment path, printed one `@`-name per segment.
 // -------------------------------------------------------------------------------------
