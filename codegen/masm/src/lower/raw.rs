@@ -66,13 +66,24 @@ impl Builder {
         });
     }
 
-    /// Wrap a same-context helper invocation in the compiler's frame tracing events.
-    pub fn exec(&mut self, target: masm::InvocationTarget) {
+    /// Preserve the debugger's caller frame across an invocation. The debugger uses
+    /// these events, rather than VM context switches, to enter and leave callees.
+    /// Argument preparation and result cleanup belong outside this pair.
+    pub fn invoke(&mut self, instruction: I) {
+        debug_assert!(matches!(
+            instruction,
+            I::Exec(_) | I::Call(_) | I::SysCall(_) | I::DynExec | I::DynCall
+        ));
         self.emit_all([
             I::EmitImm(Event::FrameStart.into()),
-            I::Exec(target),
+            instruction,
             I::EmitImm(Event::FrameEnd.into()),
         ]);
+    }
+
+    /// Emit a same-context helper with the same debugger protocol as source calls.
+    pub fn exec(&mut self, target: masm::InvocationTarget) {
+        self.invoke(I::Exec(target));
     }
 }
 

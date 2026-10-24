@@ -875,3 +875,115 @@ fn physically_valid_arithmetic_mutation_needs_execution() -> Result<(), Report> 
     assert!(error.to_string().contains("assertion"), "{error}");
     Ok(())
 }
+
+/// Execute verified lowering with the real debugger, checking callee entry and caller
+/// restoration. Frame-event semantics are trusted by physical verification.
+pub(crate) fn assert_debugger_call_frames(
+    package: alloc::sync::Arc<miden_assembly::package::Package>,
+    manager: alloc::sync::Arc<miden_assembly::DefaultSourceManager>,
+    libraries: impl IntoIterator<Item = alloc::sync::Arc<miden_assembly::package::Package>>,
+    caller: &str,
+) -> Result<(), Report> {
+    let mut executor = miden_debug::Executor::new(Vec::new());
+    for library in libraries {
+        executor.with_package(library)?;
+    }
+    let mut debugger = executor.into_debug(package, manager);
+    let named = |name: &str, expected: &str| {
+        name == expected || name.strip_suffix(expected).is_some_and(|prefix| prefix.ends_with("::"))
+    };
+    let mut entered_depth = None;
+    let mut restored = false;
+    for _ in 0..16_384 {
+        let returned = debugger.step().map_err(|error| Report::msg(error.to_string()))?;
+        let names = debugger
+            .callstack
+            .frames()
+            .iter()
+            .filter_map(|frame| frame.procedure(""))
+            .collect::<Vec<_>>();
+        if names.last().is_some_and(|name| named(name, "callee")) {
+            assert!(names.len() >= 2, "callee replaced its caller: {names:?}");
+            assert!(named(&names[names.len() - 2], caller), "wrong caller: {names:?}");
+            entered_depth = Some(names.len());
+        }
+        // The debugger can update a departing frame's display name to the caller
+        // before processing FrameEnd. Check the pop and surviving caller instead.
+        if returned.is_some()
+            && let Some(depth) = entered_depth
+        {
+            assert_eq!(names.len(), depth - 1, "callee frame did not pop: {names:?}");
+            assert!(
+                names.last().is_some_and(|name| named(name, caller)),
+                "caller was not restored after callee returned: {names:?}"
+            );
+            restored = true;
+        }
+        if debugger.stopped {
+            break;
+        }
+    }
+    assert!(debugger.stopped, "debugger did not finish within the cycle bound");
+    assert!(entered_depth.is_some(), "debugger never observed a callee frame above {caller}");
+    assert!(restored, "debugger never restored {caller} after callee returned");
+    Ok(())
+}
+
+#[test]
+fn registered_context_calls_preserve_debugger_frames() -> Result<(), Report> {
+    use alloc::sync::Arc;
+    for invocation in [Invocation::Call, Invocation::SysCall, Invocation::DynCall] {
+        // Exercise both padding and the full 16-lane call window. Dynamic roots
+        // remain independently staged even when all 16 argument lanes are used.
+        for arguments in [1, 16] {
+            let source = Source {
+                case: Case::Context {
+                    invocation,
+                    arguments,
+                    results: 1,
+                    root_argument: false,
+                },
+                live: vec![],
+            };
+            let selected = procedure(&source).to_pretty_string();
+            let manager = Arc::new(miden_assembly::DefaultSourceManager::default());
+            let mut assembler = miden_assembly::Assembler::new(manager.clone());
+            let callee = clobbering_callee(arguments, 1, invocation == Invocation::SysCall);
+            let mut libraries = Vec::new();
+            let direct = if invocation == Invocation::SysCall {
+                let module = miden_assembly::ast::Module::parser(Some(
+                    miden_assembly::ast::ModuleKind::Kernel,
+                ))
+                .parse_str(
+                    Some(miden_assembly::Path::KERNEL),
+                    &callee,
+                    manager.clone(),
+                )?;
+                let kernel: Arc<miden_assembly::package::Package> =
+                    miden_assembly::Assembler::new(manager.clone())
+                        .assemble_kernel("debug_kernel", module, None)?
+                        .into();
+                assembler =
+                    miden_assembly::Assembler::with_kernel(manager.clone(), kernel.clone())?;
+                libraries.push(kernel);
+                String::new()
+            } else {
+                callee
+            };
+            let args = (0..arguments).map(|lane| 11 + lane as usize).collect::<Vec<_>>();
+            let code = format!(
+                "{direct} {selected} begin push.123 mem_store.99 {} {} exec.fixture push.700 \
+                 assert_eq end",
+                push_top(&args),
+                if invocation == Invocation::DynCall {
+                    "procref.callee"
+                } else {
+                    ""
+                },
+            );
+            let package = assembler.assemble_program("context_debug_frames", code)?;
+            assert_debugger_call_frames(package.into(), manager, libraries, "fixture")?;
+        }
+    }
+    Ok(())
+}

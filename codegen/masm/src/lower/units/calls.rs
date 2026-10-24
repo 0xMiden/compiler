@@ -137,7 +137,7 @@ impl LoweringDefinition for ContextCall {
             ));
             b.emit(masm::Instruction::Locaddr(offset.into()));
         }
-        b.emit(self.instruction.clone());
+        b.invoke(self.instruction.clone());
         b.emit_all(context_result_cleanup(self.abi.results() as u8)?);
         Ok(annotate_raw(&b.ops, unit.id))
     }

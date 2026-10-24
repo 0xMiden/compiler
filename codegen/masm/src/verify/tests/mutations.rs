@@ -268,14 +268,20 @@ fn dynamic_root_binding_offset_and_selector_are_rejected() {
             )
         })
         .unwrap();
-    assert!(matches!(
-        missing.ops()[index - 1],
-        AnnotatedOp::Instruction {
-            instruction: Instruction::Locaddr(_),
-            ..
-        }
-    ));
-    missing.ops_mut().remove(index - 1);
+    // Remove the selector producer while retaining the intervening debugger events.
+    let selector_index = missing.ops()[..index]
+        .iter()
+        .rposition(|op| {
+            matches!(
+                op,
+                AnnotatedOp::Instruction {
+                    instruction: Instruction::Locaddr(_),
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    missing.ops_mut().remove(selector_index);
     assert_eq!(
         verify(&plan, &frame, missing).unwrap_err().category,
         DiagnosticCategory::AbiMismatch
