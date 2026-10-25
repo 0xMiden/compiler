@@ -104,8 +104,8 @@ fn masm_standard() {
     }
     let [member_cycles, non_member_cycles]: [String; 2] =
         note_cycles.try_into().expect("one measurement per consumed note");
-    expect!["3949"].assert_eq(&member_cycles);
-    expect!["3854"].assert_eq(&non_member_cycles);
+    expect!["3959"].assert_eq(&member_cycles);
+    expect!["3864"].assert_eq(&non_member_cycles);
 }
 
 /// Returns the MAST root of the procedure `leaf` exported by a standards component.
