@@ -5,6 +5,84 @@ use midenc_hir::Value;
 use super::*;
 
 #[test]
+fn narrow_bnot_preserves_declared_width_and_live_input() {
+    for (ty, bits) in [("u8", 8), ("i8", 8), ("u16", 16), ("i16", 16)] {
+        let mask = (1usize << bits) - 1;
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%a: {ty}) -> ({ty}, {ty}) {{ %r = \
+             arith.bnot %a; builtin.ret %r, %a : ({ty}, {ty}); }};"
+        ));
+        for input in [0, 1, 0x0f, 1 << (bits - 1), mask - 1, mask] {
+            execute_linked(&f, &[input], &[mask ^ input, input]);
+        }
+    }
+}
+
+#[test]
+fn full_limb_bnot_preserves_limb_order_and_live_input() {
+    for (ty, input) in [
+        ("u32", vec![0x1234_5678]),
+        ("u64", vec![0x1234_5678, 0x9abc_def0]),
+        ("u128", vec![0x1234_5678, 0x9abc_def0, 0, 0xffff_ffff]),
+    ] {
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%a: {ty}) -> ({ty}, {ty}) {{ %r = \
+             arith.bnot %a; builtin.ret %r, %a : ({ty}, {ty}); }};"
+        ));
+        let mut expected = input.iter().map(|limb| 0xffff_ffff ^ limb).collect::<Vec<_>>();
+        expected.extend_from_slice(&input);
+        execute_linked(&f, &input, &expected);
+    }
+}
+
+#[test]
+fn narrow_bnot_stores_preserve_neighboring_bytes() {
+    let sentinel = [0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+    let initialize = format!(
+        "push.{} mem_store.64 push.{} mem_store.65",
+        u32::from_le_bytes(sentinel[..4].try_into().unwrap()),
+        u32::from_le_bytes(sentinel[4..].try_into().unwrap()),
+    );
+    for (ty, bits) in [("u8", 8), ("i8", 8), ("u16", 16), ("i16", 16)] {
+        let mask = (1usize << bits) - 1;
+        for offset in 0..4 {
+            for constant_pointer in [false, true] {
+                let (args, pointer) = if constant_pointer {
+                    (
+                        format!("%a: {ty}"),
+                        format!("%p = hir.constant_pointer {} : ptr<{ty}, byte>;", 256 + offset),
+                    )
+                } else {
+                    (format!("%p: ptr<{ty}, byte>, %a: {ty}"), String::new())
+                };
+                let f = parse(&format!(
+                    "builtin.function public extern(\"C\") @f({args}) -> {ty} {{ {pointer} %r = \
+                     arith.bnot %a; hir.store %p, %r : (ptr<{ty}, byte>, {ty}); builtin.ret %r : \
+                     ({ty}); }};"
+                ));
+                for input in [0, 0x0f, 1 << (bits - 1), mask] {
+                    let result = mask ^ input;
+                    let mut bytes = sentinel;
+                    bytes[offset..offset + bits / 8]
+                        .copy_from_slice(&result.to_le_bytes()[..bits / 8]);
+                    let observe = format!(
+                        "mem_load.64 push.{} assert_eq mem_load.65 push.{} assert_eq",
+                        u32::from_le_bytes(bytes[..4].try_into().unwrap()),
+                        u32::from_le_bytes(bytes[4..].try_into().unwrap()),
+                    );
+                    let inputs = if constant_pointer {
+                        vec![input]
+                    } else {
+                        vec![256 + offset, input]
+                    };
+                    execute_linked_memory(&f, &inputs, &[result], &initialize, &observe).unwrap();
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn registered_arithmetic_selects_real_source_and_preserves_suffix() {
     let f = parse(
         "builtin.function public extern(\"C\") @add(%a: u32, %b: u32) -> u32 {\n%r = arith.add \

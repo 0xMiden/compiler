@@ -765,19 +765,15 @@ impl OpEmitter<'_> {
         let ty = arg.ty();
         match &ty {
             Type::I1 => self.emit(masm::Instruction::Not, span),
-            Type::I8
-            | Type::U8
-            | Type::I16
-            | Type::U16
-            | Type::I32
-            | Type::U32
-            | Type::I64
-            | Type::U64
-            | Type::I128
-            | Type::U128 => {
+            Type::I8 | Type::U8 | Type::I16 | Type::U16 => {
+                // Narrow integers occupy a zero-extended lane, so invert only their declared bits.
+                // Inverting the entire lane would also overwrite neighboring bytes when stored.
+                self.bxor_imm_u32((1u32 << ty.size_in_bits()) - 1, span);
+            }
+            Type::I32 | Type::U32 | Type::I64 | Type::U64 | Type::I128 | Type::U128 => {
                 let num_elements = ty.size_in_bits() / 32;
                 match num_elements {
-                    0 | 1 => {
+                    1 => {
                         self.emit(masm::Instruction::U32Not, span);
                     }
                     2 => {
