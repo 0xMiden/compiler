@@ -2,7 +2,8 @@
 //!
 //! Selection records values, lowering units, source coverage, and structured control flow;
 //! it owns no physical locations and never mutates HIR. Registered source rules also construct
-//! the executable definitions and evidence used to check an allocation candidate independently.
+//! the executable definitions and evidence used to check an allocation candidate. Source checking
+//! reruns this trusted selector against current HIR; physical replay is independent of allocation.
 //! A selected graph describes the requested computation, but does not certify its own semantics.
 pub(crate) mod generated;
 pub(crate) mod graph;
@@ -14,7 +15,7 @@ use midenc_hir::{Immediate, OperationRef, Report, dialects::builtin};
 use crate::{lower::units::HirUnit, plan::*, verify::DefinitionEvidence};
 
 /// Immutable source information, shared with source checking rather than supplied by a candidate.
-/// Keep source lookup here so selection and independent reconstruction see the same linked facts.
+/// Keep source lookup here so initial selection and source checking see the same linked facts.
 #[derive(Default)]
 pub(crate) struct SelectEnv<'a> {
     /// Linked symbol and function-table layouts needed by source rules which address them.

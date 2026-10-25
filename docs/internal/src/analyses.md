@@ -2,14 +2,14 @@
 
 This document provides an overview of some of the current analysis passes the compiler uses when lowering from the frontend to Miden Assembly. This is not guaranteed to be comprehensive, but mostly meant as a high-level reference to what analyses exist and why they are being used.
 
-All analysis passes, at the time of writing, are maintained in the `midenc-hir-analysis` crate, with the exception of two, which are part of the core `midenc-hir` crate.
+HIR analyses live in `midenc-hir-analysis` and `midenc-hir`. The MASM backend also analyzes its selected graph before physical allocation.
 
 - [Dominance](#dominance)
 - [Loop Forest](#loop-forest)
 - [Dead Code](#dead-code)
 - [Sparse Constant Propagation](#sparse-constant-propagation)
 - [Liveness](#liveness)
-- [Spills](#spills)
+- [Backend Allocation Analysis](#backend-allocation-analysis)
 
 ## Dominance
 
@@ -53,7 +53,7 @@ The _iterated_ dominance frontier of some node $B$, represents computing the dom
 
 Iterated dominance frontiers are especially useful when one needs to introduce new definitions of a value, and ensure that all uses of the original value reachable from the new definition, are rewritten to use the new definition. Because uses must be dominated by defs, and the new definition may not strictly dominate all uses, but nevertheless be defined along _some_ path to a use, we may be required to introduce new _phi nodes_ (in HIR, block arguments) that join two or more definitions of a value together at join points in the CFG. The iterated dominance frontier of the new definition tells us all of the blocks where we would need to introduce a new block argument, if there are uses of the value in, or dominated by, that block.
 
-We currently use this in our spills analysis/transformation, in order to do the very thing described above for each reload of a spilled value (which represent new definitions of the spilled value). We want to ensure that uses of the original value reachable from the reload, use the reload instead, thus terminating the live range of the spilled value at the point it is spilled.
+Backend spills do not introduce HIR definitions or require spill-driven SSA reconstruction. They preserve existing semantic values in compiler-managed frame cells.
 
 ## Loop Forest
 
@@ -96,16 +96,23 @@ The SCCP transform mentioned above will actually take the results of the two ana
 
 ## Liveness
 
-This analysis computes the liveness, and live range, of every value in the program. This is of crucial importance during code generation, particularly as it relates to management of Miden's operand stack.
+The HIR liveness analysis computes live values and next-use distances at program points. Backend operand-stack allocation uses a separate analysis of the selected graph, described below.
 
-Our specific implementation is based on the ideas and algorithms described in [_Register Spilling and Live-Range Splitting for SSA-form Programs_](https://pp.ipd.kit.edu/uploads/publikationen/braun09cc.pdf), by Matthias Braun and Sebastian Hack. Specifically, unlike many traditional liveness analysis implementations, we do not track liveness as a boolean state at each program point, but rather in terms of _next-use distances_. This seemingly small change has some significant benefits: we are able to reason more precisely about how important certain values are at each program point (e.g. should we keep a value in a register/on the operand stack, or can it be spilled to memory to make room for higher priority values); and we are able to quickly assess on entry to a loop, whether the next use of a value occurs within the loop, or after it. This choice of representation of liveness data plays a key role in our [_spills analysis_](#spills).
+Our specific implementation is based on the ideas and algorithms described in [_Register Spilling and Live-Range Splitting for SSA-form Programs_](https://pp.ipd.kit.edu/uploads/publikationen/braun09cc.pdf), by Matthias Braun and Sebastian Hack. Specifically, unlike many traditional liveness analysis implementations, we do not track liveness as a boolean state at each program point, but rather in terms of _next-use distances_. This seemingly small change has some significant benefits: we are able to reason more precisely about how important certain values are at each program point (e.g. should we keep a value in a register/on the operand stack, or can it be spilled to memory to make room for higher priority values); and we are able to quickly assess on entry to a loop, whether the next use of a value occurs within the loop, or after it. The backend computes its own liveness and scheduling priorities rather than consuming these HIR facts.
 
 Our liveness analysis also builds on top of the [_dead code_](#dead-code) and [_sparse constant propagation_](#sparse-constant-propagation) analyses, to avoid considering uses of values along code paths which are statically unreachable/dead. Like those two analyses, it is also implemented on top of our data flow analysis framework.
 
-## Spills
+## Backend Allocation Analysis
 
-The purpose of the spills analysis is to identify programs where we can statically determine that the number of simultaneously-live values would overflow the addressable Miden operand stack, thus requiring us to spill values to memory in order to access values that are in the overflow table. By doing this ahead of time during compilation, we can make smarter choices about what to spill, and when, such that the operand stack never overflows, and potentially expensive spill/reload operations are not emitted in hot code paths, such as loops.
+The MASM backend selects a semantic graph from final HIR, then computes liveness,
+next-use distances, loop structure and scratch dependencies in
+[`allocate/analysis.rs`](../../../codegen/masm/src/allocate/analysis.rs).
+The [allocator](../../../codegen/masm/src/allocate/mod.rs) uses those facts to plan
+stack operations, spills, reloads and control-flow transfers without rewriting HIR.
 
-This analysis is tightly integrated with our [_liveness analysis_](#liveness) implementation, particularly the fact that our liveness information is based on next-use distances. Like liveness, it also builds on top of the [_dead code_](#dead-code) and [_sparse constant propagation_](#sparse-constant-propagation) analyses to avoid considering statically unreachable/dead code paths.
-
-The spills analysis also acts as a register allocator, in that part of how it determines what to spill and when, is by computing the live-in/live-out register sets at each block and operation, along with the set of values in those sets which have been spilled along code paths reaching each program point. We use this information to schedule operands at control flow join points, so that the state of the operand stack is kept consistent on exit from predecessors.
+Indexed stack operations can access only the top sixteen field elements; total
+stack depth and live-value count may exceed sixteen. The
+[physical verifier](../../../codegen/masm/src/verify/replay.rs) independently derives
+liveness obligations from checked selected semantics and replays the emitted
+instructions and frame accesses. See the
+[unified stack allocator design](../../design/unified-stack-allocator.md).

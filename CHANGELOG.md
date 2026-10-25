@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ignore inline-call chains in location-insensitive operation equivalence so debug metadata does
   not prevent CSE or exit-block merging. Clear conflicting chains on shared operations (#1431).
 
+### Migration and breaking changes
+
+- Executable entrypoints must use an `exec`-compatible calling convention (`C`, `Fast`, or
+  `Wasm`). Canonical component exports cannot be selected directly as program entrypoints;
+  the compiler no longer creates an implicit adapter for them. Use an explicitly compatible
+  entrypoint, or compile the component as a library and invoke it through its runtime's
+  executable construction path.
+
 ## [0.11.0]
 
 ### Compiler and `midenc`

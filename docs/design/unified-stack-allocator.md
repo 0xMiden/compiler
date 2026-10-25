@@ -6,6 +6,8 @@ The MASM backend will own one physical allocation plan for each emitted procedur
 
 The hard machine constraint is that an instruction may access only the top sixteen field elements through indexed stack operations. Total stack depth may exceed sixteen. Correctness therefore depends on the sequence of accesses, including temporary instructions inside a lowering, rather than a bound on the number of live values or operation operands.
 
+Verification establishes legal raw accesses, preservation of live values and protected suffixes, compatible control-flow contracts, valid compiler storage, and declared call/publication effects. Selection rules, instruction effects, and the algorithms inside lowering units remain trusted semantic definitions. VM execution tests establish arithmetic, memory, event, and other behavioral correctness that physical replay cannot prove; [verification boundaries](#verification-boundaries) describes this distinction in detail.
+
 ## Scope and decisions
 
 The design covers all HIR bodies the backend currently emits, including component functions, supporting modules, standalone functions, generated adapters, and global initializers. It preserves the existing supported value representations and ABIs. It supports wide SCF interfaces, legal temporary overflow, and the full sixteen-input FPI payload. Arbitrarily large aggregate SSA values, new calling conventions, and unlimited procedure frames are outside this change.
@@ -122,7 +124,7 @@ Frontend return construction preserves the complete declared result tuple in sou
 
 The backend determines final emitted module and procedure owners before selection, using the target and existing namespace eligibility rules. An immutable, finite map contains only definitions the component actually emits; it includes generated owners and validates destination uniqueness and collisions. Declaration-only external siblings, raw external helpers and digest targets retain their identities, even when their spelling overlaps an emitted namespace. Authored component namespaces retain their existing eligibility rules. Already-namespaced source dependencies use their supplied namespace, not the enclosing compilation target.
 
-Canonical HIR identities remain authoritative for calling conventions, effects, kernel ownership and restricted helpers such as `truncate_stack`. Selection and independent source reconstruction use the same final emission-owner map to form targets and import destinations. Source and local alias names retain their spelling. Generated roots, initializers and tables use the same map, so final invocation identities enter verification together with the instructions that use them.
+Canonical HIR identities remain authoritative for calling conventions, effects, kernel ownership and restricted helpers such as `truncate_stack`. Selection and source-correspondence checking use the same final emission-owner map to form targets and import destinations. Source and local alias names retain their spelling. Generated roots, initializers and tables use the same map, so final invocation identities enter verification together with the instructions that use them.
 
 Packaging assembles these final identities without rewriting verified instructions or reconstructing procedure bodies. `--emit=masm` therefore shows the final namespace. Supplying an incompatible later target is diagnosed; changing the target requires lowering again. There is no general post-verification relocation mechanism or implicit prefix-based retargeting.
 
@@ -657,6 +659,8 @@ The independent physical verifier proves that dispatch consumes the checked look
 
 The stack policy in this section applies to `call`, `dyncall`, and `syscall`. A syscall has a separate ABI descriptor: its target must be a kernel procedure and it executes in the root memory context. Sharing the caller-save stack policy does not give it ordinary call fresh-memory semantics or same-context `exec` suffix preservation.
 
+Kernel entry classification requires the exact root `$kernel` module and an exported procedure. Currently both HIR `Public` and `Internal` emit as MASM `Public`, so both receive the Kernel ABI in that module. `Private` procedures retain their declared ordinary calling convention and cannot be syscall targets. When emission adopts MASM `pub(package)` for HIR `Internal`, classification must change with it: internal and private procedures must never receive the Kernel ABI or be targeted by `syscall`.
+
 For `a` argument lanes and `r` result lanes, each at most sixteen, prepare and check this layout in top-first notation:
 
 ```text
@@ -706,7 +710,7 @@ The existing fixed `dyncall` root scratch must be represented as a declared scra
 
 External procedures and shared intrinsics require convention-specific ABI/effect summaries for their stack and control effects. Same-context summaries promise suffix preservation and cannot observe or depend on incidental bottom padding. Context-call summaries assume the entire exposed window is clobbered except declared results; caller overflow preservation comes from the VM, not trust in the callee. Helpers that inspect stack depth or intentionally truncate overflow have dedicated summaries and restricted invocation sites. Preservation of caller-local memory follows the existing ABI assumption described above; it does not require a new per-callee proof.
 
-In particular, recognize `miden::core::sys::truncate_stack` by its resolved identity even when called through the [raw SDK import](../../sdk/stdlib-sys/src/raw/core.rs). It preserves the top sixteen and destroys all overflow. An ordinary call site with a protected tail cannot satisfy that effect contract and receives an ABI diagnostic. The helper is permitted at a context-call return or program-root return boundary after all protected-tail obligations have ended. A zero-argument source signature does not justify a suffix-preserving summary.
+In particular, recognize `miden::core::sys::truncate_stack` by its resolved identity even when called through the [raw SDK import](../../sdk/stdlib-sys/src/raw/core.rs). It preserves the top sixteen and destroys all overflow. Its use is reserved for compiler-registered context-call or kernel return cleanup and generated program-root cleanup, where ownership of the discarded overflow is established. Authored direct and indirect calls receive `AbiMismatch`, including a final call before a source return: that position alone does not prove ownership of the overflow. A zero-argument source signature does not justify a suffix-preserving summary. Supporting authored cleanup would require a separately checked return-pattern contract.
 
 ## Lowering units and verification
 
@@ -821,7 +825,7 @@ This contract supplies no implicit payload dependencies for generic `EmitEvent`/
 
 The backend does not interpret the ID to reconstruct a known operation or duplicate a handler's algorithm. Both generic forms use the same contract for any Felt ID. The VM owns dispatch, provider/deferred effects, host effects and errors. Dedicated `SystemEvent` and `PrintLn` operations retain their explicit operands and existing closed contracts. Frontend selection of the appropriate HIR operation is a separate responsibility; changing raw-event disassembly is outside this PR series.
 
-Independent source reconstruction seals a private generic-event category into the checked unit evidence. Only the two registered generic source definitions can establish it. A candidate plan, numerical event ID, emitted instruction or ordinary source READ permission cannot grant this capability. Dynamic source evidence includes the exact selected ID atom; replay requires that token at `Emit` and preserves its result alias. Immediate source selection requires a Felt attribute and no operands/results, diagnosing malformed input before emission.
+Source-correspondence checking seals a private generic-event category into the checked unit evidence. Only the two registered generic source definitions can establish it. A candidate plan, numerical event ID, emitted instruction or ordinary source READ permission cannot grant this capability. Dynamic source evidence includes the exact selected ID atom; replay requires that token at `Emit` and preserves its result alias. Immediate source selection requires a Felt attribute and no operands/results, diagnosing malformed input before emission.
 
 Replay resolves the matching generic source category before ordinary target lookup. Dynamic `Emit` preserves its one ID lane; immediate emission has no semantic input/output lanes and models the assembler's transient `Push(ID); Emit; Drop`. Both preserve the remaining operand stack and operand memory and may trap. Full-state observation is a distinct capability, not an unbounded memory footprint or a scan that demands initialized compiler cells. It leaves token identities, provenance, storage initialization and ownership unchanged. It grants no permission to subsequent loads, stores, returns, calls, or instructions from another source unit. Without matching source evidence, the existing strict target rules apply.
 
@@ -955,6 +959,10 @@ Verification is mandatory in normal compilation and has two layers:
 2. **Expanded instruction checking.** Symbolically execute the actual expanded MASM body with raw lane and memory tokens, including temporary instructions, to establish the physical effects asserted by the plan.
 
 The checker is separate from allocator transitions and solver tactics. Shared definitions specify the target and supported lowerings; independently computed verifier state establishes whether the emitted program satisfies them. The sharing boundary is specified below.
+
+Source correspondence is checked by reconstructing selection from the current HIR or registered generated definition and comparing it with the candidate. This uses the same trusted selector implementation that produced the candidate: it detects candidate mutation and intervening HIR changes, but is not an independent proof of instruction selection. The physical verifier independently derives liveness and token facts and replays actual instructions. Replacing reselection with a captured snapshot would change which source state is authoritative and requires a separate design decision.
+
+Registered lowering construction also supplies some call-site and trap metadata. Checking emitted code against that metadata establishes consistency with the declared contract; it does not independently prove the constructor's source semantics.
 
 The selected-program checker requires exactly one semantic coverage record for each HIR operation/region, or for each required stage of the registered generated-procedure definition. A record names its ordered lowering units, stack and stored-input bindings, scratch content dependencies, temporaries, result publication, effects, and control alternatives. Aliases and debug operations may have no executable phase; phased calls may have several. The checker validates the record against the registered selection rule and source operands, or the generated definition and its parameters, rather than trusting provenance annotations. Each effectful unit required by the source coverage executes once per applicable selected path; phases execute in order and publish results only at the specified completion boundary. Internal stages such as a copy loop can perform many primitive memory effects while implementing that invocation; their complete algorithmic semantics remain in the trusted lowering base. The checker verifies the graph projection against the structured skeleton. Before sealing selection, each If and loop true/false alternative must also carry the corresponding True/False edge kind, so redundant labels cannot contradict executable alternatives or suppress replay of a taken repair. This catches omitted captures, missing edges, swapped bindings, or unsupported terminators before physical checking.
 
@@ -1121,7 +1129,7 @@ The implementation shares target specifications and general infrastructure, but 
 | --- | --- |
 | Immutable IDs, lane layouts, structured MASM syntax | Own token environment, raw stack, frame contents, and symbolic scopes |
 | Declarative instruction effects and ABI definitions | Apply those rules to actual emitted instructions, including every temporary access |
-| Registered lowering definitions, physical requirements, and trusted semantic summaries | Check source correspondence, instantiated input bindings, storage accesses, and allowed publication |
+| Trusted selector and source-registration rules, registered lowering definitions, physical requirements, and semantic summaries | Check source correspondence, instantiated input bindings, storage accesses, and allowed publication |
 | Generic collections, bitsets, and worklist utilities | Recompute liveness from checked uses, definitions, and edges; do not reuse allocator liveness results |
 | Final frame-layout data and source-location formats | Validate offsets and ranges, replay physical cell reads/writes, and detect invalid reuse |
 | Diagnostic rendering | Branch merging, loop induction, edge substitution, and recoverability checks |
@@ -1283,6 +1291,8 @@ Call ABI and generated-procedure acceptance requires:
 | Context call returns zero through sixteen result lanes | Publish only signature results, legally discard all other returned window lanes, and preserve the restored suffix |
 | Same-context callee has fewer than sixteen arguments and an unknown nonzero suffix | Preserve every suffix lane, including those initially addressable; draining owned values must stop at the suffix |
 | Direct or indirect invocation uses the wrong family for the target convention | Reject known mismatches and enforce convention in indirect type checks; matching arity or an empty suffix is not an exception |
+| Public kernel entry invokes a private helper | Use `syscall` for the entry and its declared ordinary convention for the helper; reject a syscall targeting the private helper. Currently `Internal` follows emitted `Public` visibility; package visibility must remove that kernel eligibility when adopted |
+| Authored direct or indirect call resolves to `truncate_stack`, including through an alias | Reject with `AbiMismatch`; only compiler-registered context/kernel returns and generated root cleanup establish the required overflow ownership |
 | Generated main selects a program entrypoint | Require an `exec`-compatible convention and invoke it with `exec`; reject a context-call target instead of adapting the invocation |
 | Root initialization and optional harness precede the user entrypoint | Preserve the VM-provided sixteen-lane input window exactly, including zero padding and order; keep initialization, harness writes, and entry execution in the same root memory context |
 | Program entrypoint returns with floor-induced overflow | Preserve its top sixteen lanes with root `truncate_stack` and return from `begin` at exact depth sixteen; do not require same-context callees to remove caller suffix or padding |
@@ -1295,7 +1305,7 @@ Generic-event acceptance requires:
 | --- | --- |
 | Dynamic and immediate generic events with default/forced allocation, overflow and spill storage | Actual hosts observe the generated state for that execution; preserve operand stack/memory and continuation values |
 | Dynamic event ID or returned alias is replaced | Reject the wrong physical token identity against source-owned evidence |
-| Candidate forges generic authority, changes source ownership, or inserts an uncontracted event in a typed unit | Reject through independent source reconstruction and strict ordinary target rules |
+| Candidate forges generic authority, changes source ownership, or inserts an uncontracted event in a typed unit | Reject through source-correspondence checking and strict ordinary target rules |
 | Handler reads absent/stale cells or exports a compiler address through advice | Permit observation without inventing initialization or erasing known provenance; retain the source-memory ABI for subsequent accesses |
 | Known compiler-origin write or return follows a generic observation | Keep existing rejection; generic observation grants no later storage authority |
 | Generic event omitted, duplicated, or given a wrong immediate while otherwise physically valid | Detect semantic differences through actual event logs/provider/error oracles, without claiming a physical exact-body guarantee |

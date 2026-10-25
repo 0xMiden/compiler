@@ -1,4 +1,8 @@
 //! Source correspondence is checked before any physical contract becomes a premise.
+//!
+//! Reconstructing current HIR with the trusted selector detects changes to the source or candidate;
+//! it does not independently prove the selector's semantics. Physical replay derives its own facts
+//! from the checked graph rather than accepting the allocator's conclusions.
 use alloc::{
     collections::{BTreeMap, BTreeSet},
     vec::Vec,

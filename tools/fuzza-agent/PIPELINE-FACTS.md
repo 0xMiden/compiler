@@ -104,7 +104,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   Dead end: a multi-use 4-felt operand from widening multiplies.
 - Every shift and rotate count is wrapped in `arith.band(trunc(count),
   width - 1)` (`mask_movement_count`, `frontend/wasm/src/code_translator/mod.rs`):
-  the count band of the spill section.
+  the count bands described in the historical spill section.
 - Never built by the wasm frontend: `min`/`max`, `neg`/`not`/`incr`, checked
   and overflowing ops, `clo`/`cto`, `ilog2`/`pow2`/`exp`/`is_odd`/`inv`,
   `ext2*`, `sdiv`/`smod`/`sdivmod`, `ashr` (`i32.shr_s` is `arith.shr` on a
@@ -123,7 +123,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 - Every pointer goes through `prepare_addr` (`dialects/wasm/src/mem.rs`), which
   emits the `divmod` + `hir.assertz` alignment check only when
   `memarg.align > 0`; no constant-address canonicalization exists. 128-bit
-  memory traffic is i64 pairs; I128 loads/stores come only from spill and sret
+  source memory traffic in this corpus is i64 pairs; historical HIR I128
+  loads/stores came from spill and sret
   slots (`memory::straddle_wide`, `memory::packed2_fields`).
 - `memory.copy` becomes `hir.mem_move %src, %dst, %count` with byte-typed
   pointers and a runtime count, `memory.fill` becomes `hir.mem_set`; `alloc`
@@ -156,8 +157,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 - Fixed pipeline at every level, on a function pass manager
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
-  SinkOperandDefs → Local2Reg → TransformSpills → LiftControlFlowToSCF →
-  Canonicalizer → SinkOperandDefs → TransformSpills. `ControlFlowSink` and
+  SinkOperandDefs → Local2Reg → LiftControlFlowToSCF → Canonicalizer →
+  component-level LegalizeForMasm → final SinkOperandDefs. `ControlFlowSink` and
   DCE are commented out; there is no middle-end knob: `--optimize` sets only
   the guest LLVM level (`cargo_profile_opt_level`,
   `midenc-compile/src/pipeline/frontends/rust.rs`). Dead end: middle-end
@@ -238,8 +239,9 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `trapspill::cascade_cont`).
 - `Rewriter::erase_op` erases nested ops, then blocks in post-order, the region
   op last (`cse::dead_outer`). `SinkOperandDefs` never moves a
-  `hir.load_local` (Read), so it cannot sink a spill reload
-  (`interact::sink_spill`).
+  `hir.load_local` (Read), so it cannot sink source-local loads
+  (`interact::sink_spill` is a historical spill-related fixture). Backend
+  reloads are selected after HIR rewrites.
 - Local2Reg (`dialects/hir/src/transforms/local2reg.rs`) promotes a slot only
   with exactly one load and one store in one block and no branch or call
   between; entry-block parameters are the population (`debug_info::l2r_params`,
@@ -250,7 +252,35 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   no single-op `[WasmLocal]` location, no read-before-write local, no imports
   (`debug_info::dbg_byval`).
 
-## Spills, the operand window and the scheduler
+## Physical allocation, the operand window and the scheduler
+
+- [`select`](../../codegen/masm/src/select/mod.rs) builds a semantic graph from
+  final HIR. [`allocate/analysis.rs`](../../codegen/masm/src/allocate/analysis.rs)
+  derives liveness, next-use priorities, loop structure and scratch dependencies.
+  Allocation plans stack actions, frame storage and edge repairs without HIR
+  spill insertion, reload definitions or region narrowing.
+- Indexed stack accesses are limited to the top sixteen felts. Total stack depth,
+  live-value count and region interfaces may be wider. Call signatures still have
+  convention-specific ABI limits; an indirect selector is not a blanket reason
+  to reduce the argument limit to fifteen. Consult
+  [`calls.rs`](../../codegen/masm/src/lower/units/calls.rs) for the actual contract.
+- The operand solver is an optional bounded preparation optimization. Refusal or
+  fuel exhaustion selects another preparation tier or full normalization, not a
+  compilation failure. Spill slots and scratch are assigned in the final frame by
+  [`allocate/slots.rs`](../../codegen/masm/src/allocate/slots.rs).
+- Mandatory [`physical verification`](../../codegen/masm/src/verify/replay.rs)
+  independently derives obligations from checked selected semantics and replays
+  actual stack and frame operations. Numerical algorithms and host effects still
+  require execution tests. Use `MIDENC_TRACE='codegen=trace,peephole=trace'` for
+  current plan evidence rather than removed spill-pass trace channels.
+
+### Historical HIR spill observations
+
+The observations below describe the removed HIR spill pipeline and legacy
+scheduler. Preserve their fixture names and issue context for reproducing old
+revisions; counts, panic signatures, workarounds and reachability claims are not
+current allocator guarantees or current open-failure classifications. Re-measure
+the same cases against the physical plan before drawing conclusions.
 
 - The window is 16 felts. It bounds flat signatures, the sret pointer
   included (16 compiles: `calls::call_sigs16`, `calls::wide_calls`; 17 is
@@ -361,12 +391,16 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 ## Control-flow lifting (cfg-to-scf)
 
-- Every payload column is a 1-felt u32 discriminator or a `ub.poison`
+The first two observations below record legacy corpus shapes and limits. Current
+physical allocation supports wide region interfaces and does not enforce the old
+sixteen-felt region-exit budget. Recheck fixture behavior on the revision under test.
+
+- Historically, every payload column is a 1-felt u32 discriminator or a `ub.poison`
   placeholder; user state crosses regions in locals (`control_flow::nest8`,
   `control_flow::exit_values`). Dead end: multi-felt cfg-to-scf columns.
-- Region-op result columns grow about two per nesting level; exit
-  multiplicity does not matter (`control_flow::wide_exits`). The 16-felt
-  region-exit budget is hit at depth 9 at O2 and depth 7 at -Oz and below O2
+- Historically, region-op result columns grew about two per nesting level; exit
+  multiplicity does not matter (`control_flow::wide_exits`). The former 16-felt
+  region-exit budget was hit at depth 9 at O2 and depth 7 at -Oz and below O2
   (`control_flow::nest8`, `control_flow::deep_nest_overflow`,
   `opt_levels::nest8_oz`).
 - cfg-to-scf creates one `ub.poison` per type per function and uses it to

@@ -72,10 +72,12 @@ the assembled value feeds a 64-bit store directly, the store becomes two 32-bit
 stores instead. A 64-bit load used only for its two halves becomes two 32-bit
 loads.
 
-The legalization runs before spill placement. Its rewrites change live ranges,
-and spill placement, which keeps the operand stack within the 16 elements an
-instruction can reach, has to see the live ranges codegen will lower. Codegen
-itself only checks that the shapes were rewritten.
+This legalization runs before final operand sinking and backend selection in the
+[compilation pipeline](../../../midenc-compile/src/pipeline/backend.rs). The
+[physical allocator](../../../codegen/masm/src/allocate/mod.rs) computes liveness
+from the selected graph and plans stack and frame storage for those rewritten
+shapes. Each indexed stack access must fit the top sixteen elements; the total
+stack depth may be larger. Physical verification checks the actual expanded accesses.
 
 What is not closed is real 64-bit arithmetic on reinterpreted field elements,
 any operation other than the shapes above:

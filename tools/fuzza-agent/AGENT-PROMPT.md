@@ -218,7 +218,7 @@ fn <name>() {
      entrypoint target/miden_test_shared/wasm32-wasip1/release/
      differential_<case>.wasm a b`): if wasmtime agrees with MASM the guest
      toolchain is wrong, not the compiler. Before you name a compile-time
-     panic's class, take the spills trace and the pattern trace (see
+     panic's class, take the physical-plan trace and the pattern trace (see
      "Reference commands") — the crash site alone does not identify the
      mechanism (`KNOWLEDGE.md`, "Classifying a compile-time panic";
      the open classes: `KNOWLEDGE.md`, "Corpus map on demand"). If the case
@@ -278,15 +278,13 @@ cargo make fuzza-cov-clean
 #   which canonicalization patterns fired ("trying to match '<name>'" then
 #   "pattern matched successfully"):
 MIDENC_TRACE='pattern-rewrite-driver=trace' cargo test -p midenc-integration-tests <test> -- --exact <full::path> --nocapture
-#   spills, reloads, edge splits, erased reloads, pruned phis:
-MIDENC_TRACE='analysis:spills=trace,pass:spills=trace' cargo test ... --nocapture
-#   emitter operand drops:
-MIDENC_TRACE='codegen:operand-scheduling=trace' cargo test ... --nocapture
+#   physical plans, frame layouts, allocation/verification timings and peepholes:
+MIDENC_TRACE='codegen=trace,peephole=trace' cargo test ... --nocapture
 #   the IR after one pass (pin the flag in the case via run_case_with_flags,
 #   or MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=<pass>'; the printer logs
 #   through `pass:<pass>=trace`, so both are needed; pass names include
-#   local2reg, transform-spills, lift-control-flow, canonicalizer,
-#   sink-operand-defs, cse):
+#   local2reg, lift-control-flow, canonicalizer, sink-operand-defs, cse,
+#   sparse-conditional-constant-propagation; these are Pass::name values):
 MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=lift-control-flow' MIDENC_TRACE='pass:lift-control-flow=trace' cargo test ... --nocapture
 ```
 
