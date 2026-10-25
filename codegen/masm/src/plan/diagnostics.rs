@@ -1,6 +1,8 @@
 //! Shared diagnostics that retain source provenance across planning and verification.
-use alloc::{string::String, vec::Vec};
+use alloc::{format, string::String, vec::Vec};
 use core::fmt;
+
+use midenc_session::diagnostics::{DiagnosticsHandler, Report, Severity};
 
 use super::{Atom, SelectedStepId};
 use crate::masm::SourceSpan;
@@ -55,6 +57,42 @@ pub(crate) struct PlanError {
 }
 
 impl PlanError {
+    /// Resolve source provenance through the session's diagnostic renderer.
+    ///
+    /// An unavailable primary source renders text and a location-unavailable note;
+    /// callers are not promoted to the failure origin. With a usable primary,
+    /// unresolved inline frames produce a note while usable frames remain labeled.
+    pub fn into_report(self, diagnostics: &DiagnosticsHandler) -> Report {
+        let mut diagnostic = diagnostics.diagnostic(Severity::Error).with_message(&self);
+        let sources = diagnostics.source_manager_ref();
+        let resolvable = |span: SourceSpan| {
+            let range = span.into_range();
+            !span.is_unknown()
+                && sources.get(span.source_id()).is_ok_and(|source| {
+                    source.source_slice(range.start as usize..range.end as usize).is_some()
+                })
+        };
+        if resolvable(self.origin.span) {
+            diagnostic = diagnostic.with_primary_label(self.origin.span, &self.message);
+            let mut missing_inline = false;
+            for (index, span) in self.origin.inline_chain.iter().copied().enumerate() {
+                if resolvable(span) {
+                    diagnostic = diagnostic
+                        .with_secondary_label(span, format!("inlined from (frame {})", index + 1));
+                } else {
+                    missing_inline = true;
+                }
+            }
+            if missing_inline {
+                diagnostic =
+                    diagnostic.with_help("one or more inline source locations unavailable");
+            }
+        } else {
+            diagnostic = diagnostic.with_help("source location unavailable");
+        }
+        diagnostic.into_report()
+    }
+
     /// Attach a known selected boundary without replacing more precise nested context.
     pub fn at_step(mut self, step: SelectedStepId, location: Option<&SourceLocation>) -> Self {
         if self.step.is_none() || self.step == Some(step) {
@@ -100,7 +138,7 @@ impl PlanError {
 
 impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}: {} at {:?}", self.category, self.message, self.origin.span)?;
+        write!(f, "{:?}: {}", self.category, self.message)?;
         if let Some(step) = self.step {
             write!(f, " step=s{}", step.0)?;
         }
@@ -112,9 +150,6 @@ impl fmt::Display for PlanError {
         }
         if let Some(atom) = self.actual {
             write!(f, " actual={atom}")?;
-        }
-        for span in &self.origin.inline_chain {
-            write!(f, " inline={span:?}")?;
         }
         Ok(())
     }

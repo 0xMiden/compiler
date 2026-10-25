@@ -347,6 +347,12 @@ impl<'a> Verifier<'a> {
                 AnnotatedOp::Boundary(Boundary::UnitStart(id) | Boundary::UnitEnd(id)) => Some(*id),
                 _ => None,
             });
+            // Preparation belongs to the next selected unit, but transfers and trailing
+            // cleanup do not. Capture only the cursor here; resolve the unit on failure.
+            let pending = (step.is_none()
+                && cursor.edge.is_none()
+                && matches!(op, AnnotatedOp::Instruction { .. }))
+            .then_some((cursor.segment, cursor.phase));
             state = match (|| -> Result<Option<State>, VerificationError> {
                 match op {
                     AnnotatedOp::Boundary(boundary) => {
@@ -435,8 +441,20 @@ impl<'a> Verifier<'a> {
                 }
                 Ok(Some(state))
             })()
-            .map_err(|error| self.context(error, step))?
-            {
+            .map_err(|error| {
+                let step = step.or_else(|| {
+                    let (segment, phase) = pending?;
+                    self.plan
+                        .selected
+                        .segments
+                        .iter()
+                        .find(|candidate| Some(candidate.id) == segment)?
+                        .units
+                        .get(phase)
+                        .map(|unit| unit.id)
+                });
+                self.context(error, step)
+            })? {
                 Some(state) => state,
                 None => return Ok(None),
             };

@@ -1,4 +1,5 @@
 mod abi;
+mod diagnostics;
 mod effects;
 mod layouts;
 

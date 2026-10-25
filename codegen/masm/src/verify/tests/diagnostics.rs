@@ -1,5 +1,77 @@
 use super::*;
 
+#[test]
+fn failed_preparation_instruction_reports_pending_unit() {
+    let fixture = Fixture::new(0, 0);
+    let mut plan = located_plan(fixture.clone());
+    plan.segment_actions.get_mut(&SegmentId(0)).unwrap().insert(0, PlanAction::Drop);
+    let frame = fixture.frame();
+    let mut verifier = replay::Verifier::new(&plan, &frame).unwrap();
+    let mut cursor = replay::Cursor {
+        segment: Some(SegmentId(0)),
+        ..Default::default()
+    };
+    let failure = verifier
+        .execute(
+            &ops(vec![inst(Instruction::Drop)]),
+            stack::State::new(vec![], BTreeMap::new()),
+            &mut cursor,
+        )
+        .unwrap_err();
+    assert_eq!(failure.category, DiagnosticCategory::IllegalStackAccess);
+    assert_eq!(failure.step, Some(SelectedStepId(0)));
+    assert_eq!(failure.origin, location());
+}
+
+#[test]
+fn failed_segment_cleanup_instruction_has_no_pending_unit() {
+    let fixture = Fixture::new(0, 0);
+    let mut plan = located_plan(fixture.clone());
+    plan.segment_actions.get_mut(&SegmentId(0)).unwrap().push(PlanAction::Drop);
+    let frame = fixture.frame();
+    let mut verifier = replay::Verifier::new(&plan, &frame).unwrap();
+    let mut cursor = replay::Cursor {
+        segment: Some(SegmentId(0)),
+        phase: 1,
+        action: 1,
+        ..Default::default()
+    };
+    let failure = verifier
+        .execute(
+            &ops(vec![inst(Instruction::Drop)]),
+            stack::State::new(vec![], BTreeMap::new()),
+            &mut cursor,
+        )
+        .unwrap_err();
+    assert_eq!(failure.category, DiagnosticCategory::IllegalStackAccess);
+    assert_eq!(failure.step, None);
+    assert_eq!(failure.origin, SourceLocation::default());
+}
+
+#[test]
+fn failed_edge_instruction_does_not_borrow_destination_unit_context() {
+    let fixture = Fixture::new(0, 0);
+    let mut plan = located_plan(fixture.clone());
+    plan.edge_actions.insert(EdgeId(0), vec![PlanAction::Drop]);
+    let frame = fixture.frame();
+    let mut verifier = replay::Verifier::new(&plan, &frame).unwrap();
+    let mut cursor = replay::Cursor {
+        segment: Some(SegmentId(0)),
+        edge: Some(EdgeId(0)),
+        ..Default::default()
+    };
+    let failure = verifier
+        .execute(
+            &ops(vec![inst(Instruction::Drop)]),
+            stack::State::new(vec![], BTreeMap::new()),
+            &mut cursor,
+        )
+        .unwrap_err();
+    assert_eq!(failure.category, DiagnosticCategory::IllegalStackAccess);
+    assert_eq!(failure.step, None);
+    assert_eq!(failure.origin, SourceLocation::default());
+}
+
 struct Located(Fixture);
 
 impl GeneratedDefinition for Located {
