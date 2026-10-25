@@ -427,23 +427,35 @@ fn live_table_entry_cannot_hide_depth_sensitive_helper() {
 
 #[test]
 fn live_table_entry_cannot_hide_kernel_convention() {
-    let f = parse_module_function(include_str!("fixtures/indirect-table.hir"));
-    let mut owner = f.borrow().as_operation().nearest_symbol_table().unwrap();
-    owner
-        .borrow_mut()
-        .downcast_mut::<builtin::Module>()
-        .unwrap()
-        .set_name(midenc_hir::Ident::from("$kernel"));
-    let info = linked(&f);
-    let error = select_function(
-        &f.borrow(),
-        &SelectEnv {
+    for visibility in ["public", "internal", "private"] {
+        let f = parse_module_function(
+            &include_str!("fixtures/indirect-table.hir")
+                .replace("builtin.function private", &format!("builtin.function {visibility}")),
+        );
+        let mut owner = f.borrow().as_operation().nearest_symbol_table().unwrap();
+        owner
+            .borrow_mut()
+            .downcast_mut::<builtin::Module>()
+            .unwrap()
+            .set_name(midenc_hir::Ident::from("$kernel"));
+        let info = linked(&f);
+        let env = SelectEnv {
             link_info: Some(&info),
             ..Default::default()
-        },
-    )
-    .unwrap_err();
-    assert!(alloc::format!("{error:?}").contains("invocation family"), "{error:?}");
+        };
+        let result = select_function(&f.borrow(), &env);
+        if visibility == "private" {
+            assert_eq!(result.unwrap().abi.convention(), CallingConvention::Kernel);
+            let (plan, frame, body) = ready(&f, &env);
+            verify::verify(&plan, &frame, body).unwrap();
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                alloc::format!("{error:?}").contains("invocation family"),
+                "{visibility}: {error:?}"
+            );
+        }
+    }
 }
 
 #[test]
