@@ -352,6 +352,11 @@ fn fpi_payload_widths_0_to_16_execute_stub_contract() -> Result<(), Report> {
                 }
             ));
         }
+        // Distinct return values expose stale-payload publication while the checks above
+        // retain coverage of the complete incoming metadata and argument window.
+        let results = (0..16).map(|i| 401 + i * 7).collect::<Vec<_>>();
+        stub.push_str("repeat.16 drop end ");
+        stub.push_str(&push_top(&results));
         stub.push_str("end");
         let manager = alloc::sync::Arc::new(miden_assembly::DefaultSourceManager::default());
         let module =
@@ -368,16 +373,8 @@ fn fpi_payload_widths_0_to_16_execute_stub_contract() -> Result<(), Report> {
         let mut assembler = miden_assembly::Assembler::new(manager);
         assembler.link_package(library.clone(), miden_assembly::Linkage::Dynamic)?;
         let inputs = prefix.into_iter().chain((0..width).map(|i| 201 + i)).collect::<Vec<_>>();
-        let expected = (0..16)
-            .map(|i| {
-                if shared && i == 0 {
-                    101
-                } else if i < width {
-                    201 + i
-                } else {
-                    0
-                }
-            })
+        let expected = results
+            .into_iter()
             .chain(live.iter().map(|i| inputs[*i as usize]))
             .chain([901, 903, 907])
             .collect::<Vec<_>>();
