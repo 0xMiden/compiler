@@ -782,7 +782,9 @@ fn world_body_to_masm_component(
 
     // A world declaring no component has no siblings *beside* one: every top-level module in it
     // is part of the one logical component this treats its body as.
-    builder.build(world.as_operation(), &[])?;
+    builder
+        .build(world.as_operation(), &[])
+        .map_err(|report| super::report_planning_failure(report, &context.session().diagnostics))?;
 
     Ok(masm_component)
 }
@@ -950,7 +952,9 @@ fn component_to_masm_component(
         init_body: Default::default(),
     };
 
-    builder.build(component.as_operation(), supporting)?;
+    builder
+        .build(component.as_operation(), supporting)
+        .map_err(|report| super::report_planning_failure(report, &context.session().diagnostics))?;
 
     Ok(masm_component)
 }

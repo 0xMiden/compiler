@@ -199,8 +199,11 @@ impl MasmComponent {
         if is_executable_target && let Some(entrypoint) = self.entrypoint.as_ref() {
             // Our generated main module takes precedence here, so move the root module into support
             support.extend(root);
-            let root =
-                self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
+            let root = self
+                .generate_main(entrypoint, emit_test_harness, session.source_manager.clone())
+                .map_err(|report| {
+                    crate::lower::report_planning_failure(report, &session.diagnostics)
+                })?;
             return Ok(ProjectSourceInputs { root, support });
         }
 
@@ -426,6 +429,23 @@ mod tests {
             let (component, context) = lower("builtin.world { ^entry: };", &target);
             let later = self::target("::different");
             assert!(component.source_inputs(&later, context.session()).is_err());
+        }
+
+        #[test]
+        fn generated_root_planning_failure_renders_unknown_source_fallback() {
+            let target = Target::executable("invalid-root", Uri::new("generated.hir"));
+            let (mut component, context) = lower("builtin.world { ^entry: };", &target);
+            // Corrupt the checked source ABI at the public packaging boundary.
+            component.entrypoint = Some(crate::lower::raw::target("::entry"));
+            component.entrypoint_arity = Some((17, 0));
+            let report = component
+                .source_inputs(&target, context.session())
+                .err()
+                .expect("a root cannot expose more than sixteen entry lanes");
+            let rendered =
+                alloc::format!("{}", midenc_session::diagnostics::PrintDiagnostic::new(report));
+            assert!(rendered.contains("InvalidSelectedLowering"), "{rendered}");
+            assert!(rendered.contains("source location unavailable"), "{rendered}");
         }
     }
 }
