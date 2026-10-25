@@ -11,7 +11,7 @@ use alloc::{
 use core::cmp::Reverse;
 
 use super::{
-    analysis::NextUseDistance,
+    analysis::{NextUseDistance, UseDistances},
     normalize::{self, UnitRequirements},
     state::*,
     storage::Trial,
@@ -79,6 +79,13 @@ pub(crate) fn prepare_unit(
     let Some(symmetry) = context.input_symmetries.get(&unit.id) else {
         return canonical;
     };
+    // Costs are nonnegative and canonical order wins ties, so zero cannot be improved.
+    if canonical
+        .as_ref()
+        .is_ok_and(|preparation| action_cost(&preparation.actions) == 0)
+    {
+        return canonical;
+    }
     let mut reversed_unit = unit.clone();
     reversed_unit.stack_inputs =
         symmetry.ordered_inputs(&unit.stack_inputs, InputOrder::Reversed)?.into_owned();
@@ -140,7 +147,9 @@ fn prepare_order(
                 SchedulingTier::Loads => {
                     load_candidates(&base, unit, &needs).map(|p| p.map(|t| (t, Vec::new())))
                 }
-                SchedulingTier::Selective => selective(base.clone(), unit, &needs),
+                SchedulingTier::Selective => {
+                    selective(base.clone(), unit, &needs, context.next_use.after.get(&unit.id))
+                }
                 SchedulingTier::Normalization => unreachable!(),
             };
             if let Ok(Some((trial, victims))) = proposal {
@@ -158,11 +167,13 @@ fn prepare_order(
 ///
 /// The edge identity owns temporary storage. This is a prefix request with no executable
 /// lowering or stored-input bindings; the caller consumes the predicate after committing.
+/// `next_use` merges all outgoing alternatives by nearest finite source-side use.
 pub(super) fn prepare_control(
     state: &AllocationState,
     predicate: Atom,
     edge: EdgeId,
     live_after: &BTreeSet<ValueId>,
+    next_use: &UseDistances,
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
     let request = SelectedLowering {
@@ -189,7 +200,7 @@ pub(super) fn prepare_control(
             SchedulingTier::Loads => {
                 load_candidates(&base, &request, &needs).map(|p| p.map(|t| (t, Vec::new())))
             }
-            SchedulingTier::Selective => selective(base.clone(), &request, &needs),
+            SchedulingTier::Selective => selective(base.clone(), &request, &needs, Some(next_use)),
             SchedulingTier::Normalization => unreachable!(),
         };
         if let Ok(Some((trial, victims))) = candidate {
@@ -798,6 +809,7 @@ fn selective<'a>(
     mut trial: Trial<'a>,
     unit: &SelectedLowering,
     needs: &UnitRequirements,
+    next_use: Option<&UseDistances>,
 ) -> Result<Option<SelectiveTrial<'a>>, AllocationError> {
     if unit.stack_inputs.len() > 16 {
         return Ok(None);
@@ -853,12 +865,8 @@ fn selective<'a>(
     while unit.stack_inputs.len() + retained.len() > 16 {
         let mut ranked = Vec::new();
         for (index, candidate) in retained.iter().enumerate() {
-            let uses = match trial.owner {
-                SlotOwner::Edge(edge) => trial.context.next_use.edge.get(&edge),
-                _ => trial.context.next_use.after.get(&unit.id),
-            };
             let distance =
-                uses.map_or(NextUseDistance::Infinite, |uses| uses.get(candidate.atom.value));
+                next_use.map_or(NextUseDistance::Infinite, |uses| uses.get(candidate.atom.value));
             ranked.push((
                 victim_class(&trial, index, &retained, &pins, needs)?,
                 Reverse(distance),

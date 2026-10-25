@@ -113,6 +113,13 @@ impl UseDistances {
             .map_or(NextUseDistance::Infinite, NextUseDistance::Finite)
     }
 
+    /// Merge alternative demand by nearest finite use; absence contributes infinity.
+    pub fn merge(&mut self, other: &Self) {
+        for (value, distance) in &other.0 {
+            self.include(*value, *distance);
+        }
+    }
+
     /// Rank lanes by nearest semantic use, breaking ties by value ID and then lane.
     #[cfg(test)]
     pub fn priority(&self, atom: Atom) -> (NextUseDistance, ValueId, u8) {
@@ -137,6 +144,7 @@ pub(crate) struct NextUses {
     /// Demand before the segment's first selected unit.
     pub entry: BTreeMap<SegmentId, UseDistances>,
     /// Demand including the unit's own inputs, at distance zero.
+    #[cfg(test)]
     pub before: BTreeMap<SelectedStepId, UseDistances>,
     /// Demand after normal completion, before crossing a later unit.
     pub after: BTreeMap<SelectedStepId, UseDistances>,
@@ -182,9 +190,8 @@ pub(crate) struct AllocationAnalysis {
     pub reachable: BTreeSet<SegmentId>,
     /// Semantic demand before the first unit, including parameters used by that segment.
     pub live_in: BTreeMap<SegmentId, LiveValues>,
-    /// Demand after the last unit, including a structured control predicate.
-    pub live_out: BTreeMap<SegmentId, LiveValues>,
     /// Semantic demand immediately before each selected unit.
+    #[cfg(test)]
     pub before: BTreeMap<SelectedStepId, LiveValues>,
     /// Semantic demand immediately after each selected unit's normal completion.
     pub after: BTreeMap<SelectedStepId, LiveValues>,
@@ -331,7 +338,7 @@ pub(crate) fn analyze(program: &CheckedSelectedProgram) -> AllocationAnalysis {
     let mut result = AllocationAnalysis {
         reachable: graph.reachable.clone(),
         live_in: BTreeMap::new(),
-        live_out: BTreeMap::new(),
+        #[cfg(test)]
         before: BTreeMap::new(),
         after: BTreeMap::new(),
         edge_live: BTreeMap::new(),
@@ -363,7 +370,6 @@ pub(crate) fn analyze(program: &CheckedSelectedProgram) -> AllocationAnalysis {
             live.union(&edge_live);
             result.edge_live.insert(edge.id, edge_live);
         }
-        result.live_out.insert(id, live.clone());
         for unit in graph.segments[&id].units.iter().rev() {
             result.after.insert(unit.id, live.clone());
             for atom in &unit.outputs {
@@ -372,6 +378,7 @@ pub(crate) fn analyze(program: &CheckedSelectedProgram) -> AllocationAnalysis {
             for value in graph.uses(unit) {
                 live.insert(value);
             }
+            #[cfg(test)]
             result.before.insert(unit.id, live.clone());
         }
         let changed = result.live_in.get(&id) != Some(&live);
@@ -427,9 +434,7 @@ fn next_use(graph: &Graph<'_>, members: &BTreeSet<SegmentId>) -> NextUses {
                     edge_distances.include(binding.source, 0);
                 }
             }
-            for (value, distance) in &edge_distances.0 {
-                distances.include(*value, *distance);
-            }
+            distances.merge(&edge_distances);
             result.edge.insert(edge.id, edge_distances);
         }
         for unit in graph.segments[&id].units.iter().rev() {
@@ -444,6 +449,7 @@ fn next_use(graph: &Graph<'_>, members: &BTreeSet<SegmentId>) -> NextUses {
             for value in graph.uses(unit) {
                 distances.include(value, 0);
             }
+            #[cfg(test)]
             result.before.insert(unit.id, distances.clone());
         }
         let changed = result.entry.get(&id) != Some(&distances);

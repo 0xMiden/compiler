@@ -968,6 +968,17 @@ fn diamond_next_use_takes_the_shortest_alternative_and_stable_value_ties() {
     let analysis = analyze(&checked(build));
     assert_eq!(analysis.next_use.edge[&EdgeId(0)].get(ValueId(1)), NextUseDistance::Finite(2));
     assert_eq!(analysis.next_use.edge[&EdgeId(1)].get(ValueId(1)), NextUseDistance::Finite(0));
+    let mut alternatives = UseDistances::default();
+    alternatives.merge(&analysis.next_use.edge[&EdgeId(0)]);
+    // Missing demand contributes infinity rather than erasing a finite path's demand.
+    alternatives.merge(&UseDistances::default());
+    assert_eq!(alternatives.get(ValueId(1)), NextUseDistance::Finite(2));
+    alternatives.merge(&analysis.next_use.edge[&EdgeId(1)]);
+    assert_eq!(alternatives.get(ValueId(1)), NextUseDistance::Finite(0));
+    assert_eq!(alternatives.get(ValueId(0)), NextUseDistance::Infinite);
+    let mut reversed = analysis.next_use.edge[&EdgeId(1)].clone();
+    reversed.merge(&analysis.next_use.edge[&EdgeId(0)]);
+    assert_eq!(alternatives, reversed);
     assert_eq!(
         analysis.next_use.entry[&SegmentId(0)].get(ValueId(1)),
         NextUseDistance::Finite(1)

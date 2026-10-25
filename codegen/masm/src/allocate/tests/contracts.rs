@@ -1395,6 +1395,127 @@ fn phased_same_context_call_inherits_wide_state_and_live_cached_slots() {
     execute(&plan, &args, &args);
 }
 
+/// Execute the verified callee through its real invocation family, including restored overflow.
+fn execute_context_identity(plan: &ProcedurePlan, arguments: usize) {
+    use alloc::{format, sync::Arc};
+
+    use miden_assembly::{
+        Assembler, DefaultSourceManager, Path,
+        ast::{Module, ModuleKind},
+    };
+    use miden_processor::{DefaultHost, FastProcessor, StackInputs};
+
+    let frame = frame(plan);
+    let code = body(plan, &frame);
+    verify(plan, &frame, code.clone()).unwrap();
+    let visibility = if plan.selected.abi.convention() == CallingConvention::Kernel {
+        "pub "
+    } else {
+        ""
+    };
+    let procedure = format!(
+        "@locals({}) {visibility}proc identity {} nop end",
+        frame.aligned_size(),
+        render(&code)
+    );
+    let manager = Arc::new(DefaultSourceManager::default());
+    let kernel: Option<Arc<miden_assembly::package::Package>> =
+        if plan.selected.abi.convention() == CallingConvention::Kernel {
+            let module = Module::parser(Some(ModuleKind::Kernel))
+                .parse_str(Some(Path::KERNEL), &procedure, manager.clone())
+                .unwrap();
+            Some(
+                Assembler::new(manager.clone())
+                    .assemble_kernel("entry_window", module, None)
+                    .unwrap()
+                    .into(),
+            )
+        } else {
+            None
+        };
+    for suffix_length in [0, 20] {
+        let mut host = DefaultHost::default();
+        let (assembler, declaration, invocation) = if let Some(kernel) = &kernel {
+            host = host.with_library(kernel.clone()).unwrap();
+            (
+                Assembler::with_kernel(manager.clone(), kernel.clone()).unwrap(),
+                "",
+                "syscall.identity",
+            )
+        } else {
+            (Assembler::new(manager.clone()), procedure.as_str(), "call.identity")
+        };
+        let window: Vec<usize> = (701..717).collect();
+        let suffix: Vec<usize> = (0..suffix_length).map(|i| 1001 + i).collect();
+        let mut inputs = window.clone();
+        inputs.extend(&suffix);
+        let mut expected = window[..arguments].to_vec();
+        expected.resize(16, 0);
+        expected.extend(&suffix);
+        let source = format!(
+            "{declaration} begin {} {invocation} {} end",
+            crate::plan::tests::lowering_units::push_top(&inputs),
+            crate::plan::tests::lowering_units::assert_top(&expected)
+        );
+        let program = assembler
+            .assemble_program("context_identity", source)
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        FastProcessor::new(StackInputs::default())
+            .execute_sync(&program, &mut host)
+            .unwrap();
+    }
+}
+
+#[test]
+fn callee_entry_cleanup_uses_cheap_verified_window_constructions() {
+    for convention in [CallingConvention::Context, CallingConvention::Kernel] {
+        for arguments in 0..=16 {
+            let params: Vec<_> = (0..arguments).collect();
+            let mut fixture = source(
+                vec![segment(0, &params, vec![])],
+                vec![edge(
+                    0,
+                    0,
+                    None,
+                    EdgeKind::Return,
+                    &params.iter().map(|v| (*v, *v)).collect::<Vec<_>>(),
+                )],
+                seq(vec![s(0), e(0)]),
+                arguments,
+            );
+            fixture.0.abi = ProcedureAbi::new(convention, arguments, arguments).unwrap();
+            let plan = allocate(checked(&fixture), &AllocationOptions::default()).unwrap();
+            execute_context_identity(&plan, arguments as usize);
+            let frame = frame(&plan);
+            let text = plan.segment_actions[&SegmentId(0)]
+                .iter()
+                .filter_map(|action| expand_allocation_action(action, &frame).unwrap())
+                .map(|instruction| alloc::format!("{instruction} "))
+                .collect::<alloc::string::String>();
+            let cost = if text.is_empty() {
+                0
+            } else {
+                crate::opt::cost::tests::assembled_cost(&text).unwrap()
+            };
+            let scalar_cost = (16 - arguments) as usize
+                * match arguments {
+                    0 => 1,
+                    1..=8 => 2,
+                    _ => 5,
+                };
+            assert!(
+                cost <= scalar_cost,
+                "{convention:?} arguments={arguments}: {cost} > {scalar_cost}"
+            );
+            if arguments == 12 {
+                assert_eq!(cost, 7, "three word swaps and four drops retain the twelve arguments");
+            }
+        }
+    }
+}
+
 #[test]
 fn context_entry_cleanup_and_selected_return_normalization_are_planned_explicitly() {
     for arguments in 0..=16 {

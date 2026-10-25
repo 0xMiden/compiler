@@ -27,7 +27,7 @@ use alloc::{
     vec::Vec,
 };
 
-use analysis::analyze;
+use analysis::{UseDistances, analyze};
 use contracts::Incoming;
 use schedule::{AllocationOptions, prepare_control, prepare_unit};
 use state::*;
@@ -290,15 +290,7 @@ fn allocate_inner(
                 CallingConvention::Context | CallingConvention::Kernel
             )
         {
-            let arguments = program.abi.arguments() as u8;
-            for _ in arguments..16 {
-                if arguments == 1 {
-                    actions.push(PlanAction::Swap { depth: 1 });
-                } else if arguments > 1 {
-                    actions.push(PlanAction::MoveUp { depth: arguments });
-                }
-                actions.push(PlanAction::Drop);
-            }
+            actions.extend(context_entry_cleanup(program.abi.arguments() as u8)?);
         }
         #[cfg(test)]
         stats.events.push(PlanningEvent::Body(id));
@@ -337,13 +329,16 @@ fn allocate_inner(
                 &mut debug_locations,
             )?;
             if let Some((predicate, edge)) = controls.get(&id) {
-                let live = program
-                    .edges
-                    .iter()
-                    .filter(|edge| edge.source == id)
-                    .flat_map(|edge| analysis.edge_live[&edge.id].iter())
-                    .collect();
-                let preparation = prepare_control(&state, *predicate, *edge, &live, &context)?;
+                let mut live = BTreeSet::new();
+                let mut next_use = UseDistances::default();
+                for outgoing in program.edges.iter().filter(|edge| edge.source == id) {
+                    live.extend(analysis.edge_live[&outgoing.id].iter());
+                    if let Some(uses) = context.next_use.edge.get(&outgoing.id) {
+                        next_use.merge(uses);
+                    }
+                }
+                let preparation =
+                    prepare_control(&state, *predicate, *edge, &live, &next_use, &context)?;
                 decisions.controls.insert(
                     id,
                     (
@@ -426,6 +421,46 @@ fn allocate_inner(
         lowering_bindings: bindings,
         semantic_storage_reads,
     })
+}
+
+/// A callee discards its unspecified argument-window lanes just as a caller discards
+/// unspecified result-window lanes. Reuse the same bounded cost comparison, translating
+/// its closed stack vocabulary into independently replayable allocation actions.
+fn context_entry_cleanup(arguments: u8) -> Result<Vec<PlanAction>, PlanError> {
+    use crate::masm::Instruction::*;
+
+    let mut actions = Vec::new();
+    for instruction in context_result_cleanup(arguments)? {
+        let action = match instruction {
+            Drop => PlanAction::Drop,
+            DropW => {
+                actions.extend(core::iter::repeat_n(PlanAction::Drop, 4));
+                continue;
+            }
+            Swap1 => PlanAction::Swap { depth: 1 },
+            MovUp2 => PlanAction::MoveUp { depth: 2 },
+            MovUp3 => PlanAction::MoveUp { depth: 3 },
+            MovUp4 => PlanAction::MoveUp { depth: 4 },
+            MovUp5 => PlanAction::MoveUp { depth: 5 },
+            MovUp6 => PlanAction::MoveUp { depth: 6 },
+            MovUp7 => PlanAction::MoveUp { depth: 7 },
+            MovUp8 => PlanAction::MoveUp { depth: 8 },
+            MovUp9 => PlanAction::MoveUp { depth: 9 },
+            MovUp10 => PlanAction::MoveUp { depth: 10 },
+            MovUp11 => PlanAction::MoveUp { depth: 11 },
+            MovUp12 => PlanAction::MoveUp { depth: 12 },
+            MovUp13 => PlanAction::MoveUp { depth: 13 },
+            MovUp14 => PlanAction::MoveUp { depth: 14 },
+            MovUp15 => PlanAction::MoveUp { depth: 15 },
+            MovDn15 => PlanAction::MoveDown { depth: 15 },
+            SwapW1 => PlanAction::SwapWord { word: 1 },
+            SwapW2 => PlanAction::SwapWord { word: 2 },
+            SwapW3 => PlanAction::SwapWord { word: 3 },
+            _ => unreachable!("context cleanup only rearranges and drops window lanes"),
+        };
+        actions.push(action);
+    }
+    Ok(actions)
 }
 
 /// Snapshot only lanes mentioned by source markers at this exact completed program point.

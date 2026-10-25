@@ -921,6 +921,172 @@ fn victim_ranking_uses_existing_next_use_distances() {
     );
 }
 
+/// Both arms reuse the predicate; v1 is imminent only on false, v2 is distant only on true.
+struct ControlDemandDefinition {
+    split: bool,
+    swapped: bool,
+}
+
+impl GeneratedDefinition for ControlDemandDefinition {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(401)
+    }
+
+    fn instantiate(
+        &self,
+        parameters: &[miden_core::Felt],
+    ) -> Result<DefinitionEvidence, VerificationError> {
+        let mut requests = Vec::new();
+        for (step, inputs) in (0..7).map(|step| {
+            let inputs = match step {
+                0 => (0..16).filter(|id| *id != 1 && *id != 2).map(atom).collect(),
+                5 => vec![atom(2)],
+                6 => (0..16).filter(|id| *id != 2).map(atom).collect(),
+                _ => vec![],
+            };
+            (step, inputs)
+        }) {
+            let mut request = unit(inputs, vec![]);
+            request.id = SelectedStepId(step);
+            request.source = SourceStepId(step);
+            // Semantic demand need not occupy a lowering's stack input prefix.
+            request.stack_inputs.clear();
+            requests.push(request);
+        }
+        let mut types = vec![Type::Felt; 16];
+        if self.split {
+            types[15] = Type::U64;
+        }
+        let mut evidence = DiscardDefinition { types, requests }.instantiate(parameters)?;
+        let program = &mut evidence.program;
+        let requests = core::mem::take(&mut program.segments[0].units);
+        for (id, units) in [(1, requests[..6].to_vec()), (2, requests[6..].to_vec())] {
+            program.segments.push(SelectedSegment {
+                id: SegmentId(id),
+                parameters: vec![],
+                content_parameters: vec![],
+                units,
+            });
+        }
+        program.edges = [
+            (0, 0, Some(1), EdgeKind::True),
+            (1, 0, Some(2), EdgeKind::False),
+            (2, 1, None, EdgeKind::Trap),
+            (3, 2, None, EdgeKind::Trap),
+        ]
+        .into_iter()
+        .map(|(id, source, destination, kind)| TransferEdge {
+            id: EdgeId(id),
+            source: SegmentId(source),
+            destination: destination.map(SegmentId),
+            kind,
+            bindings: vec![],
+            content_bindings: vec![],
+        })
+        .collect();
+        if self.swapped {
+            program.edges[0].destination = Some(SegmentId(2));
+            program.edges[1].destination = Some(SegmentId(1));
+        }
+        let arm = |segment, edge| {
+            alloc::boxed::Box::new(ControlTree::Sequence(vec![
+                ControlTree::Segment(SegmentId(segment)),
+                ControlTree::Edge(EdgeId(edge)),
+            ]))
+        };
+        let (yes, no) = if self.swapped {
+            ((2, 3), (1, 2))
+        } else {
+            ((1, 2), (2, 3))
+        };
+        program.structure = ControlTree::Sequence(vec![
+            ControlTree::Segment(SegmentId(0)),
+            ControlTree::If {
+                id: ControlId(0),
+                predicate: atom(0),
+                on_true: EdgeId(0),
+                then_body: arm(yes.0, yes.1),
+                on_false: EdgeId(1),
+                else_body: arm(no.0, no.1),
+            },
+        ]);
+        Ok(evidence)
+    }
+}
+
+fn check_control_victim(split: bool) {
+    use crate::allocate::{
+        analysis::{NextUseDistance, UseDistances, analyze},
+        schedule::prepare_control,
+    };
+
+    let mut previous = None;
+    for swapped in [false, true] {
+        let definition = ControlDemandDefinition { split, swapped };
+        let selected = check_selection(
+            definition.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&definition),
+        )
+        .unwrap();
+        let analysis = analyze(&selected);
+        let mut context = AllocationContext::new(&selected, &analysis);
+        context.options.refuse_solver = !split;
+        let slots = if split {
+            let lane = Atom::new(ValueId(15), 1);
+            vec![(SpillSlotId::canonical(lane), lane)]
+        } else {
+            vec![]
+        };
+        let initial = state([1, 0].into_iter().chain(2..16).map(atom).collect(), slots);
+        let live = analysis.edge_live[&EdgeId(0)]
+            .iter()
+            .chain(analysis.edge_live[&EdgeId(1)].iter())
+            .collect();
+        let mut next_use = UseDistances::default();
+        for edge in selected.edges.iter().filter(|edge| edge.source == SegmentId(0)) {
+            next_use.merge(&analysis.next_use.edge[&edge.id]);
+        }
+        let prepare =
+            || prepare_control(&initial, atom(0), EdgeId(0), &live, &next_use, &context).unwrap();
+        let preparation = prepare();
+        assert_eq!(preparation.tier, SchedulingTier::Selective);
+        assert_eq!(preparation.victims.len(), 1);
+        assert_eq!(preparation.victims[0].atom, atom(2));
+        assert_eq!(preparation.victims[0].next_use, NextUseDistance::Finite(5));
+        assert!(preparation.state.stack_atoms().any(|a| a == atom(1)));
+        assert_eq!(preparation.state.stack_atoms().filter(|a| *a == atom(0)).count(), 2);
+        let trace = alloc::format!("{:?}", preparation.victims);
+        assert_eq!(trace, alloc::format!("{:?}", prepare().victims));
+        if let Some(previous) = previous {
+            assert_eq!(trace, previous);
+        }
+        previous = Some(trace);
+        let mut stack = initial.stack_atoms().collect();
+        let mut slots = initial
+            .slots
+            .iter()
+            .map(|(id, value)| {
+                let StoredValue::Atom(atom) = value else {
+                    panic!("atom backing")
+                };
+                (*id, *atom)
+            })
+            .collect();
+        execute(&mut stack, &mut slots, &preparation.actions);
+        assert_eq!(stack, preparation.state.stack_atoms().collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn control_victim_respects_false_only_demand_and_alternative_order() {
+    check_control_victim(false);
+}
+
+#[test]
+fn split_layout_control_victim_respects_all_alternatives_without_solver_refusal() {
+    check_control_victim(true);
+}
+
 #[test]
 fn victim_classes_prefer_dead_then_backed_then_new_stores() {
     let values = values(17);
