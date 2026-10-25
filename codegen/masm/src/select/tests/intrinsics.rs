@@ -425,7 +425,7 @@ fn caller_inside_syscall_returns_actual_initiating_procedure_hash() {
         &f,
         &probe,
         "proc origin syscall.probe repeat.16 drop end end begin push.4242 mem_store.120 \
-         exec.origin mem_load.120 push.9191 assert_eq end",
+         procref.origin call.origin mem_load.120 push.9191 assert_eq repeat.4 drop end end",
     )
     .unwrap();
 }

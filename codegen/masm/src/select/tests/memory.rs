@@ -484,7 +484,11 @@ fn packed_store_fill_and_local_forms_preserve_approved_domain() {
         ),
         Type::from(FunctionType::new(CallConv::Fast, [], [])),
         Type::from(ArrayType::new(Type::U8, 3)),
+        // Boolean elements are byte-aligned, giving these arrays 9-, 17-, and
+        // 25-bit footprints rather than a whole number of bytes.
+        Type::from(ArrayType::new(Type::I1, 2)),
         Type::from(ArrayType::new(Type::I1, 3)),
+        Type::from(ArrayType::new(Type::I1, 4)),
         Type::from(ArrayType::new(Type::Felt, 1)),
     ];
     for ty in types {
@@ -531,12 +535,14 @@ fn packed_store_fill_and_local_forms_preserve_approved_domain() {
                     } else {
                         vec![base, value]
                     };
-                    let mut bytes = [0u8; 16];
+                    let mut bytes = [0xa5u8; 16];
                     for n in 0..count {
                         let bit = offset * 8 + n * ty.size_in_bytes() * 8;
                         for b in 0..bits {
                             if value & (1usize << b) != 0 {
                                 bytes[(bit + b) / 8] |= 1 << ((bit + b) % 8);
+                            } else {
+                                bytes[(bit + b) / 8] &= !(1 << ((bit + b) % 8));
                             }
                         }
                     }
@@ -558,8 +564,8 @@ fn packed_store_fill_and_local_forms_preserve_approved_domain() {
                         &f,
                         &inputs,
                         &[],
-                        "push.0 mem_store.64 push.0 mem_store.65 push.0 mem_store.66 push.0 \
-                         mem_store.67",
+                        "push.2779096485 mem_store.64 push.2779096485 mem_store.65 \
+                         push.2779096485 mem_store.66 push.2779096485 mem_store.67",
                         &observe,
                     )
                     .unwrap_or_else(|e| {
