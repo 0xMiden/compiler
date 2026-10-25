@@ -686,6 +686,102 @@ fn header_fixture() -> (ProcedurePlan, FinalFrameLayout, AnnotatedMasmBody) {
     (plan, frame, result)
 }
 
+/// Move an enclosing block's suffix across selected control without changing marker order.
+fn move_header_suffix_into_then_arm(body: &AnnotatedMasmBody, count: usize) -> AnnotatedMasmBody {
+    let mut result = AnnotatedMasmBody::new();
+    for op in body.ops() {
+        if let AnnotatedOp::While { id, body } = op {
+            let mut header = body.ops().to_vec();
+            let control =
+                header.iter().position(|op| matches!(op, AnnotatedOp::If { .. })).unwrap();
+            let moved: Vec<_> = header.drain(control - count..control).collect();
+            let AnnotatedOp::If { then_body, .. } = &mut header[control - count] else {
+                unreachable!();
+            };
+            let mut taken = moved;
+            taken.extend_from_slice(then_body.ops());
+            *then_body = ops(taken);
+            result.push(AnnotatedOp::While {
+                id: *id,
+                body: ops(header),
+            });
+        } else {
+            result.push(op.clone());
+        }
+    }
+    result
+}
+
+fn assert_unowned_executable(
+    plan: &ProcedurePlan,
+    frame: &FinalFrameLayout,
+    body: AnnotatedMasmBody,
+) {
+    let error = verify(plan, frame, body).unwrap_err();
+    assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+    assert_eq!(error.message, "executable instruction lacks selected segment/edge");
+}
+
+#[test]
+fn selected_then_arm_cannot_inherit_enclosing_segment_action() {
+    let (mut plan, frame, body) = header_fixture();
+    plan.segment_actions
+        .get_mut(&SegmentId(1))
+        .unwrap()
+        .extend([PlanAction::PushLiteral(Felt::ZERO), PlanAction::Drop]);
+    let mut original = AnnotatedMasmBody::new();
+    for op in body.ops() {
+        if let AnnotatedOp::While { id, body } = op {
+            let mut header = AnnotatedMasmBody::new();
+            for item in body.ops() {
+                if matches!(item, AnnotatedOp::If { .. }) {
+                    header.push_instruction(
+                        Primitive::Push(Felt::ZERO).instruction().unwrap(),
+                        SelectedStepId(u32::MAX),
+                    );
+                    header.push_instruction(Instruction::Drop, SelectedStepId(u32::MAX));
+                }
+                header.push(item.clone());
+            }
+            original.push(AnnotatedOp::While {
+                id: *id,
+                body: header,
+            });
+        } else {
+            original.push(op.clone());
+        }
+    }
+    verify(&plan, &frame, original.clone()).unwrap();
+    assert_unowned_executable(&plan, &frame, move_header_suffix_into_then_arm(&original, 1));
+}
+
+#[test]
+fn selected_then_arm_cannot_inherit_enclosing_segment_unit() {
+    let (plan, frame, body) = header_fixture();
+    verify(&plan, &frame, body.clone()).unwrap();
+    assert_unowned_executable(&plan, &frame, move_header_suffix_into_then_arm(&body, 4));
+}
+
+#[test]
+fn selected_while_body_cannot_inherit_enclosing_edge_action() {
+    let (plan, frame, body) = loop_fixture(true);
+    verify(&plan, &frame, body.clone()).unwrap();
+    let mut code = body.ops().to_vec();
+    let last_action = code
+        .iter()
+        .position(|op| matches!(op, AnnotatedOp::Boundary(Boundary::Control(ControlId(0)))))
+        .unwrap()
+        - 1;
+    let moved = code.remove(last_action);
+    let AnnotatedOp::While { body, .. } = &mut code[last_action + 2] else {
+        unreachable!();
+    };
+    let mut header = vec![moved];
+    header.extend_from_slice(body.ops());
+    *body = ops(header);
+    assert_unowned_executable(&plan, &frame, ops(code));
+}
+
 #[test]
 fn nonempty_header_executes_inside_selected_while_and_matches_vm() -> Result<(), midenc_hir::Report>
 {

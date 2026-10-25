@@ -62,12 +62,9 @@ impl OriginFacts {
 
 impl Blocks {
     fn collect(body: &AnnotatedMasmBody) -> Result<Self, VerificationError> {
-        fn walk(
-            body: &AnnotatedMasmBody,
-            blocks: &mut Blocks,
-            mut owner: Option<Owner>,
-        ) -> Result<(), VerificationError> {
+        fn walk(body: &AnnotatedMasmBody, blocks: &mut Blocks) -> Result<(), VerificationError> {
             let mut active = false;
+            let mut owner = None;
             let mut iterator = body.ops().iter();
             while let Some(op) = iterator.next() {
                 match op {
@@ -92,15 +89,17 @@ impl Blocks {
                         else_body,
                         ..
                     } if !active => {
-                        walk(then_body, blocks, owner)?;
-                        walk(else_body, blocks, owner)?;
+                        // Selected control bodies establish ownership at their own local markers.
+                        // Only controls inside an active lowering belong to its enclosing block.
+                        walk(then_body, blocks)?;
+                        walk(else_body, blocks)?;
                         owner = None;
                         continue;
                     }
                     AnnotatedOp::While { body, .. } | AnnotatedOp::Repeat { body, .. }
                         if !active =>
                     {
-                        walk(body, blocks, owner)?;
+                        walk(body, blocks)?;
                         owner = None;
                         continue;
                     }
@@ -118,7 +117,7 @@ impl Blocks {
             Ok(())
         }
         let mut blocks = Self::default();
-        walk(body, &mut blocks, None)?;
+        walk(body, &mut blocks)?;
         Ok(blocks)
     }
 }
