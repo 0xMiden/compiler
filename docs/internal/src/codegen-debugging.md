@@ -28,14 +28,17 @@ The [plan printer](../../../codegen/masm/src/plan/actions.rs) reports:
 | `segment bN`, `entry` | Segment identity and required top-first stack; the tail describes the suffix contract. |
 | `require` | Spill-slot contents required on entry. |
 | `contract`, `costs` | Selected contract origin and viable candidate scores. These are heuristic costs, not whole-program cycle counts. |
-| `unit sN`, `source`, `origin` | Selected unit, source identity, source span and inline ancestry. |
+| `unit sN`, `kind`, `source`, `origin` | Selected unit, registered lowering kind, source identity, source span and inline ancestry. |
 | `stack`, `stored`, `outputs` | The unit's required inputs and published outputs, **not** a snapshot of the current stack. |
 | `tier`, `victims` | Chosen preparation tier and evictions, including reasons and next-use distances. |
+| `semantic-storage-reads` | Backing cells needed by the unit's semantic inputs; metadata for storage liveness, not emitted loads or verifier authority. |
 | `operand-traffic`, `edge-traffic` | Lane loads/stores for operand preparation versus control-flow repair. |
+| `edge-preparation` | Control-predicate preparation: edge identity, tier, victims and load/store counts. |
 | `dup`, `store`, `swap`, `run`, etc. | Ordered allocator actions; `run sN` expands the selected lowering unit. |
 
-`v3.0` denotes lane zero of semantic value 3. Stack depths are zero-based; only depths 0–15
-are addressable, although a deeper stack is legal. The [frame trace](../../../codegen/masm/src/plan/diagnostics.rs)
+`entry` and `require` use `v3.0` for lane zero of semantic value 3. Unit input/output
+lists use Debug notation such as `Atom { value: ValueId(3), lane: 0 }`. Stack depths are
+zero-based; only depths 0–15 are addressable, although a deeper stack is legal. The [frame trace](../../../codegen/masm/src/plan/diagnostics.rs)
 separates source locals, scalar spill storage, spanning objects, reusable workspace and padding,
 then lists physical allocations.
 
@@ -54,7 +57,7 @@ Use pass dumps to determine whether the backend received correct HIR:
 ```sh
 MIDENC_TRACE='pass:.*=trace' \
 midenc repro.wasm \
-  -Zprint-ir-after-pass=canonicalizer,cfg-to-scf \
+  -Zprint-ir-after-pass=canonicalizer,lift-control-flow \
   -Zprint-ir-filter=symbol:my_function \
   --stop-after=transform --emit=hir=-
 ```
@@ -63,7 +66,9 @@ Other useful options include `-Zprint-ir-after-modified`,
 `-Zprint-ir-before-stage=codegen`, `-Zprint-hir-source-locations`, and
 `-Zprint-cfg-after-pass=<pass>`. Run `midenc -Z help` for supported options. The logger's
 `MIDENC_TRACE` controls which trace records are emitted; the IR printer options control when and
-what the pass instrumentation prints.
+what the pass instrumentation prints. Pass filters match `Pass::name`, such as
+`lift-control-flow` and `sparse-conditional-constant-propagation`; pass-pipeline registration
+arguments use `cfg-to-scf` and `sccp`, respectively.
 
 Reduce a transformation failure to HIR and run only the relevant passes:
 
@@ -82,7 +87,7 @@ relative to `codegen/masm/src`.
 
 | Stage | Inspection point |
 | --- | --- |
-| Selection | `select/tests/mod.rs::checked` separates selection and independent source checking from allocation. Inspect the selected evidence and the source-owned lowering contract. |
+| Selection | `select/tests/mod.rs::checked` separates selection and source correspondence checking from allocation. Inspect the selected evidence and the source-owned lowering contract; reconstruction shares the trusted selector implementation. |
 | Analysis | `allocate/analysis.rs::analyze` produces liveness before/after units, edge demand, next-use distances, loop structure and scratch dependencies. These structures implement `Debug`. |
 | Scheduling and contracts | Inspect `ProcedurePlan`, its action streams, entry contracts and lowering bindings. `opt/operands/solver.rs` traces local tactic attempts; those attempts are not a complete allocator decision history. |
 | Storage | Inspect the symbolic slots and `allocate/slots.rs::assign_frame` result. Distinguish incorrect content liveness from incorrect physical reuse or addressing. |
@@ -99,7 +104,8 @@ can cause an unrelated missing-anchor failure.
 [`plan::tests::lowering_units::ready`](../../../codegen/masm/src/plan/tests/lowering_units.rs)
 accepts explicit allocation options. Compare default allocation with:
 
-- `force_tier: Some(SchedulingTier::Normalization)` to bypass optimized preparation attempts.
+- `force_tier: Some(SchedulingTier::Normalization)` to bypass optimized unit preparation
+  attempts. Control-predicate preparation still uses its normal tier cascade.
 - `refuse_solver: true` to make the grouped operand solver decline; other optimized preparation
   remains available.
 - Different `shuffle_fuel` values to investigate search sensitivity.
@@ -111,11 +117,13 @@ does not by itself prove the optimized scheduler is wrong.
 Run only the relevant tests, for example:
 
 ```sh
-cargo nextest run -p midenc-codegen-masm -E 'test(exact_reproducer_name)'
+cargo make test-rust -p midenc-codegen-masm -E 'test(exact_reproducer_name)'
+cargo make test-release-rust -p midenc-codegen-masm -E 'test(exact_reproducer_name)'
 ```
 
-Check that the filter selects the intended test. Re-run relevant normal and release tests when
-assertions, arithmetic or optimizer behavior could differ between profiles.
+These repository tasks forward the filter to nextest; the second uses the `test-release`
+Cargo profile. Check that the filter selects the intended test. Use the relevant normal and
+release checks when assertions, arithmetic or optimizer behavior could differ between profiles.
 
 ## Interpret verification failures
 
@@ -124,8 +132,11 @@ ABI requirements and publication. Do not suppress a verification error to get a 
 through: determine whether the plan, expansion, or verifier's model is wrong.
 
 [`PlanError`](../../../codegen/masm/src/plan/diagnostics.rs) has optional source, step, depth and
-expected/actual atom fields. Current error producers mostly provide only the category and failed
-obligation's message; they do not generally attach those contextual fields or a stack diff.
+expected/actual atom fields. Selection and replay attach the source span, inline ancestry and
+selected step where available. Replay also attributes pre-unit preparation failures to the
+pending unit; edge transfers and trailing cleanup do not acquire an unrelated unit's context.
+Identity mismatches report expected lanes and actual identities established by replay. Some
+failures still lack a source location or step, and errors do not include a complete stack diff.
 The replay cursor retains the segment, edge, action position and active unit internally. A Rust
 debugger breakpoint at the failure site, or temporary focused instrumentation, can expose it.
 Expected/actual atom fields describe semantic lanes, not the verifier's internal symbolic tokens.
@@ -173,3 +184,11 @@ One MASM instruction need not equal one VM operation, and runtime branch/loop fr
 model and an assembler-backed test oracle. That oracle excludes basic-block packing noops; it is
 not a whole-program cost estimator. Confirm improvements with actual assembly/execution, retain
 semantic assertions, and understand each changed expectation before updating cost snapshots.
+
+Capture expectation updates with `--test-threads 1` when tests can edit the same source file.
+The expectation updater retains whole-file state per process, so concurrent writers can lose
+one another's changes. Then rerun the selected tests with expectation updating disabled.
+
+The [performance report](../../design/unified-stack-allocator-performance.md) records historical
+cycle, serialized-size, frame and compile-time observations, their limitations, and reproduction
+commands. Keep current measurements distinct from those historical snapshots.

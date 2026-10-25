@@ -1254,7 +1254,7 @@ Debug locations query the current allocation map. A live value can be described 
 
 ## Required observable behavior
 
-The [acceptance document](unified-stack-allocator-acceptance.md) specifies every required observable behavior, regression case, and performance-assessment obligation.
+The [acceptance document](unified-stack-allocator-acceptance.md) specifies every required observable behavior, regression case, and performance-assessment obligation. The [performance report](unified-stack-allocator-performance.md) records historical results, explanations, measurement limits and reproduction commands.
 
 ## Limits and alternatives
 
