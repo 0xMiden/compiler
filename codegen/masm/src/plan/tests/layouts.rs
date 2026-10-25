@@ -187,11 +187,11 @@ fn stable_ids_and_diagnostics_do_not_depend_on_trial_order() {
         message: "indexed access exceeds target window".into(),
     };
     let rendered = error.to_string();
-    assert!(rendered.contains("IllegalStackAccess"));
-    assert!(rendered.contains("depth=16"));
-    assert!(rendered.contains("v8.1"));
-    assert!(rendered.contains("v2.0"));
-    assert!(rendered.contains("inline"));
+    assert_eq!(
+        rendered,
+        "IllegalStackAccess: indexed access exceeds target window step=s4 depth=16 expected=v8.1 \
+         actual=v2.0"
+    );
     let plan = ProcedurePlan::fixture(vec![PlanAction::LoadLane(forward[0]), PlanAction::Drop]);
     assert_eq!(
         plan.to_string(),
