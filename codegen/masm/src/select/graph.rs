@@ -1596,7 +1596,11 @@ impl<'a, 'e> Selector<'a, 'e> {
         let symbol = resolved.target().as_symbol_ref();
         let symbol = symbol.borrow();
         if calls::is_truncate(&*symbol) {
-            return Err(super::invalid("truncate_stack requires registered return cleanup"));
+            return Err(PlanError::new(
+                DiagnosticCategory::AbiMismatch,
+                "truncate_stack requires registered return cleanup",
+            )
+            .into());
         }
         let signature = resolved.signature();
         let convention = if calls::is_kernel(&*symbol) {
@@ -1866,9 +1870,11 @@ impl<'a, 'e> Selector<'a, 'e> {
                 let symbol = callee.target().as_symbol_ref();
                 let symbol = symbol.borrow();
                 if crate::lower::units::calls::is_truncate(&*symbol) {
-                    return Err(super::invalid(
+                    return Err(PlanError::new(
+                        DiagnosticCategory::AbiMismatch,
                         "truncate_stack requires registered return cleanup",
-                    ));
+                    )
+                    .into());
                 }
                 let convention = if crate::lower::units::calls::is_kernel(&*symbol) {
                     CallingConvention::Kernel

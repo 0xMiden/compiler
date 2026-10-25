@@ -287,9 +287,12 @@ pub(crate) fn resolve_direct(
     Ok((resolved, target))
 }
 
-/// Kernel procedures belong to the exact root kernel module, independently of source convention.
+/// Kernel exports belong to the exact root kernel module, independently of source convention.
 pub(crate) fn is_kernel(symbol: &dyn midenc_hir::Symbol) -> bool {
-    super::super::lowering::symbol_module_path(symbol).is_kernel_path()
+    // Internal currently emits as MASM Public. When package visibility is supported, it must
+    // cease to be a kernel export here as well as in emission; private helpers never are exports.
+    !symbol.visibility().is_private()
+        && super::super::lowering::symbol_module_path(symbol).is_kernel_path()
 }
 
 /// The sole depth-sensitive external helper in the supported core ABI.

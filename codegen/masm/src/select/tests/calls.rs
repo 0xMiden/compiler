@@ -114,6 +114,10 @@ fn canonical_raw_and_aliased_truncate_require_registered_return_cleanup() {
         for cc in ["C", "component-model"] {
             let f = truncate_fixture(target, cc);
             let err = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+            assert_eq!(
+                err.downcast_ref::<crate::plan::PlanError>().unwrap().category,
+                crate::plan::DiagnosticCategory::AbiMismatch,
+            );
             assert!(alloc::format!("{err:?}").contains("registered return cleanup"), "{err:?}");
         }
     }
@@ -217,6 +221,149 @@ fn exact_kernel_owner_sets_entry_and_target_conventions() {
             assert!(alloc::format!("{:?}", result.unwrap_err()).contains("invocation family"));
         }
     }
+}
+
+#[test]
+fn kernel_entry_convention_follows_emitted_visibility() {
+    for (visibility, convention) in [
+        ("public", CallingConvention::Kernel),
+        ("internal", CallingConvention::Kernel),
+        ("private", CallingConvention::SameContext),
+    ] {
+        let f = parse_module_function(&format!(
+            "builtin.module public @\"$kernel\" {{ builtin.function {visibility} extern(\"C\") \
+             @helper(%x:felt) -> felt {{ builtin.ret %x : (felt); }}; }};"
+        ));
+        let selected = checked(&f, &SelectEnv::default());
+        assert_eq!(selected.abi.convention(), convention, "{visibility}");
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        verify::verify(&plan, &frame, body).unwrap();
+    }
+}
+
+#[test]
+fn public_kernel_entry_executes_private_helper() {
+    let f = parse_module_function(
+        r#"builtin.module public @"$kernel" {
+            builtin.function private extern("C") @helper(%x:felt) -> felt {
+                builtin.ret %x : (felt);
+            };
+            builtin.function public extern("C") @dispatch(%x:felt) -> felt {
+                %r=hir.exec @helper(%x) : extern("C") (felt) -> felt;
+                builtin.ret %r : (felt);
+            };
+        };"#,
+    );
+    let selected = checked(&f, &SelectEnv::default());
+    assert_eq!(selected.abi.convention(), CallingConvention::Kernel);
+    let owner = f.borrow().as_operation().nearest_symbol_table().unwrap();
+    let helper = owner
+        .borrow()
+        .downcast_ref::<builtin::Module>()
+        .unwrap()
+        .body()
+        .entry()
+        .body()
+        .iter()
+        .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Function>().ok())
+        .unwrap();
+    let helper = Parsed {
+        context: f.context.clone(),
+        function: helper,
+    };
+    let helper =
+        selected_procedure(&helper, &SelectEnv::default()).replace("proc selected", "proc helper");
+    let dispatch =
+        selected_procedure(&f, &SelectEnv::default()).replace("proc selected", "pub proc dispatch");
+    let manager = alloc::sync::Arc::new(miden_assembly::DefaultSourceManager::default());
+    let module = miden_assembly::ast::Module::parser(Some(miden_assembly::ast::ModuleKind::Kernel))
+        .parse_str(
+            Some(miden_assembly::Path::KERNEL),
+            format!("{helper} {dispatch}"),
+            manager.clone(),
+        )
+        .unwrap();
+    let core = midenc_session::LinkLibrary::core().load(&f.context.session().options).unwrap();
+    let mut assembler = miden_assembly::Assembler::new(manager.clone());
+    assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+    let kernel: alloc::sync::Arc<miden_assembly::package::Package> =
+        assembler.assemble_kernel("kernel", module, None).unwrap().into();
+    let suffix = (901..921).collect::<Vec<_>>();
+    let mut expected = vec![42];
+    expected.extend([0; 15]);
+    expected.extend(&suffix);
+    let mut assembler = miden_assembly::Assembler::with_kernel(manager, kernel.clone()).unwrap();
+    assembler.link_package(core.clone(), miden_assembly::Linkage::Dynamic).unwrap();
+    let program = assembler
+        .assemble_program(
+            "private_kernel_helper",
+            format!(
+                "begin {} repeat.15 push.0 end push.42 syscall.dispatch {} end",
+                crate::plan::tests::lowering_units::push_top(&suffix),
+                crate::plan::tests::lowering_units::assert_top(&expected),
+            ),
+        )
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let mut host = crate::plan::tests::lowering_units::host();
+    host.load_library(miden_processor::HostLibrary::from(core)).unwrap();
+    host.load_library(miden_processor::HostLibrary::from(kernel)).unwrap();
+    execute_program(&program, &mut host, &[]).unwrap();
+}
+
+#[test]
+fn private_kernel_helper_cannot_be_a_syscall_target() {
+    use midenc_hir::Symbol;
+
+    let f = direct("syscall", "C");
+    let mut owner = f.borrow().as_operation().nearest_symbol_table().unwrap();
+    owner
+        .borrow_mut()
+        .downcast_mut::<builtin::Module>()
+        .unwrap()
+        .set_name(midenc_hir::Ident::from("$kernel"));
+    let mut callee = owner
+        .borrow()
+        .downcast_ref::<builtin::Module>()
+        .unwrap()
+        .body()
+        .entry()
+        .body()
+        .iter()
+        .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Function>().ok())
+        .unwrap();
+    callee.borrow_mut().set_visibility(midenc_hir::Visibility::Private);
+    let error = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<crate::plan::PlanError>().unwrap().category,
+        crate::plan::DiagnosticCategory::AbiMismatch,
+    );
+}
+
+#[test]
+fn indirect_truncate_reports_abi_mismatch() {
+    let f = parse_module_function(
+        r#"builtin.module public @miden {
+            builtin.module public @core { builtin.module public @sys {
+                builtin.function public extern("C") @truncate_stack() { builtin.ret; };
+            }; };
+            builtin.function_alias public @cleanup -> @core::@sys::@truncate_stack;
+            builtin.function_table private @table : 1 {
+                builtin.function_table_entry 0 @cleanup tag 7;
+            };
+            builtin.function public extern("C") @dispatch(%i:u32) {
+                hir.exec_indirect @table[%i]() : extern("C") () -> () tag 7;
+                builtin.ret;
+            };
+        };"#,
+    );
+    let error = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
+    assert_eq!(
+        error.downcast_ref::<crate::plan::PlanError>().unwrap().category,
+        crate::plan::DiagnosticCategory::AbiMismatch,
+    );
+    assert!(format!("{error:?}").contains("registered return cleanup"));
 }
 
 pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
