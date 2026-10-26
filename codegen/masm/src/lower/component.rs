@@ -1198,7 +1198,6 @@ impl MasmComponentBuilder<'_> {
                     crate::verify::SourceContext::Generated(&source),
                     proc_name.clone(),
                     span,
-                    Some(self.link_info),
                 )?;
                 procedure.set_visibility(masm::Visibility::Public);
                 procedure.set_signature(masm::FunctionType::new(
@@ -1238,7 +1237,6 @@ impl MasmComponentBuilder<'_> {
                 crate::verify::SourceContext::Generated(&source),
                 masm::ProcedureName::new(COMPONENT_INIT_PROCEDURE).unwrap(),
                 span,
-                Some(self.link_info),
             )?;
             init.set_visibility(masm::Visibility::Public);
             init.set_signature(masm::FunctionType::new(midenc_hir::CallConv::Fast, vec![], vec![]));
@@ -1775,7 +1773,6 @@ impl MasmFunctionBuilder {
                 crate::verify::SourceContext::Generated(&source),
                 self.name.clone(),
                 self.span,
-                Some(link_info),
             )?
         } else {
             finalize_evidence(
@@ -1786,7 +1783,6 @@ impl MasmFunctionBuilder {
                 },
                 self.name.clone(),
                 self.span,
-                Some(link_info),
             )?
         };
         let Self {
@@ -1847,7 +1843,6 @@ pub(crate) fn finalize_evidence(
     source: crate::verify::SourceContext<'_>,
     name: masm::ProcedureName,
     span: SourceSpan,
-    link_info: Option<&LinkInfo>,
 ) -> Result<masm::Procedure, Report> {
     let locals = evidence.source.source_locals.clone();
     let checked = crate::verify::check_selection(evidence.source.program, &source)?;
@@ -1855,7 +1850,7 @@ pub(crate) fn finalize_evidence(
     for definition in &evidence.definitions {
         registry.register(definition)?;
     }
-    finish_checked(checked, &locals, &registry, name, span, link_info)
+    finish_checked(checked, &locals, &registry, name, span)
 }
 
 /// Lower a registered generated definition through the same checked physical pipeline.
@@ -1874,7 +1869,7 @@ pub(crate) fn finalize_generated<D: crate::lower::units::LoweringDefinition>(
     for definition in definitions {
         registry.register(definition)?;
     }
-    finish_checked(checked, &evidence.source_locals, &registry, name, span, None)
+    finish_checked(checked, &evidence.source_locals, &registry, name, span)
 }
 
 fn finish_checked(
@@ -1883,7 +1878,6 @@ fn finish_checked(
     registry: &crate::lower::units::LoweringRegistry<'_>,
     name: masm::ProcedureName,
     span: SourceSpan,
-    _link_info: Option<&LinkInfo>,
 ) -> Result<masm::Procedure, Report> {
     use crate::{
         allocate::{allocate, schedule::AllocationOptions, slots::assign_frame},

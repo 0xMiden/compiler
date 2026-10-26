@@ -225,13 +225,13 @@ mod tests {
     }
 
     #[test]
-    fn the_generated_procedure_names_are_reserved() {
+    fn only_current_generated_procedure_names_are_reserved() {
         let module = module_of(MODULE);
         let init_table = path("acme::app::app::__init_function_table");
         let entry = path("acme::first::api::__midenc_entrypoint_without_init");
         let names = assign(&module, [(func(1), &init_table)], [(func(0), &entry)]).unwrap();
         assert_eq!(names[&func(1)].as_str(), "app___init_function_table");
-        assert_eq!(names[&func(0)].as_str(), "api___midenc_entrypoint_without_init");
+        assert_eq!(names[&func(0)].as_str(), "__midenc_entrypoint_without_init");
     }
 
     #[test]

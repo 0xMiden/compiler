@@ -1695,13 +1695,8 @@ impl<'a, 'e> Selector<'a, 'e> {
         }
         let outputs = self.results(op)?;
         let id = SelectedStepId(index(self.definitions.len())?);
-        let (unit, proof) = definition.select(
-            LoweringKind(id.0),
-            id,
-            source,
-            &self.atoms(&arguments),
-            &self.atoms(&outputs),
-        )?;
+        let (unit, proof) =
+            definition.select(id, source, &self.atoms(&arguments), &self.atoms(&outputs))?;
         self.add_unit(
             segment,
             source,

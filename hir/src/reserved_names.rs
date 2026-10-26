@@ -13,10 +13,6 @@
 /// to reach the top-level ones.
 pub const FUNCTION_TABLE_INIT_PROC: &str = "__init_function_table";
 
-/// The private canonical-ABI entry body generated in the root module of an executable, for
-/// dispatch after `main` has already initialized the component.
-pub const EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC: &str = "__midenc_entrypoint_without_init";
-
 /// The component initializer codegen emits into a component's root module, next to the exports;
 /// `<namespace>::init` is therefore reserved and no export may use it.
 pub const COMPONENT_INIT_PROCEDURE: &str = "init";
@@ -26,5 +22,4 @@ pub const COMPONENT_INIT_PROCEDURE: &str = "init";
 /// The initializer only exists in the root module, where the procedures a frontend defines are the
 /// exports, which the frontend already keeps off that name; core functions live in nested modules,
 /// so a core function named `init` collides with nothing.
-pub const RESERVED_PROCEDURE_NAMES: &[&str] =
-    &[FUNCTION_TABLE_INIT_PROC, EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC];
+pub const RESERVED_PROCEDURE_NAMES: &[&str] = &[FUNCTION_TABLE_INIT_PROC];

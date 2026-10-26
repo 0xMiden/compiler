@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Wasm explicit and implicit returns preserve every declared result, including mixed-width
+  tuples, instead of rejecting or dropping results after the first.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips
@@ -28,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the compiler no longer creates an implicit adapter for them. Use an explicitly compatible
   entrypoint, or compile the component as a library and invoke it through its runtime's
   executable construction path.
+- HIR spilling and operand-window narrowing passes are removed. Pipeline integrations should
+  omit `TransformSpills`, `SpillAnalysis`, and the spill/reload operations and interfaces;
+  MASM code generation now allocates physical stack locations and spill slots directly.
+- `hir.exec_fpi` separates its six Felt prefix operands from its Felt payload using
+  `hir.exec_fpi [prefix](payload)`. Builders must supply both groups; do not insert padding
+  or operand-stack layout operations into the source call.
+- `midenc_dialect_hir::Pointer::new` takes `(addr, PointerType)` instead of an address and
+  pointee type. Pass the complete pointer type, including its address space; the constructor
+  preserves the address bits without converting byte and element address units.
 
 ## [0.11.0]
 

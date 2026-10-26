@@ -211,12 +211,13 @@ impl Direct {
     /// Declare exact argument and result lanes, rejecting incompatible invocation families.
     pub fn select(
         &self,
-        kind: LoweringKind,
         id: SelectedStepId,
         source: SourceStepId,
         arguments: &[Atom],
         outputs: &[Atom],
     ) -> Result<(SelectedLowering, UnitEvidence), PlanError> {
+        // Selection assigns the registered body kind when it inserts the unit.
+        let kind = LoweringKind(id.0);
         if !matches!(self.instruction, masm::Instruction::Exec(_)) {
             return ContextCall {
                 kind,
