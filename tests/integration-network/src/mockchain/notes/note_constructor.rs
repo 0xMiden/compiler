@@ -177,7 +177,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, create_tx);
     // Pin transaction-script processing separately from the note consumption measured below.
-    expect!["9680"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["9540"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -189,7 +189,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, consume_tx);
     // Pin the generated note execution cost, including component initialization and calls.
-    expect!["5121"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5078"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
