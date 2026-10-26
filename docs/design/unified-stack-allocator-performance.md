@@ -1,14 +1,87 @@
 # Unified stack allocator performance
 
-The correctness cutover increased execution and serialized code costs on five small production-pipeline workloads. The cutover accepted those costs, with backend scheduling and generated-root optimization considered separately. Subsequent optimizations improve several real protocol execution paths while leaving some cycle and encoded-size increases. This report records historical measurements; it is not a measurement of the current checkout or a promise of globally optimal scheduling.
+This report separates current CI comparisons, local scheduling measurements, and historical cutover evidence. VM cycles, serialized MAST bytes and compiler wall time answer different questions; none substitutes for the others.
 
-## Measurement boundaries
+## Current CI comparison
+
+[PR 1484 benchmark run 40246156884](https://github.com/0xMiden/compiler/actions/runs/40246156884/job/121328054304), completed October 26, 2026 UTC, reports candidate `37aa93e240af` against `next` `51c31fdbf447`. The run belongs to PR head `6361b76b6`; the candidate is the workflow checkout revision, not a claim that those two hashes identify the same commit. These measurements precede the dead-prefix cleanup below. Both sides use the workflow's own builds and sysroots; the run retains compiled packages, replay snapshots and VM cycle flamegraphs.
+
+| Workload | VM cycles (change from next) | MAST bytes (change from next) |
+| --- | ---: | ---: |
+| No-auth component | 8,482 (+2.08%) | 7,107 (+5.30%) |
+| RPO Falcon authentication | 81,577 (+0.52%) | 15,299 (+14.55%) |
+| Basic wallet | 82,879 (+0.23%) | 9,360 (+5.83%) |
+| Basic-wallet transaction | 84,588 (+0.36%) | 16,300 (+6.44%) |
+| Collatz | 5,277 (+0.29%) | 2,497 (+5.63%) |
+| Counter contract | 86,794 (+0.60%) | 15,208 (+13.03%) |
+| Counter note | 86,794 (+0.60%) | 4,091 (+11.32%) |
+| DEX note | 83,630 (+0.26%) | 17,550 (+10.20%) |
+| Fibonacci | 883 (+1.73%) | 3,315 (+4.18%) |
+| Is-prime | 2,309,570 (~0%) | 6,072 (+4.28%) |
+| P2ID note | 82,879 (+0.23%) | 21,347 (+4.69%) |
+| P2ID transaction | 87,257 (+0.64%) | 16,425 (+8.34%) |
+| P2IDE note | 83,341 (+0.29%) | 17,482 (+7.07%) |
+| Storage example | Not measured | 16,547 (+6.16%) |
+
+The cumulative stack still costs more than `next` on these workloads, including correctness repairs and debugger markers as well as allocator choices. These totals do not assign the increase to any one mechanism. The workflow's flamegraphs describe guest execution, not compiler CPU time.
+
+## Bounded dead-prefix cleanup
+
+The scheduler compares the existing preparation with a candidate that first drops consecutive unneeded top occurrences. The candidate must have no greater complete estimated preparation cost, including its drops; ties prefer cleanup. It does not assume that a later return will repay those drops, and leaves zero-cost preparations and alias publication alone. The focused VM regression reduces `swap; drop; swap; drop; drop` to three drops while preserving the complete caller suffix. This is a local cost guarantee, not a guarantee about total execution cycles or MAST encoding.
+
+A paired local measurement compares optimization snapshot `82a82764` with that same source plus the bounded cleanup. Both binaries use the locked dependencies, the dev compiler profile, Rust `1.100.0-nightly (0dfb098f3 2026-08-31)`, Darwin arm64, and sysroot publication `0.17.0-aac05c66ae5bf43f`. Each workload has one discarded warmup and five sequential measured runs per binary; baseline/candidate order alternates each round. Another compiler process was active on the host, so these elapsed times are descriptive samples, not isolated CPU measurements or a speedup claim.
+
+| Workload / compiler | Full CLI median, ms (range) | Allocation median, ms | Verification median, ms | Median combined stage share |
+| --- | ---: | ---: | ---: | ---: |
+| Counter / original | 760.21 (740.78–762.66) | 74.74 | 51.97 | 16.62% |
+| Counter / cleanup | 748.23 (739.39–761.18) | 68.97 | 49.51 | 15.95% |
+| Spilling initializers / original | 490.49 (481.64–491.63) | 154.79 | 40.94 | 39.95% |
+| Spilling initializers / cleanup | 492.75 (480.05–494.81) | 152.76 | 41.43 | 39.66% |
+
+The denominator is the entire CLI build, including parsing, selection, frame assignment, expansion, assembly and I/O. Stage times sum the existing allocation and verification elapsed-time records across thirteen procedures/stages for the counter and four for the initializer workload. Allocation encloses `allocate`; verification follows expansion and peepholes. Tracing uses `MIDENC_TRACE='codegen:^$=trace'` and `MIDENC_TRACE_STYLE=never`, excluding solver-detail logging. The percentages are medians of each sample's combined-stage ratio, not ratios of independently chosen medians.
+
+The counter uses the existing compiled counter-contract guest, linked with the same sysroot's `miden-protocol.masp`. The pressure fixture has two global initializers, each keeping twenty advice values live, checking each value and summing them, followed by a sixteen-input entrypoint. It exercises real scalar spilling: the generated initialization procedure uses a twenty-cell scalar spill frame, reused across the two initializers. Each initializer records forty operand loads and twenty operand stores, for eighty loads and forty stores overall. Neither variant changes those counts or the pressure assembly. Counter assembly removes dead-lane swaps and shortens some later movements. These are static plan/assembly observations. Dynamic cycle comparisons require executing the integration tests through their semantic assertions; static counts alone do not establish those results.
+
+For capture identity, the input SHA256 hashes are `b7e8391a83da771c5954b39fdcd99a850e33dff1196469400fd434c6a6d5e87a` (counter) and `cb29c327a9b6d8a6016d17480898de2bb51d852f482ed496b0150359df24d3fc` (pressure). Binary hashes are `749cbd2d699a0f83ce27a6fcc7a11d73f4b6792c153bc642922256624d871a97` (original) and `484be8443ab55272d995fa91f5de4c91d8d538a6920019c32806390a32eb4652` (cleanup). Counter MASM hashes differ (`8e31533efa5bbb07093aeebbb700056943b9d93f21aadb33dedf74b8174b8afb` → `1cb4a1b78708e8629df4408e0205fc31e58f52cfe1f2359279e5407ccbff7f25`); pressure MASM is identical (`32def9d3895cc791129a399ff280e65f37eaf4eab3088fb6d3eec5497f13defc`). Hashes identify these captures; they do not make a rebased revision equivalent to either binary.
+
+The targeted integration capture also measures the following dynamic/encoded changes on unchanged inputs. These fixtures use their own execution modes and are distinct from the CI benchmark rows above. All later semantic assertions are retained.
+
+| Integration metric | Original → cleanup |
+| --- | ---: |
+| No-auth counter note cycles | 9,375 → 9,266 |
+| RPO authentication cycles | 75,318 → 75,143 |
+| SWAPP full-fill cycles | 13,579 → 13,423 |
+| SWAPP partial-fill cycles | 18,978 → 18,731 |
+| SWAPP reclaim cycles | 5,673 → 5,618 |
+| SWAPP MAST bytes | 47,540 → 45,658 |
+| Batch largest successful scenario cycles | 342,905 → 326,274 |
+| Batch MAST bytes | 123,124 → 119,181 |
+
+Across the twelve affected expectation files, all fifty-eight changed numeric literals decrease, including later assertions previously hidden by a failing cost pin. That is evidence for these workloads, not a universal consequence of choosing a cheaper preparation.
+
+### Remaining burial cost
+
+Dropping dead top lanes cannot help when every owned lane remains live. A separate raw allocator-state probe starts with sixteen distinct live inputs and copies one for an operation. The next operation needs the original deepest value:
+
+| First operation | Prepared → completed depth | Next preparation | Estimated next cost | Loads / stores |
+| --- | --- | --- | ---: | ---: |
+| No result | 17 → 16 | Stack | 6 | 0 / 0 |
+| One result, no backing for deepest value | 17 → 17 | Normalization | 107 | 1 / 17 |
+| One result, deepest value already backed | 17 → 17 | Loads | 5 | 1 / 0 |
+
+All first preparations cost one estimated operation. These probes establish a scheduling opportunity, not a correctness failure or an end-to-end VM result. The already-backed case excludes the cost of obtaining that backing. Temporary burial disappears after consumption; a published result can make it persist. Changing survivor accounting to ignore values below depth sixteen would be incorrect. A future policy should compare bounded recovery when the buried value is actually requested with advance backing based on completed-state demand; advance writes can be wasted on paths that never request the value. Neither policy is part of this cleanup.
+
+## Historical measurements
+
+The following sections retain the original cutover and optimization evidence. Their snapshot hashes and metrics predate the current CI table; rebases do not turn them into measurements of the current compiler.
+
+### Measurement boundaries
 
 The initial comparison uses archived pre-cutover production output and the cutover capture. Adjacent historical investigation records associate the baseline with `f3d47420`; the measurement report itself identifies capture logs and hashes, so that revision attribution is corroborated rather than directly established. The cutover capture was a working-source snapshot preserved by source/artifact hash manifests, not a separately identified final commit. It predates the completed unified-backend snapshot `c46ec2e3`. Names, inputs and expected results were retained. Original baseline WAT was not captured, so original-WAT hash equality is not established. The data/global fixture has no Wasm start function; a distinct raw-start experiment is excluded.
 
-The optimization comparison uses accepted unified-backend output (`c46ec2e3`) against final optimization/storage-repair evidence (`f89b6b0e`, followed by metric refresh `5160d439`). All revision IDs here identify historical snapshots; rebasing the review stack may give current changes different IDs. These snapshots precede the later debugger context-call marker repair and its October 24 metric refresh. Do not combine their numbers with post-marker expectations as though they were the same compiler. No fresh measurement was made for this document.
+The optimization comparison uses accepted unified-backend output (`c46ec2e3`) against final optimization/storage-repair evidence (`f89b6b0e`, followed by metric refresh `5160d439`). All revision IDs here identify historical snapshots; rebasing the review stack may give current changes different IDs. These snapshots precede the later debugger context-call marker repair and its October 24 metric refresh. Do not combine their numbers with post-marker expectations as though they were the same compiler. No fresh measurement was made for these historical tables.
 
-## Initial cutover
+### Initial cutover
 
 | Workload | VM cycles, baseline → cutover | Serialized MAST bytes, baseline → cutover | Nonzero procedure frame cells, baseline → cutover |
 | --- | ---: | ---: | --- |
@@ -34,7 +107,7 @@ Separate CLI traces provide the following sums over allocation units, including 
 
 The legacy backend provided no corresponding stage or physical-traffic counters. Integration aggregate compilation observations, in microseconds, were pressure 125024 → 352666; join 124544/67738 → 311068/410118; loop 120547 → 342863; call 118999 → 303198; data/global 120226 → 312167. They include frontend, transforms, lowering and assembly, and were collected under different cache/concurrency conditions. They do not establish a comparable compiler slowdown or allocator-stage ratio.
 
-## Optimization results and explanations
+### Optimization results and explanations
 
 | Metric | Unified backend → final optimization, before later context-call marker repair |
 | --- | ---: |
@@ -58,7 +131,7 @@ All 34 batch scenarios were compared through temporary execution histograms, ret
 
 These are explained local scheduling/encoding tradeoffs, with no unaccounted byte or counted-work residual in the analyzed cases. They remain opportunities for improvement rather than proof of global optimality. These historical results include the storage repair and final numeric refresh, with no temporary diagnostic edits retained.
 
-## Later debugger frame markers
+### Later debugger frame markers
 
 A separate correctness repair restored FrameStart/FrameEnd events around Call/SysCall/DynCall. Each EmitImm expands to Push(event_id), Emit, Drop in assembler 0.35.0. A pair adds six executable operations before batching/padding effects, even without debug metadata. Both branches independently reproduced all fifteen affected CI failures; temporarily omitting only these marker pairs restored all original expectations and semantic checks. The temporary edits were restored.
 

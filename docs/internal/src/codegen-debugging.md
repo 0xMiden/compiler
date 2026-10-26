@@ -125,6 +125,32 @@ These repository tasks forward the filter to nextest; the second uses the `test-
 Cargo profile. Check that the filter selects the intended test. Use the relevant normal and
 release checks when assertions, arithmetic or optimizer behavior could differ between profiles.
 
+## Replay randomized scheduling failures
+
+The scheduling properties use Proptest's default randomized seed and file-based failure
+persistence. A missing regressions file means no saved failure is present; it does not mean
+persistence is disabled. Keep the minimized failing input and the seed line Proptest prints.
+Commit a reproducible regression entry when fixing that failure, alongside a focused named test
+when it explains the underlying invariant. Do not replace randomized exploration with one fixed
+seed for every CI run.
+
+For a run launched with an explicit seed, use the same compiler revision and dependency lockfile
+and repeat that decimal `u64` value in `PROPTEST_RNG_SEED`:
+
+```sh
+PROPTEST_RNG_SEED=12345 RUST_MIN_STACK=16777216 \
+  cargo make test-rust -p midenc-codegen-masm \
+  -E 'test(allocate::tests::scheduling::selective_and_normalization_have_identical_observations)' \
+  --test-threads 1 --failure-output immediate
+```
+
+The value above is an example, not a required project seed. The failure-persistence seed line
+has a different format: copy it into the regression file rather than this environment variable.
+Persisted failure seeds are replayed before fresh cases. The default `SourceParallel("proptest-regressions")` path for these tests is
+`codegen/masm/proptest-regressions/allocate/tests/scheduling.txt`. Do not set
+`PROPTEST_DISABLE_FAILURE_PERSISTENCE` when collecting a regression. A saved minimized input is
+more durable than a seed alone when generators or dependency versions change.
+
 ## Interpret verification failures
 
 The physical verifier independently checks stack access, value identity, storage, transfers,
@@ -189,6 +215,6 @@ Capture expectation updates with `--test-threads 1` when tests can edit the same
 The expectation updater retains whole-file state per process, so concurrent writers can lose
 one another's changes. Then rerun the selected tests with expectation updating disabled.
 
-The [performance report](../../design/unified-stack-allocator-performance.md) records historical
-cycle, serialized-size, frame and compile-time observations, their limitations, and reproduction
-commands. Keep current measurements distinct from those historical snapshots.
+The [performance report](../../design/unified-stack-allocator-performance.md) separates current CI
+comparisons and local scheduling measurements from historical cycle, serialized-size, frame and
+compile-time observations. Keep their inputs, timing boundaries and comparison limits distinct.
