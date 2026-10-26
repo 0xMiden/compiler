@@ -238,6 +238,28 @@ impl<'a> Trial<'a> {
         self.state.push(atom)
     }
 
+    /// Remove consecutive dead owned occurrences without moving or discarding useful lanes.
+    /// Demand is alias-aware; an occurrence that represents a live equal value stops cleanup.
+    /// Stop at `limit` lanes; the caller bounds the search and compares complete preparation
+    /// costs before committing these actions.
+    pub fn discard_dead_prefix(
+        &mut self,
+        needed: &BTreeSet<Atom>,
+        limit: usize,
+    ) -> Result<(), AllocationError> {
+        for _ in 0..limit {
+            let Some(occurrence) = self.state.stack.front() else {
+                break;
+            };
+            if self.needed(StoredValue::Atom(occurrence.atom), needed)? {
+                break;
+            }
+            self.actions.push(PlanAction::Drop);
+            self.state.stack.pop_front();
+        }
+        Ok(())
+    }
+
     /// Empty only the owned stack, storing needed nonliteral identities lacking a slot.
     /// The protected caller suffix and VM padding are never inspected or consumed.
     pub fn drain(&mut self, needed: &BTreeSet<Atom>) -> Result<(), AllocationError> {

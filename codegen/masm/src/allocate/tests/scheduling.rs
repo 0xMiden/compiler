@@ -722,7 +722,7 @@ fn word_candidate_ties_keep_the_existing_scalar_permutation() {
             PlanAction::MoveDown { depth: 4 },
         ],
         unit(vec![atom(1)], vec![]),
-        BTreeSet::new(),
+        BTreeSet::from([ValueId(0)]),
         forced(SchedulingTier::Stack),
     );
     assert_eq!(preparation.actions, vec![PlanAction::Swap { depth: 1 }]);
@@ -1231,7 +1231,7 @@ fn solver_refusal_completion_is_independently_verified() {
         vec![Type::Felt; 20],
         vec![],
         unit(vec![atom(13), atom(1), atom(7)], vec![]),
-        BTreeSet::from([ValueId(13)]),
+        BTreeSet::from([ValueId(0), ValueId(13)]),
         options,
     );
     assert_eq!(preparation.tier, SchedulingTier::Selective);
@@ -1366,4 +1366,93 @@ fn alias_publication_preserves_buried_spilled_and_reconstructed_sources() {
             assert!(prepare_unit(&missing, &request, &BTreeSet::new(), &context).is_err());
         }
     }
+}
+
+#[test]
+fn dead_top_occurrence_does_not_add_moves_to_later_last_uses() {
+    let definition = DiscardDefinition {
+        types: vec![Type::Felt; 3],
+        requests: (0..2)
+            .map(|index| {
+                let mut request = unit(vec![atom(index + 1)], vec![]);
+                request.id = SelectedStepId(index);
+                request.source = SourceStepId(index);
+                request
+            })
+            .collect(),
+    };
+    let checked = check_selection(
+        definition.instantiate(&[]).unwrap().program,
+        &SourceContext::Generated(&definition),
+    )
+    .unwrap();
+    let plan = crate::allocate::allocate(checked, &AllocationOptions::default()).unwrap();
+    let frame = fixture_frame(&plan);
+    let body = fixture_body(&plan, &frame);
+    verify_assemble_execute(&plan, &frame, &body, 3);
+    let instructions: Vec<_> = body.top_level_instructions().cloned().collect();
+    assert_eq!(instructions, vec![crate::masm::Instruction::Drop; 3]);
+}
+
+#[test]
+fn dead_prefix_cleanup_keeps_cheaper_original_preparations() {
+    let values = values(4);
+    let context = context(&values);
+    let initial = state((0..4).map(atom).collect(), vec![]);
+    // Neither a returning zero-input unit nor a trap should acquire speculative cleanup.
+    for normal_return in [true, false] {
+        let mut request = unit(vec![], vec![]);
+        request.effects.normal_return = normal_return;
+        let prepared = prepare_unit(&initial, &request, &BTreeSet::new(), &context).unwrap();
+        assert!(prepared.actions.is_empty());
+        assert_eq!(prepared.state, initial);
+    }
+    // Removing three dead lanes would cost more than the two-operation indexed swap.
+    let prepared =
+        prepare_unit(&initial, &unit(vec![atom(3)], vec![]), &BTreeSet::new(), &context).unwrap();
+    assert_eq!(prepared.actions, vec![PlanAction::Swap { depth: 3 }]);
+}
+
+#[test]
+fn dead_prefix_cleanup_preserves_alias_demand_and_stored_inputs() {
+    let mut values = values(3);
+    values.get_mut(&ValueId(2)).unwrap().reconstruction =
+        Some(Reconstruction::Alias(vec![atom(0)]));
+    let context = context(&values);
+    let mut initial = state(vec![atom(0), atom(1)], vec![]);
+    initial.available_values.insert(ValueId(2));
+    let prepared = prepare_unit(
+        &initial,
+        &unit(vec![atom(1)], vec![]),
+        &BTreeSet::from([ValueId(2)]),
+        &context,
+    )
+    .unwrap();
+    assert_eq!(prepared.state.stack_atoms().collect::<Vec<_>>(), vec![atom(1), atom(0)]);
+    assert!(!prepared.actions.contains(&PlanAction::Drop));
+    let stored = StoredInput {
+        id: StoredInputId(0),
+        value: StoredValue::Atom(atom(0)),
+    };
+    let prepared =
+        prepare_unit(&initial, &unit(vec![atom(1)], vec![stored]), &BTreeSet::new(), &context)
+            .unwrap();
+    assert_eq!(prepared.state.stack_atoms().collect::<Vec<_>>(), vec![atom(1), atom(0)]);
+    assert!(!prepared.actions.contains(&PlanAction::Drop));
+}
+
+#[test]
+fn dead_prefix_cleanup_preserves_the_original_overflow_occurrences() {
+    let (plan, prepared, initial) = checked_case(
+        vec![Type::Felt; 20],
+        vec![],
+        unit(vec![atom(13), atom(1), atom(7)], vec![]),
+        BTreeSet::from([ValueId(13)]),
+        forced(SchedulingTier::Selective),
+    );
+    let overflow = initial.stack.iter().skip(16).copied().collect::<Vec<_>>();
+    assert!(prepared.state.stack.iter().copied().collect::<Vec<_>>().ends_with(&overflow));
+    assert!(prepared.actions.contains(&PlanAction::Drop));
+    let frame = fixture_frame(&plan);
+    verify_assemble_execute(&plan, &frame, &fixture_body(&plan, &frame), 20);
 }

@@ -119,8 +119,8 @@ fn prepare_order(
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
     let needs = normalize::requirements(unit, live_after, context)?;
-    let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
     if unit.publication == OutputPublication::Aliases {
+        let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
         // Alias publication consumes nothing. Even forced fallback must not drain a buried
         // source simply to introduce another semantic name for its existing representation.
         if !valid(&base, unit, &needs)? {
@@ -132,6 +132,43 @@ fn prepare_order(
         normalize::bind_inputs(&mut base, unit, &needs.needed)?;
         return Ok(Preparation::finish(base));
     }
+    let original = prepare_stack(state, unit, live_after, context, &needs)?;
+    let original_cost = action_cost(&original.actions);
+    // Most preparations already have a directly demanded top atom. Avoid cloning a
+    // trial or resolving aliases when that exact identity proves cleanup cannot begin.
+    if original_cost == 0 || state.stack.front().is_none_or(|top| needs.needed.contains(&top.atom))
+    {
+        return Ok(original);
+    }
+    // Debug observations precede preparation. Alias publication returned above without
+    // changing its physical state. Only actual cleanup actions earn a place in this trial:
+    // do not credit hypothetical future drops, which might never execute on a trapping path.
+    let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
+    if base.discard_dead_prefix(&needs.needed, original_cost.min(16)).is_err()
+        || base.actions.is_empty()
+    {
+        return Ok(original);
+    }
+    if let Ok(mut cleaned) = prepare_stack(&base.state, unit, live_after, context, &needs) {
+        base.actions.append(&mut cleaned.actions);
+        cleaned.actions = base.actions;
+        if action_cost(&cleaned.actions) <= original_cost {
+            return Ok(cleaned);
+        }
+    }
+    Ok(original)
+}
+
+/// Run the existing tier order for one physical entry state and input order.
+/// Cleanup candidates use this same construction and retain the original on failure.
+fn prepare_stack(
+    state: &AllocationState,
+    unit: &SelectedLowering,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+    needs: &UnitRequirements,
+) -> Result<Preparation, AllocationError> {
+    let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
     // A buried stored source can require a drain before it can be bound. A failed private
     // setup must not prevent that full construction from running on the original state.
     if normalize::bind_inputs(&mut base, unit, &needs.needed).is_ok() {
@@ -142,13 +179,13 @@ fn prepare_order(
             }
             let proposal = match tier {
                 SchedulingTier::Stack => {
-                    stack_candidate(base.clone(), unit, &needs).map(|p| p.map(|t| (t, Vec::new())))
+                    stack_candidate(base.clone(), unit, needs).map(|p| p.map(|t| (t, Vec::new())))
                 }
                 SchedulingTier::Loads => {
-                    load_candidates(&base, unit, &needs).map(|p| p.map(|t| (t, Vec::new())))
+                    load_candidates(&base, unit, needs).map(|p| p.map(|t| (t, Vec::new())))
                 }
                 SchedulingTier::Selective => {
-                    selective(base.clone(), unit, &needs, context.next_use.after.get(&unit.id))
+                    selective(base.clone(), unit, needs, context.next_use.after.get(&unit.id))
                 }
                 SchedulingTier::Normalization => unreachable!(),
             };

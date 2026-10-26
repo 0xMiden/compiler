@@ -21,10 +21,8 @@
 ;; MASM-LABEL: pub proc load
 ;; MASM: assertz.err="pointer address does not meet minimum alignment for the type"
 ;; MASM-NEXT: push.0
-;; MASM-NEXT: swap.1
-;; MASM-NEXT: mem_load
-;; MASM-NEXT: swap.1
 ;; MASM-NEXT: drop
+;; MASM-NEXT: mem_load
 ;; MASM-NEXT: end
 
 (module $transparent_casts.wasm
