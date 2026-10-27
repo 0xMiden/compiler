@@ -47,7 +47,9 @@ use crate::{
 };
 
 const LINT_ESTIMATED_HIR_OP_LIMIT: usize = 900;
+
 const LINT_SIGNATURE_VALUE_LIMIT: usize = 8;
+
 type InitialSkip = (GlobalItemIndex, SourceSpan, String);
 
 struct LintProcedurePreflight {
@@ -1710,8 +1712,7 @@ impl<'a> ProcedurePreparer<'a> {
                 let exponent = self.pop(span)?;
                 let base = self.pop(span)?;
                 let base = self.cast(builder, base.value, Type::Felt, span)?;
-                let exponent = self.cast(builder, exponent.value, Type::U32, span)?;
-                let exponent = self.cast(builder, exponent, Type::Felt, span)?;
+                let exponent = self.cast(builder, exponent.value, Type::Felt, span)?;
                 let result = builder.exp_u32_exponent(base, exponent, span)?;
                 self.push_value(result, span);
                 Ok(())
@@ -2821,9 +2822,9 @@ impl<'a> ProcedurePreparer<'a> {
     /// Converts `value` to the `u64` holding the same number.
     ///
     /// This is a conversion of the value, not a change of its type: a felt is one element on the
-    /// VM's stack and a `u64` is two, so the unrealized conversion cast [`Self::cast`] emits,
-    /// which only relabels a value and must leave the stack as it is, cannot express it. It is
-    /// not a zero-extension either: a felt's value is not a 32-bit quantity whose upper half is
+    /// VM's stack and a `u64` is two, so an unresolved type adaptation cannot express it.
+    /// Like the lossless scalar widenings in [`Self::cast`], this requires an explicit numeric
+    /// conversion. A felt's value is not a 32-bit quantity whose upper half is
     /// zero, and that upper half is exactly what `u32split` and `u32test` read. `hir.cast`
     /// converts the number itself, and for a felt lowers to the VM's `u32split`.
     fn convert_to_u64(
@@ -2892,6 +2893,11 @@ impl<'a> ProcedurePreparer<'a> {
     ) -> Result<Value> {
         if builder.ty(value) == &ty {
             return Ok(value);
+        }
+        if ty == Type::Felt
+            && matches!(builder.ty(value), Type::I1 | Type::U8 | Type::U16 | Type::U32)
+        {
+            return builder.cast(value, ty, span);
         }
         builder.unrealized_conversion_cast(value, ty, span)
     }
@@ -3228,4 +3234,50 @@ fn validate_advice_read_count(count: u8, span: SourceSpan) -> Result<()> {
 
 fn stack_types(builder: &PreparationBuilder, stack: &[StackValue]) -> Vec<Type> {
     stack.iter().map(|value| builder.ty(value.value).clone()).collect()
+}
+
+#[cfg(test)]
+mod scalar_cast_tests {
+    use super::*;
+
+    #[test]
+    fn scalar_identity_returns_need_no_adaptation() {
+        for ty in ["i1", "u8", "u16", "u32", "felt"] {
+            let source = format!("pub proc entry(a: {ty}) -> {ty}\n    nop\nend");
+            let lifted = crate::disassemble_source(
+                &source,
+                "scalar_identity",
+                &crate::DisassemblerConfig::default(),
+                Rc::new(Context::default()),
+            )
+            .expect("scalar identity return should lift");
+            lifted.world.borrow().as_operation().prewalk_all(|op| {
+                assert!(!op.is::<midenc_hir::dialects::builtin::UnrealizedConversionCast>());
+                assert!(!op.is::<midenc_dialect_hir::Cast>());
+            });
+        }
+    }
+
+    #[test]
+    fn scalar_unsigned_returns_use_explicit_numeric_casts() {
+        for ty in ["i1", "u8", "u16", "u32"] {
+            let source = format!("pub proc entry(a: {ty}) -> felt\n    nop\nend");
+            let lifted = crate::disassemble_source(
+                &source,
+                "scalar_cast",
+                &crate::DisassemblerConfig::default(),
+                Rc::new(Context::default()),
+            )
+            .expect("unsigned scalar return should lift");
+            let mut casts = 0;
+            lifted.world.borrow().as_operation().prewalk_all(|op| {
+                assert!(
+                    !op.is::<midenc_hir::dialects::builtin::UnrealizedConversionCast>(),
+                    "unsigned widening must have explicit numeric semantics"
+                );
+                casts += usize::from(op.is::<midenc_dialect_hir::Cast>());
+            });
+            assert_eq!(casts, 1, "{ty} return must use one numeric cast");
+        }
+    }
 }

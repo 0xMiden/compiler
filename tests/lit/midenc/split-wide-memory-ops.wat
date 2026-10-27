@@ -19,7 +19,8 @@
   (export "load_high_half" (func $load_high_half))
 )
 
-;; The low half at `p`, the high half at `p + 4`, each with a 32-bit store
+;; The low half at `p`, the high half at `p + 4`, each with a 32-bit store.
+;; Operand scheduling may insert stack moves before the checked address addition.
 ;; CHECK-LABEL: pub proc store_halves
 ;; CHECK-NOT: exec.::miden::core::math::u64
 ;; CHECK-NOT: exec.::intrinsics::mem::store_dw
@@ -27,7 +28,9 @@
 ;; CHECK-NOT: exec.::miden::core::math::u64
 ;; CHECK-NOT: exec.::intrinsics::mem::store_dw
 ;; CHECK: push.4
-;; CHECK-NEXT: add
+;; CHECK-NOT: exec.::miden::core::math::u64
+;; CHECK-NOT: exec.::intrinsics::mem::store_dw
+;; CHECK: add
 ;; CHECK-NEXT: u32assert
 ;; CHECK-NOT: exec.::miden::core::math::u64
 ;; CHECK-NOT: exec.::intrinsics::mem::store_dw
@@ -40,7 +43,9 @@
 ;; CHECK-LABEL: pub proc load_high_half
 ;; CHECK-NOT: exec.::intrinsics::mem::load_dw
 ;; CHECK: push.4
-;; CHECK-NEXT: add
+;; CHECK-NOT: exec.::miden::core::math::u64
+;; CHECK-NOT: exec.::intrinsics::mem::load_dw
+;; CHECK: add
 ;; CHECK-NEXT: u32assert
 ;; CHECK-NOT: exec.::miden::core::math::u64
 ;; CHECK-NOT: exec.::intrinsics::mem::load_dw

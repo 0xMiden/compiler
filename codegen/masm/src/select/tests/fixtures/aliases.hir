@@ -1,0 +1,5 @@
+builtin.function public extern("C") @aliases(%input: u128) -> u128 {
+    %hi, %midhi, %midlo, %lo = arith.split %input : (u128) -> (u32, u32, u32, u32);
+    %output = arith.join %hi, %midhi, %midlo, %lo <{ ty = #builtin.type<u128> }>;
+    builtin.ret %output : (u128);
+};

@@ -1,5 +1,5 @@
 use miden_core::Felt;
-use midenc_hir::SourceSpan;
+use midenc_hir::{Overflow, SourceSpan};
 
 use super::{OpEmitter, int32::SIGN_BIT, masm};
 
@@ -11,6 +11,107 @@ pub const U32_FIELD_MODULUS: Felt = Felt::new_unchecked(2u64.pow(32));
 
 #[allow(unused)]
 impl OpEmitter<'_> {
+    /// Add the two canonical Felt operands at the top of the raw stack.
+    ///
+    /// Checked mode traps when canonical addition reaches the field modulus; overflowing mode
+    /// leaves `[overflow_flag, field_result | suffix]`, top first. Wrapping and unchecked modes
+    /// emit ordinary field arithmetic. This helper emits instructions only: its typed caller owns
+    /// operand-stack bookkeeping, and the suffix below the two inputs is preserved.
+    pub fn add_felt(&mut self, overflow: Overflow, span: SourceSpan) {
+        use masm::Instruction as I;
+        if matches!(overflow, Overflow::Unchecked | Overflow::Wrapping) {
+            self.emit(I::Add, span);
+            return;
+        }
+        self.emit_all(
+            [
+                // [r, b, a | S]
+                I::Dup1,
+                I::Dup1,
+                I::Add,
+                // At most one reduction: r < a iff a+b >= p. Compare full felts.
+                I::Dup0,
+                I::Dup3,
+                I::Lt,
+                // [flag, r | S]
+                I::MovUp2,
+                I::Drop,
+                I::MovUp2,
+                I::Drop,
+            ],
+            span,
+        );
+        self.finish_felt_arithmetic("add", overflow, span);
+    }
+
+    /// Subtract the two canonical Felt operands at the top of the raw stack.
+    ///
+    /// Checked mode traps when the left operand is smaller than the right operand; overflowing mode
+    /// leaves `[overflow_flag, field_result | suffix]`, top first. Wrapping and unchecked modes
+    /// emit ordinary field arithmetic. This helper emits instructions only: its typed caller owns
+    /// operand-stack bookkeeping, and the suffix below the two inputs is preserved.
+    pub fn sub_felt(&mut self, overflow: Overflow, span: SourceSpan) {
+        use masm::Instruction as I;
+        if matches!(overflow, Overflow::Unchecked | Overflow::Wrapping) {
+            self.emit(I::Sub, span);
+            return;
+        }
+        self.emit_all([I::Dup1, I::Dup1, I::Lt, I::MovDn2, I::Sub, I::Swap1], span);
+        self.finish_felt_arithmetic("sub", overflow, span);
+    }
+
+    /// Multiply the two canonical Felt operands at the top of the raw stack.
+    ///
+    /// Checked mode traps when the canonical integer product reaches the field modulus; overflowing mode
+    /// leaves `[overflow_flag, field_result | suffix]`, top first. Wrapping and unchecked modes
+    /// emit ordinary field arithmetic. This helper emits instructions only: its typed caller owns
+    /// operand-stack bookkeeping, and the suffix below the two inputs is preserved.
+    pub fn mul_felt(&mut self, overflow: Overflow, span: SourceSpan) {
+        use masm::Instruction as I;
+        if matches!(overflow, Overflow::Unchecked | Overflow::Wrapping) {
+            self.emit(I::Mul, span);
+            return;
+        }
+        self.emit_all(
+            [
+                // Retain the native field result below the two split operands.
+                I::Dup1,
+                I::Dup1,
+                I::Mul,
+                I::MovDn2,
+                I::U32Split,
+                I::MovUp2,
+                I::U32Split,
+            ],
+            span,
+        );
+        self.raw_exec("::miden::core::math::u64::widening_mul", span);
+        // [p0,p1,p2,p3,r | S]. Product >= p iff its upper64 is nonzero, or
+        // p1 == MAX32 and p0 != 0. In particular 2^64-1 requires reduction.
+        self.emit_all(
+            [
+                I::NeqImm(Felt::ZERO.into()),
+                I::Swap1,
+                I::EqImm(Felt::new_unchecked(u32::MAX as u64).into()),
+                I::And,
+                I::Swap1,
+                I::NeqImm(Felt::ZERO.into()),
+                I::Or,
+                I::Swap1,
+                I::NeqImm(Felt::ZERO.into()),
+                I::Or,
+            ],
+            span,
+        );
+        self.finish_felt_arithmetic("mul", overflow, span);
+    }
+
+    fn finish_felt_arithmetic(&mut self, op: &str, overflow: Overflow, span: SourceSpan) {
+        if overflow == Overflow::Checked {
+            self.emit(Self::assertz_with_message_inst(format!("felt {op} overflow"), span), span);
+        }
+    }
+
     /// This operation checks if the field element on top of the stack is zero.
     ///
     /// This operation does not consume the input, and pushes a boolean value on the stack.

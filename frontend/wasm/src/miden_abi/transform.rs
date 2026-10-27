@@ -8,12 +8,10 @@ use midenc_package_interface::{LoweredSignature, ReturnArea, lower_signature};
 use midenc_session::diagnostics::Report;
 
 use super::resolve::convert_results;
-use crate::{
-    error::WasmResult, fpi::store_fpi_prefix_locals,
-    module::function_builder_ext::FunctionBuilderExt,
-};
+use crate::{error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
 const RAW_FPI_FLATTENED_ARG_COUNT: u32 = ExecFpi::EXECUTOR_INPUT_FELTS as u32;
+
 const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = ExecFpi::EXECUTOR_INPUT_FELTS;
 
 /// No transformation needed
@@ -69,9 +67,8 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
 
 /// The raw FPI executor passes the full felt-only executor ABI through one invocation pointer.
 ///
-/// The generated stub reloads the 22 invocation felts from memory, stores the 6-felt prefix into
-/// function locals, and emits the same `hir.exec_fpi` form used by typed FPI imports, so raw FPI
-/// calls reach the backend with no special shape.
+/// The generated stub reloads the 22 invocation felts from memory and supplies semantic prefix
+/// and payload operands to the same `hir.exec_fpi` form used by typed FPI imports.
 pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
@@ -107,9 +104,10 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
         fpi_args.push(builder.load(typed_ptr, span)?);
     }
 
-    let prefix_locals = store_fpi_prefix_locals(builder, &fpi_args[..ExecFpi::PREFIX_FELTS], span)?;
+    // Wrappers carry prefix before suffix; the executor consumes suffix before prefix.
+    let prefix = [fpi_args[1], fpi_args[0], fpi_args[2], fpi_args[3], fpi_args[4], fpi_args[5]];
     let procedure_inputs = fpi_args[ExecFpi::PREFIX_FELTS..].iter().copied();
-    let exec = builder.exec_fpi(prefix_locals, procedure_inputs, span)?;
+    let exec = builder.exec_fpi(prefix, procedure_inputs, span)?;
 
     let borrow = exec.borrow();
     let results_storage = borrow.results();
@@ -179,4 +177,74 @@ pub(crate) fn store_results_to_pointer<B: ?Sized + Builder>(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+    use core::cell::RefCell;
+
+    use midenc_hir::{
+        Ident, Visibility,
+        dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+    };
+
+    use super::*;
+    use crate::{
+        component::test_support::world_with_core_module,
+        module::function_builder_ext::{FunctionBuilderContext, SSABuilderListener},
+    };
+
+    #[test]
+    fn raw_fpi_wrapper_preserves_executor_prefix_and_payload_order() {
+        let (context, _world_builder, mut module_builder) = world_with_core_module();
+        let function = module_builder
+            .define_function(
+                Ident::from("raw_fpi_order"),
+                Visibility::Internal,
+                Signature::new(&context, [Type::I32, Type::I32], []),
+            )
+            .unwrap();
+        let builder_context = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+        let mut builder = midenc_hir::OpBuilder::new(context)
+            .with_listener(SSABuilderListener::new(builder_context));
+        let mut fb = FunctionBuilderExt::new(function, &mut builder);
+        let entry = fb.current_block();
+        fb.seal_block(entry);
+        let args = entry
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|arg| *arg as ValueRef)
+            .collect::<Vec<_>>();
+        fpi_indirect_return_via_pointer(function, &args, &mut fb).unwrap();
+        fb.ret(None, SourceSpan::UNKNOWN).unwrap();
+        drop(fb);
+
+        let mut loads = Vec::new();
+        let mut calls = 0;
+        function.borrow().as_operation().prewalk_all(|op| {
+            assert!(op.downcast_ref::<midenc_dialect_hir::StoreLocal>().is_none());
+            if let Some(load) = op.downcast_ref::<midenc_dialect_hir::Load>() {
+                loads.push(load.results()[0].borrow().as_value_ref());
+            }
+            if let Some(exec) = op.downcast_ref::<ExecFpi>() {
+                calls += 1;
+                assert_eq!(loads.len(), ExecFpi::EXECUTOR_INPUT_FELTS);
+                let prefix = exec
+                    .prefix()
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<Vec<_>>();
+                let payload = exec
+                    .inputs()
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<Vec<_>>();
+                assert_eq!(prefix, [loads[1], loads[0], loads[2], loads[3], loads[4], loads[5]]);
+                assert_eq!(payload, loads[6..]);
+            }
+        });
+        assert_eq!(calls, 1);
+    }
 }

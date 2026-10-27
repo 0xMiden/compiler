@@ -35,18 +35,6 @@ pub(super) fn build_fpi_test_packages(
     (counter_package, caller_note_package, counter_storage_slot)
 }
 
-/// Builds isolated account and note projects for an FPI test case whose note is expected to be
-/// rejected, and returns the note package's compilation error.
-pub(super) fn build_fpi_test_packages_err(
-    test_name: &str,
-    counter_source: &str,
-    caller_source: &str,
-) -> String {
-    let (_, note_project, _) =
-        build_fpi_account_and_note_project(test_name, counter_source, caller_source);
-    compile_rust_package_err(note_project.root(), true)
-}
-
 /// Compiles the account package of an FPI test case and writes the note project depending on it.
 fn build_fpi_account_and_note_project(
     test_name: &str,

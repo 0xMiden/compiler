@@ -1,4 +1,4 @@
-//! Operand-stack pressure, spill analysis/transform, and select scheduling.
+//! Operand-stack pressure, physical spill placement, and select scheduling.
 
 use super::super::harness::{run_case, run_case_with_flags};
 
@@ -10,16 +10,14 @@ fn select_sched() {
 }
 
 /// Right-leaning single-use expression tree — ~20 simultaneously-live
-/// operand-stack values, exercising spill analysis/transform.
+/// operand-stack values, exercising physical spill placement.
 #[test]
 fn stack_pressure() {
     run_case("stack_pressure", include_str!("../cases/case_stack_pressure.rs"));
 }
 
 /// Ten u64s (20 felts) live across a branch and partially past its join —
-/// CFG-form spills/reloads across control-flow edges and phi insertion
-/// (`rewrite_cfg_spills`/`insert_required_phis`), beyond the single-block
-/// spill path stack_pressure covers.
+/// Physical edge transfers preserve values across structured control-flow joins.
 #[test]
 fn spill_branch() {
     run_case("spill_branch", include_str!("../cases/case_spill_branch.rs"));

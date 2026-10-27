@@ -40,7 +40,10 @@ impl IndexSwitchRemoveUnusedResults {
 
         // Replace the yield op with one that returns only the used values.
         let op = { dest.borrow().terminator().unwrap() };
-        let mut yield_op = op.try_downcast_op::<Yield>().unwrap();
+        let Ok(mut yield_op) = op.try_downcast_op::<Yield>() else {
+            // Returns and traps do not forward region results.
+            return;
+        };
 
         let mut used_operands = SmallVec::<[ValueRef; 4]>::with_capacity(used_results.len());
         {
@@ -215,6 +218,263 @@ mod tests {
         let output = normalize_hir(&format!("{}", test.function().as_operation_ref().borrow()));
         expect_file!["expected/index_switch_remove_unused_results_after.hir"].assert_eq(&output);
 
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod terminal_region_tests {
+    use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
+    use midenc_hir::{
+        dialects::builtin::BuiltinOpBuilder,
+        patterns::{PatternRewriter, RewriterListener},
+        testing::Test,
+    };
+
+    use super::*;
+
+    struct BorrowingListener;
+
+    impl Listener for BorrowingListener {
+        fn kind(&self) -> ListenerType {
+            ListenerType::Rewriter
+        }
+
+        fn notify_operation_inserted(&self, op: OperationRef, _: ProgramPoint) {
+            if let Some(next) = op.next() {
+                let _ = next.borrow();
+            }
+        }
+    }
+
+    impl RewriterListener for BorrowingListener {
+        fn notify_operation_modified(&self, op: OperationRef) {
+            let _ = op.borrow();
+        }
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum ResultShape {
+        Zero,
+        Unused,
+        One,
+        Two,
+    }
+
+    #[test]
+    fn terminal_regions_preserve_identity_and_result_order() -> Result<(), Report> {
+        for returns in [false, true] {
+            for terminal_first in [false, true] {
+                for terminal_count in [0usize, 1, 2] {
+                    for shape in
+                        [ResultShape::Zero, ResultShape::Unused, ResultShape::One, ResultShape::Two]
+                    {
+                        let outputs = if shape == ResultShape::Two {
+                            &[Type::U32, Type::U64][..]
+                        } else {
+                            &[Type::U32][..]
+                        };
+                        let mut test = Test::new(
+                            "terminal_regions",
+                            &[Type::U32, Type::U32, Type::U64, Type::U32],
+                            outputs,
+                        );
+                        let span = SourceSpan::default();
+                        let mut builder = test.function_builder();
+                        let entry = builder.entry_block();
+                        let args = entry
+                            .borrow()
+                            .arguments()
+                            .iter()
+                            .map(|arg| arg.upcast())
+                            .collect::<SmallVec<[ValueRef; 4]>>();
+                        let condition = args[0];
+                        let values = [args[1], args[2], args[3]];
+                        let types = if shape == ResultShape::Zero {
+                            SmallVec::<[Type; 3]>::new()
+                        } else {
+                            [Type::U32, Type::U64, Type::U32].into_iter().collect()
+                        };
+                        let structured = builder.index_switch(condition, [1], &types, span)?;
+                        let regions = [
+                            structured.borrow().get_case_region(0),
+                            structured.borrow().default_region().as_region_ref(),
+                        ];
+                        let mut terminals = SmallVec::<[(usize, OperationRef); 2]>::new();
+                        let mut yields = SmallVec::<[(usize, OperationRef); 2]>::new();
+                        for (index, region) in regions.into_iter().enumerate() {
+                            let block = builder.create_block_in_region(region);
+                            builder.switch_to_block(block);
+                            if terminal_count == 2
+                                || (terminal_count == 1 && (index == 0) == terminal_first)
+                            {
+                                let terminal = if returns {
+                                    builder
+                                        .ret(
+                                            if shape == ResultShape::Two {
+                                                alloc::vec![args[3], args[2]]
+                                            } else {
+                                                alloc::vec![args[3]]
+                                            },
+                                            span,
+                                        )?
+                                        .as_operation_ref()
+                                } else {
+                                    builder.unreachable(span).as_operation_ref()
+                                };
+                                terminals.push((index, terminal));
+                            } else {
+                                let yielded = if types.is_empty() {
+                                    &values[..0]
+                                } else {
+                                    &values[..]
+                                };
+                                yields.push((
+                                    index,
+                                    builder
+                                        .r#yield(yielded.iter().copied(), span)?
+                                        .as_operation_ref(),
+                                ));
+                            }
+                        }
+                        builder.switch_to_block(entry);
+                        let result = if matches!(shape, ResultShape::One | ResultShape::Two) {
+                            structured.borrow().results()[2].upcast()
+                        } else {
+                            args[1]
+                        };
+                        let returned = if shape == ResultShape::Two {
+                            alloc::vec![result, structured.borrow().results()[1].upcast()]
+                        } else {
+                            alloc::vec![result]
+                        };
+                        let user = builder.ret(returned, span)?.as_operation_ref();
+                        let op = structured.as_operation_ref();
+                        let function = test.function().as_operation_ref();
+                        function.borrow().recursively_verify()?;
+                        let before = alloc::format!("{}", function.borrow());
+                        let mut rewriter = PatternRewriter::new_with_listener(
+                            test.context_rc(),
+                            BorrowingListener,
+                        );
+                        rewriter.set_insertion_point_before(op);
+                        let changed = IndexSwitchRemoveUnusedResults::new(test.context_rc())
+                            .match_and_rewrite(op, &mut *rewriter)?;
+                        assert_eq!(changed, shape != ResultShape::Zero);
+                        let replacement_op = if changed {
+                            user.prev().expect("replacement precedes user")
+                        } else {
+                            op
+                        };
+                        assert!(replacement_op.borrow().is::<IndexSwitch>());
+                        let expected_types: &[Type] = match shape {
+                            ResultShape::Zero | ResultShape::Unused => &[],
+                            ResultShape::One => &[Type::U32],
+                            ResultShape::Two => &[Type::U64, Type::U32],
+                        };
+                        let actual_types = replacement_op
+                            .borrow()
+                            .results()
+                            .iter()
+                            .map(|result| result.borrow().ty().clone())
+                            .collect::<SmallVec<[Type; 3]>>();
+                        assert_eq!(actual_types.as_slice(), expected_types);
+                        if changed {
+                            if matches!(shape, ResultShape::One | ResultShape::Two) {
+                                let result_index = if shape == ResultShape::Two { 1 } else { 0 };
+                                assert_eq!(
+                                    user.borrow().operands()[0].borrow().as_value_ref(),
+                                    replacement_op.borrow().results()[result_index].upcast()
+                                );
+                                if shape == ResultShape::Two {
+                                    assert_eq!(
+                                        user.borrow().operands()[1].borrow().as_value_ref(),
+                                        replacement_op.borrow().results()[0].upcast()
+                                    );
+                                }
+                            }
+                            let replacement = user.borrow().operands()[0].borrow().as_value_ref();
+                            if matches!(shape, ResultShape::One | ResultShape::Two) {
+                                assert_eq!(replacement.borrow().ty(), &Type::U32);
+                                for (_, yielded) in &yields {
+                                    let expected = if shape == ResultShape::Two {
+                                        &values[1..3]
+                                    } else {
+                                        &values[2..3]
+                                    };
+                                    let actual = yielded
+                                        .borrow()
+                                        .operands()
+                                        .iter()
+                                        .map(|operand| operand.borrow().as_value_ref())
+                                        .collect::<SmallVec<[ValueRef; 3]>>();
+                                    assert_eq!(actual.as_slice(), expected);
+                                }
+                            } else {
+                                for (_, yielded) in &yields {
+                                    assert_eq!(yielded.borrow().num_operands(), 0);
+                                }
+                            }
+                        } else {
+                            assert_eq!(before, alloc::format!("{}", function.borrow()));
+                        }
+                        let returned_values = [args[3], args[2]];
+                        let replacement_regions = {
+                            let replacement = replacement_op.borrow();
+                            let replacement = replacement.downcast_ref::<IndexSwitch>().unwrap();
+                            [
+                                replacement.get_case_region(0),
+                                replacement.default_region().as_region_ref(),
+                            ]
+                        };
+                        for (region_index, yielded) in yields {
+                            let expected_block = replacement_regions[region_index]
+                                .borrow()
+                                .entry_block_ref()
+                                .unwrap();
+                            assert_eq!(yielded.parent(), Some(expected_block));
+                            assert_eq!(expected_block.borrow().terminator(), Some(yielded));
+                        }
+                        for (region_index, terminal) in terminals {
+                            assert_eq!(
+                                terminal.parent(),
+                                replacement_regions[region_index].borrow().entry_block_ref()
+                            );
+                            assert_eq!(
+                                replacement_regions[region_index].borrow().entry().terminator(),
+                                Some(terminal)
+                            );
+                            let operands = terminal
+                                .borrow()
+                                .operands()
+                                .iter()
+                                .map(|o| o.borrow().as_value_ref())
+                                .collect::<SmallVec<[ValueRef; 2]>>();
+                            assert_eq!(
+                                operands.as_slice(),
+                                if returns {
+                                    if shape == ResultShape::Two {
+                                        &returned_values[..]
+                                    } else {
+                                        &args[3..4]
+                                    }
+                                } else {
+                                    &args[0..0]
+                                }
+                            );
+                        }
+                        function.borrow().recursively_verify()?;
+                        test.apply_boxed_pass(
+                            alloc::boxed::Box::new(midenc_hir_transform::Canonicalizer::new(
+                                midenc_hir::patterns::GreedyRewriteConfig::default(),
+                                true,
+                            )),
+                            true,
+                        )?;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

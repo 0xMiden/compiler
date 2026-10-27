@@ -41,6 +41,7 @@ const EXPECTED_BUMPS: u64 = 2;
 /// Arguments the dispatcher passes to the `Word`-returning `pack` procedure, mirroring the fixed
 /// values spelled in the dispatcher source.
 const PACK_A: u64 = 7;
+
 const PACK_B: u64 = 11;
 
 /// Dispatches the four signature shapes at the edges of what a dispatched call supports: a
@@ -153,7 +154,7 @@ fn dispatches_bool_wide_unit_and_word_signatures() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["15060"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["15958"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The dispatcher recorded the low and high halves of the `u64` sum it received.
     let committed_storage = chain.committed_account(account.id()).unwrap().storage();

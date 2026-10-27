@@ -241,8 +241,9 @@ pub struct SymbolMap {
     /// single-segment names at one lookup per path component in [SymbolMap::lookup_prefix].
     max_name_segments: usize,
 }
+
 /// An empty map, whose `max_name_segments` starts at 1: every name has at least one segment, so
-/// [SymbolMap::lookup_prefix] tries no multi-segment names until one is registered.
+/// `SymbolMap::lookup_prefix` tries no multi-segment names until one is registered.
 impl Default for SymbolMap {
     fn default() -> Self {
         Self {
@@ -253,6 +254,7 @@ impl Default for SymbolMap {
         }
     }
 }
+
 impl SymbolMap {
     /// Build a [SymbolMap] on the fly from the given operation.
     ///
@@ -387,7 +389,7 @@ impl SymbolMap {
     /// returned.
     ///
     /// Path components are matched against symbol names as described in
-    /// [SymbolMap::lookup_prefix].
+    /// `SymbolMap::lookup_prefix`.
     pub fn resolve(&self, symbol_table: &Operation, attr: &SymbolPath) -> Option<OperationRef> {
         let components = attr.components().collect::<SmallVec<[SymbolNameComponent; 4]>>();
 
@@ -679,11 +681,13 @@ pub enum Symbols<'a> {
     /// The symbol map is being borrowed (typically from the [SymbolTable] operation)
     Borrowed(&'a SymbolMap),
 }
+
 impl From<SymbolMap> for Symbols<'_> {
     fn from(value: SymbolMap) -> Self {
         Self::Owned(value)
     }
 }
+
 impl core::ops::Deref for Symbols<'_> {
     type Target = SymbolMap;
 
@@ -704,11 +708,13 @@ pub enum SymbolsMut<'a> {
     /// The symbol map is being borrowed (typically from the [SymbolTable] operation)
     Borrowed(&'a mut SymbolMap),
 }
+
 impl From<SymbolMap> for SymbolsMut<'_> {
     fn from(value: SymbolMap) -> Self {
         Self::Owned(value)
     }
 }
+
 impl core::ops::Deref for SymbolsMut<'_> {
     type Target = SymbolMap;
 
@@ -719,6 +725,7 @@ impl core::ops::Deref for SymbolsMut<'_> {
         }
     }
 }
+
 impl core::ops::DerefMut for SymbolsMut<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         match self {
@@ -805,6 +812,7 @@ pub struct SymbolManagerMut<'a> {
     /// This information can either be computed dynamically, or cached by the operation itself.
     symbols: SymbolsMut<'a>,
 }
+
 impl<'a> SymbolManagerMut<'a> {
     /// Create a new [SymbolManager] from the given operation and symbol mappings
     pub fn new(symbol_table: &'a mut Operation, symbols: SymbolsMut<'a>) -> Self {

@@ -1,10 +1,15 @@
 use super::*;
 
-/// This implements a stack data structure for [ValueOrAlias]
+/// The shuffle solver's stack of grouped value occurrences.
+///
+/// Index zero is the top, while the backing vector and `iter()` run bottom to top. Constructing
+/// from an iterator takes top-first values and reverses them. Widths stay on each value so tactics
+/// can translate grouped operand indices into actual raw-lane depths; this is not a VM stack.
 #[derive(Default, Debug, Clone)]
-pub struct Stack {
+pub(crate) struct Stack {
     stack: Vec<ValueOrAlias>,
 }
+
 impl FromIterator<ValueOrAlias> for Stack {
     fn from_iter<I>(iter: I) -> Self
     where
@@ -16,15 +21,7 @@ impl FromIterator<ValueOrAlias> for Stack {
         Self { stack }
     }
 }
-impl From<&crate::OperandStack> for Stack {
-    fn from(stack: &crate::OperandStack) -> Self {
-        Self::from_iter(stack.iter().rev().map(|o| {
-            o.as_value()
-                .unwrap_or_else(|| panic!("expected value operand, got {o:#?}"))
-                .into()
-        }))
-    }
-}
+
 impl Stack {
     pub fn len(&self) -> usize {
         self.stack.len()
@@ -100,6 +97,7 @@ impl Stack {
         self.stack.get(len - index - 1)
     }
 }
+
 impl core::ops::Index<usize> for Stack {
     type Output = ValueOrAlias;
 
@@ -112,6 +110,7 @@ impl core::ops::Index<usize> for Stack {
         &self.stack[index]
     }
 }
+
 impl core::ops::IndexMut<usize> for Stack {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         let len = self.stack.len();

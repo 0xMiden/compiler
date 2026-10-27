@@ -174,6 +174,7 @@ define_unaligned_16bit_load_tests!(
     load_unaligned_u16_offset_2,
     load_unaligned_u16
 );
+
 define_unaligned_16bit_load_tests!(
     run_load_unaligned_i16,
     i16,
@@ -182,3 +183,79 @@ define_unaligned_16bit_load_tests!(
     load_unaligned_i16_offset_2,
     load_unaligned_i16
 );
+
+/// Execute the public intrinsic itself, linked from the production MASM owner.
+pub(super) fn check_u16_intrinsic(body: &str, succeeds: bool) {
+    use miden_processor::{FastProcessor, StackInputs};
+    let mut assembler = miden_assembly::Assembler::default();
+    assembler
+        .link_package(
+            crate::end_to_end::support::toolchain_core_package(),
+            miden_assembly::Linkage::Dynamic,
+        )
+        .unwrap();
+    assembler
+        .compile_and_statically_link_from_root(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../../codegen/masm/intrinsics/mod.masm"),
+            Some(miden_assembly::Path::new("intrinsics")),
+        )
+        .unwrap();
+    let package = assembler
+        .assemble_program(
+            "u16_footprint",
+            format!("begin {body} exec.::miden::core::sys::truncate_stack end"),
+        )
+        .unwrap();
+    let program = package.try_into_program().unwrap();
+    let mut host = crate::end_to_end::support::default_host_with_core_package();
+    let result = FastProcessor::new(StackInputs::default()).execute_sync(&program, &mut host);
+    if succeeds {
+        result.unwrap();
+    } else {
+        assert!(result.is_err(), "expected helper to trap");
+    }
+}
+
+#[test]
+fn public_load_u16_touches_only_requested_cells() {
+    for offset in 0..=2 {
+        let expected = (0x1234_abcd_u32 >> (offset * 8)) & 0xffff;
+        check_u16_intrinsic(
+            &format!(
+                "push.1099511627783 mem_store.17 push.305441741 mem_store.16 push.{offset}.16 \
+                 exec.::intrinsics::mem::load_u16 push.{expected} assert_eq mem_load.17 \
+                 push.1099511627783 assert_eq"
+            ),
+            true,
+        );
+    }
+    check_u16_intrinsic(
+        "push.305441741 mem_store.4294967295 push.2.4294967295 exec.::intrinsics::mem::load_u16 \
+         push.4660 assert_eq",
+        true,
+    );
+    check_u16_intrinsic(
+        "push.305441741 mem_store.16 push.86 mem_store.17 push.3.16 \
+         exec.::intrinsics::mem::load_u16 push.22034 assert_eq",
+        true,
+    );
+    for offset in [4, u32::MAX] {
+        check_u16_intrinsic(
+            &format!("push.{offset}.16 exec.::intrinsics::mem::load_u16 drop"),
+            false,
+        );
+    }
+    for offset in 0..=3 {
+        check_u16_intrinsic(
+            &format!(
+                "push.1099511627783 mem_store.16 push.{offset}.16 \
+                 exec.::intrinsics::mem::load_u16 drop"
+            ),
+            false,
+        );
+    }
+    check_u16_intrinsic(
+        "push.1099511627783 mem_store.17 push.3.16 exec.::intrinsics::mem::load_u16 drop",
+        false,
+    );
+}

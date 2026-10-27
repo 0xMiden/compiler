@@ -53,13 +53,11 @@ pub const MAX_FLAT_PARAMS: usize = 16;
 /// are transferred through memory.
 pub const MAX_FLAT_RESULTS: usize = 1;
 
-/// Maximum operand stack felts a direct cross-context wrapper call may require.
+/// Maximum argument or result felts at an actual target context boundary.
 ///
-/// Calls pass all their operands on the MASM operand stack, whose directly addressable window is
-/// [`MIN_STACK_DEPTH`] elements, so a generated wrapper cannot be invoked with more felts of
-/// flattened parameters than that (including the canonical ABI output pointer, when present).
-/// This is a Miden VM constraint, distinct from the spec's count-based [`MAX_FLAT_PARAMS`]: a
-/// signature can stay within 16 flat values while 64-bit values expand it past the window.
+/// This Miden capacity is independent of canonical source flat-value counts. Same-context
+/// wrappers may receive wider signatures, including invocation metadata and canonical output
+/// pointers, which are separated before applying this limit to the actual target payload.
 pub const MAX_DIRECT_STACK_FELTS: usize = MIN_STACK_DEPTH;
 
 indices! {
@@ -268,6 +266,7 @@ pub enum ComponentItem {
     ComponentInstance(ComponentInstanceIndex),
     Type(component_types::ComponentAnyTypeId),
 }
+
 impl ComponentItem {
     pub(crate) fn unwrap_instance(&self) -> ComponentInstanceIndex {
         match self {

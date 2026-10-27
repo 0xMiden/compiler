@@ -26,6 +26,7 @@ use crate::{
 /// Advice-map keys under which the sorted note lists are provided to the kernel. Must match the
 /// key constants baked into the fixture's `prologue.rs`.
 const INPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::input_note_list";
+
 const OUTPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::output_note_list";
 
 /// Byte address (in Rust memory) at which the kernel writes its output words.
@@ -494,42 +495,42 @@ fn batch_kernel() {
     check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
 
     expect![[r#"
-        MAST bytes: 112257
+        MAST bytes: 119181
         VM cycles:
-        two transactions: 32454
-        partial erasure: 27897
-        all inputs erased: 22214
-        no notes: 11678
-        eight transactions, 64 notes: 304016
-        tampered batch: 1087
-        tampered header: 2173
-        tampered input preimage: 14824
-        tampered output preimage: 17338
-        empty batch: 341
-        too many transactions: 324
-        unaligned transactions: 300
-        short header: 1811
-        long header: 1811
-        too many input notes: 14409
-        too many output notes: 16928
-        unaligned input preimage: 14385
-        unaligned output preimage: 16904
-        missing input list: 14875
-        duplicated input list: 6603
-        descending input list: 6425
-        phantom input list: 29148
-        oversized input list: 4544
-        unaligned input list: 4520
-        missing output list: 26083
-        duplicated output list: 8647
-        descending output list: 8469
-        phantom output list: 28728
-        oversized output list: 6576
-        unaligned output list: 6552
-        input note id mismatch: 21722
-        phantom erasure: 23968
-        consume before create: 15346
-        same transaction erasure: 13793
+        two transactions: 34635
+        partial erasure: 29715
+        all inputs erased: 23743
+        no notes: 12474
+        eight transactions, 64 notes: 326274
+        tampered batch: 1125
+        tampered header: 2379
+        tampered input preimage: 15807
+        tampered output preimage: 18520
+        empty batch: 342
+        too many transactions: 325
+        unaligned transactions: 301
+        short header: 1928
+        long header: 1928
+        too many input notes: 15369
+        too many output notes: 18084
+        unaligned input preimage: 15345
+        unaligned output preimage: 18045
+        missing input list: 15907
+        duplicated input list: 7138
+        descending input list: 6947
+        phantom input list: 31227
+        oversized input list: 4925
+        unaligned input list: 4901
+        missing output list: 28010
+        duplicated output list: 9309
+        descending output list: 9118
+        phantom output list: 30801
+        oversized output list: 7099
+        unaligned output list: 7075
+        input note id mismatch: 23249
+        phantom erasure: 25635
+        consume before create: 16441
+        same transaction erasure: 14752
     "#]]
     .assert_eq(&metrics);
 }

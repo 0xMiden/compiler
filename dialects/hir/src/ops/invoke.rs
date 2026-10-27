@@ -1,10 +1,10 @@
 use alloc::format;
 
 use midenc_hir::{
-    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    derive::{EffectOpInterface, operation},
     dialects::builtin::{
         FunctionTable,
-        attributes::{LocalVariableArrayAttr, Signature, SignatureAttr, U32Attr},
+        attributes::{Signature, SignatureAttr, U32Attr},
     },
     effects::*,
     interner::symbols,
@@ -210,25 +210,19 @@ impl OpParser for Exec {
 
 /// Invoke a foreign account procedure via the transaction kernel FPI executor.
 ///
-/// This op is the canonical HIR form of a foreign procedure invocation, targeting
-/// `miden::protocol::tx::execute_foreign_procedure`. Its operands are the flattened procedure
-/// input felts (at most [`ExecFpi::MAX_INPUT_FELTS`]), while `prefix_locals` references the six
-/// function locals holding the executor prefix in protocol order: account id suffix, account id
-/// prefix, and the four procedure root felts. The locals must be stored before this op executes.
-///
-/// Keeping the prefix in locals means lowering only ever schedules the procedure inputs on the
-/// operand stack: it pads them with zeroes to [`ExecFpi::MAX_INPUT_FELTS`], then loads the six
-/// locals on top to form the full [`ExecFpi::EXECUTOR_INPUT_FELTS`]-felt executor ABI without any
-/// stack shuffling beyond the addressable 16-element window.
-#[derive(EffectOpInterface, OpPrinter, OpParser)]
+/// Its six `prefix` operands are felts in executor order: account id suffix, account id
+/// prefix, and four procedure-root elements. `inputs` contains at most sixteen flattened
+/// procedure input felts. Every operand is a semantic use; storage and stack preparation are
+/// assigned by the backend. The executor returns sixteen felts.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
 pub struct ExecFpi {
-    #[attr]
-    prefix_locals: LocalVariableArrayAttr,
+    #[operands]
+    prefix: IntFelt,
     #[operands]
     inputs: IntFelt,
     #[results]
@@ -242,7 +236,7 @@ impl ExecFpi {
     pub const EXECUTOR_RESULT_FELTS: usize = 16;
     /// Maximum number of flattened procedure input felts accepted by the executor.
     pub const MAX_INPUT_FELTS: usize = 16;
-    /// Number of executor prefix felts referenced by `prefix_locals`.
+    /// Number of semantic executor prefix operands.
     pub const PREFIX_FELTS: usize = 6;
 
     /// Returns the symbol path of the transaction kernel FPI executor.
@@ -257,6 +251,36 @@ impl ExecFpi {
     }
 }
 
+impl OpPrinter for ExecFpi {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        printer.print_space();
+        *printer += const_text("[");
+        printer.print_value_uses(self.prefix().as_value_range());
+        *printer += const_text("](");
+        printer.print_value_uses(self.inputs().as_value_range());
+        *printer += const_text(")");
+        print_optional_attributes(printer, &self.op);
+    }
+}
+
+impl OpParser for ExecFpi {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        // Explicit delimiters retain both semantic groups, including an empty payload.
+        for delimiter in [parse::Delimiter::Bracket, parse::Delimiter::Paren] {
+            let mut operands = SmallVec::default();
+            parser.parse_operand_list(&mut operands, delimiter, true, None)?;
+            let types = alloc::vec![Type::Felt; operands.len()];
+            let mut values = SmallVec::default();
+            parser.resolve_operands(state.span, &operands, &types, &mut values)?;
+            state.operands.push(values);
+        }
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+        Ok(())
+    }
+}
+
 impl InferTypeOpInterface for ExecFpi {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         if self.inputs().len() > Self::MAX_INPUT_FELTS {
@@ -267,11 +291,26 @@ impl InferTypeOpInterface for ExecFpi {
             )));
         }
 
-        let num_prefix_locals = self.get_prefix_locals().len();
-        if num_prefix_locals != Self::PREFIX_FELTS {
+        if self.prefix().len() != Self::PREFIX_FELTS {
             return Err(Report::msg(format!(
-                "invalid hir.exec_fpi: expected {} prefix local(s), but got {num_prefix_locals}",
+                "invalid hir.exec_fpi: expected {} prefix operand(s), but got {}",
                 Self::PREFIX_FELTS,
+                self.prefix().len(),
+            )));
+        }
+        for (index, operand) in self.prefix().iter().chain(self.inputs().iter()).enumerate() {
+            let ty = operand.borrow().as_value_ref().borrow().ty().clone();
+            if ty != Type::Felt {
+                return Err(Report::msg(format!(
+                    "invalid hir.exec_fpi: operand {index} must be felt, but got {ty}",
+                )));
+            }
+        }
+        if !self.op.results.is_empty() && self.op.results.len() != Self::EXECUTOR_RESULT_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_fpi: expected {} result(s), but got {}",
+                Self::EXECUTOR_RESULT_FELTS,
+                self.op.results.len(),
             )));
         }
 
@@ -782,11 +821,9 @@ impl CallOpInterface for Call {
 /// slot populated off-chain with a sibling component's procedure root. As with `hir.call`, the
 /// callee runs in a fresh context under `signature`, which must use the component-model calling
 /// convention: arguments are passed and results returned on the operand stack only. The MASM
-/// lowering spills the root to memory before placing the arguments, so the emitted code never
-/// holds both at once — but the root word and the arguments are still operands of the same
-/// operation, and all of them must be reachable within the 16-element operand stack window at
-/// once. That caps the flattened arguments at twelve felts, three fewer than [`ExecIndirect`]
-/// gets from its single-element table index; MASM legalization enforces the bound.
+/// lowering stages the root in an aligned scratch word before preparing arguments. The root
+/// does not count against the sixteen-felt argument window; both argument and result tuples
+/// are bounded at sixteen felts by the context-call ABI.
 ///
 /// The signature is the contract the lowering emits against, exactly as for [`ExecIndirect`];
 /// nothing ties it to the procedure the root names. A root that names no procedure of the
@@ -1057,7 +1094,7 @@ mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
         CallConv, CallOpInterface, Ident, Op, Operation, SourceSpan, Symbol, SymbolTable, Type,
-        UnsafeIntrusiveEntityRef, Usable, Visibility,
+        UnsafeIntrusiveEntityRef, Usable, ValueRef, Visibility,
         conversion::{
             TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
             verify_call_signature_operands_and_results,
@@ -1070,6 +1107,92 @@ mod tests {
 
     use super::{Dyncall, Exec, ExecIndirect};
     use crate::HirOpBuilder;
+
+    #[test]
+    fn semantic_exec_fpi_roundtrips_full_width_and_empty_payloads() {
+        for payload_width in [0, super::ExecFpi::MAX_INPUT_FELTS] {
+            let mut test = Test::new("fpi_roundtrip", &alloc::vec![Type::Felt; 6], &[]);
+            {
+                let mut builder = test.function_builder();
+                let args = builder
+                    .entry_block()
+                    .borrow()
+                    .arguments()
+                    .iter()
+                    .map(|arg| *arg as ValueRef)
+                    .collect::<alloc::vec::Vec<_>>();
+                let prefix: [ValueRef; 6] = args.as_slice().try_into().unwrap();
+                let payload =
+                    (0..payload_width).map(|i| args[i % 6]).collect::<alloc::vec::Vec<_>>();
+                builder.exec_fpi(prefix, payload, SourceSpan::UNKNOWN).unwrap();
+                builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+            }
+            let text = format!(
+                "{}",
+                <midenc_hir::dialects::builtin::Function as Op>::print(
+                    &test.function().borrow(),
+                    &Default::default()
+                )
+            );
+            let parsed = parse::parse_any(
+                ParserConfig {
+                    context: test.context_rc(),
+                    verify: true,
+                },
+                Uri::new("fpi_roundtrip.hir"),
+                text.as_str(),
+            )
+            .expect("semantic FPI syntax roundtrips");
+            let mut calls = 0;
+            parsed.borrow().postwalk_all(|op| {
+                if let Some(exec) = op.downcast_ref::<super::ExecFpi>() {
+                    calls += 1;
+                    assert_eq!(exec.prefix().len(), 6);
+                    assert_eq!(exec.inputs().len(), payload_width);
+                    assert_eq!(exec.results().len(), 16);
+                }
+            });
+            assert_eq!(calls, 1);
+        }
+    }
+
+    #[test]
+    fn exec_fpi_requires_six_felt_prefix_operands_and_felt_payload() {
+        use midenc_hir::BuilderExt;
+
+        for (prefix_len, payload_len, bad_operand, expected) in [
+            (5, 0, None, "expected 6 prefix operand(s)"),
+            (7, 0, None, "expected 6 prefix operand(s)"),
+            (6, 17, None, "expected at most 16 procedure input operand(s)"),
+            (6, 1, Some(0), "expected a field element, got u32"),
+            (6, 1, Some(6), "expected a field element, got u32"),
+        ] {
+            let mut test = Test::new("invalid_fpi", &[], &[]);
+            let mut builder = test.function_builder();
+            let operands = (0..prefix_len + payload_len)
+                .map(|index| {
+                    if bad_operand == Some(index) {
+                        builder.u32(index as u32, SourceSpan::UNKNOWN)
+                    } else {
+                        builder
+                            .felt(midenc_hir::Felt::new(index as u64).unwrap(), SourceSpan::UNKNOWN)
+                    }
+                })
+                .collect::<alloc::vec::Vec<_>>();
+            let result = builder
+                .builder_mut()
+                .create::<super::ExecFpi, (alloc::vec::Vec<ValueRef>, alloc::vec::Vec<ValueRef>)>(
+                    SourceSpan::UNKNOWN,
+                )(
+                operands[..prefix_len].to_vec(), operands[prefix_len..].to_vec()
+            );
+            let message = match result {
+                Err(error) => error.to_string(),
+                Ok(_) => panic!("malformed FPI must fail inference"),
+            };
+            assert!(message.contains(expected), "{message}");
+        }
+    }
 
     /// Build a module with a one-slot table and a `dispatch` function whose `hir.exec_indirect`
     /// declares `signature_params` but passes `argument_count` `u32` constants, then verify it.

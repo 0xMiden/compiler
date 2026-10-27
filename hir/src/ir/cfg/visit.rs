@@ -35,11 +35,13 @@ pub trait GraphVisitor {
 
 /// A useful no-op visitor for when you want the default behavior.
 pub struct DefaultGraphVisitor<T>(core::marker::PhantomData<T>);
+
 impl<T> Default for DefaultGraphVisitor<T> {
     fn default() -> Self {
         Self(core::marker::PhantomData)
     }
 }
+
 impl<T> GraphVisitor for DefaultGraphVisitor<T> {
     type Node = T;
 }
@@ -49,6 +51,7 @@ impl<T> GraphVisitor for DefaultGraphVisitor<T> {
 pub struct PreOrderIter<G>(LazyDfsVisitor<G, DefaultGraphVisitor<<G as Graph>::Node>>)
 where
     G: Graph;
+
 impl<G> PreOrderIter<G>
 where
     G: Graph,
@@ -68,12 +71,14 @@ where
         Self(LazyDfsVisitor::new_with_visited(root, DefaultGraphVisitor::default(), visited))
     }
 }
+
 impl<G> core::iter::FusedIterator for PreOrderIter<G>
 where
     G: Graph,
     <G as Graph>::Node: Eq,
 {
 }
+
 impl<G> Iterator for PreOrderIter<G>
 where
     G: Graph,
@@ -92,6 +97,7 @@ where
 pub struct PostOrderIter<G>(LazyDfsVisitor<G, DefaultGraphVisitor<<G as Graph>::Node>>)
 where
     G: Graph;
+
 impl<G> PostOrderIter<G>
 where
     G: Graph,
@@ -112,12 +118,14 @@ where
         Self(LazyDfsVisitor::new_with_visited(root, DefaultGraphVisitor::default(), visited))
     }
 }
+
 impl<G> core::iter::FusedIterator for PostOrderIter<G>
 where
     G: Graph,
     <G as Graph>::Node: Eq,
 {
 }
+
 impl<G> Iterator for PostOrderIter<G>
 where
     G: Graph,
@@ -166,6 +174,7 @@ struct VisitNode<T> {
     /// Set to `true` once this node has been handled by [GraphVisitor::on_node_reached]
     reached: bool,
 }
+
 impl<T> VisitNode<T>
 where
     T: Clone,
@@ -183,7 +192,7 @@ where
 
     /// Get the next successor of this node, and advance the `next_child` index
     ///
-    /// It is expected that the caller has already checked [is_empty]. Failing to do so
+    /// It is expected that the caller has already checked [Self::is_empty]. Failing to do so
     /// will cause this function to panic once all successors have been visited.
     pub fn pop_successor(&mut self) -> T {
         self.successors.pop().unwrap()

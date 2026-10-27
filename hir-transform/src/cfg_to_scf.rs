@@ -108,8 +108,8 @@ mod edges;
 mod transform;
 
 use midenc_hir::{
-    BlockRef, Builder, OpBuilder, Operation, OperationRef, Region, RegionRef, Report, SmallVec,
-    SourceSpan, Type, Value, ValueRange, ValueRef, WalkResult, adt::SmallSet,
+    AsValueRange, BlockRef, Builder, OpBuilder, Operation, OperationRef, Region, RegionRef, Report,
+    SmallVec, SourceSpan, Spanned, Type, Value, ValueRange, ValueRef, WalkResult, adt::SmallSet,
     dominance::DominanceInfo, traits::BranchOpInterface,
 };
 
@@ -302,11 +302,37 @@ pub fn transform_cfg_to_scf(
 ) -> Result<bool, Report> {
     {
         let region = region.borrow();
-        if region.is_empty() || region.has_one_block() {
+        if region.is_empty()
+            || (region.has_one_block()
+                && !region.entry_block_ref().unwrap().borrow().has_predecessors())
+        {
             return Ok(false);
         }
 
         check_transformation_preconditions(&region)?;
+    }
+
+    // Make the implicit initial activation explicit before discovering cycles. The former
+    // entry remains the target of back edges and retains its loop-carried arguments.
+    let entry = region.borrow().entry_block_ref().unwrap();
+    if entry.borrow().has_predecessors() {
+        let parent = region.parent().unwrap();
+        let parent = parent.borrow();
+        let context = parent.context_rc();
+        let span = parent.span();
+        drop(parent);
+        let mut preheader = context.create_block();
+        for argument in entry.borrow().arguments() {
+            let argument = argument.borrow();
+            context.append_block_argument(preheader, argument.ty().clone(), argument.span());
+        }
+        preheader.borrow_mut().insert_before(entry);
+        let arguments = preheader.borrow().arguments().as_value_range().into_owned();
+        let mut builder = OpBuilder::new(context);
+        builder.set_insertion_point_to_end(preheader);
+        let flag = interface.get_cfg_switch_value(span, &mut builder, 0);
+        interface.create_single_destination_branch(span, &mut builder, flag, entry, arguments)?;
+        dominance_info.invalidate_region(region);
     }
 
     let mut transform_ctx = TransformationContext::new(region, interface, dominance_info)?;
@@ -400,4 +426,402 @@ fn check_transformation_preconditions(region: &Region) -> Result<(), Report> {
     });
 
     walk_result.into_result()
+}
+
+#[cfg(test)]
+mod entry_cycle_tests {
+    use alloc::{boxed::Box, rc::Rc};
+
+    use midenc_hir::{
+        Context, Forward, OperationRef, RawWalk, Report,
+        diagnostics::Uri,
+        dialects::builtin::Function,
+        parse::{self, ParserConfig},
+        pass::{Nesting, PassManager},
+    };
+
+    fn lift(source: &str, entry_placeholder: bool) -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let function = parse::parse::<Function>(
+            ParserConfig::new(context.clone()),
+            Uri::new("entry-cycle.hir"),
+            source,
+        )?;
+        if entry_placeholder {
+            // Named function parameters require an unlabeled entry in textual HIR. Retarget
+            // the typed placeholder edges to construct the corresponding in-memory CFG.
+            let entry = function.borrow().body().entry_block_ref().unwrap();
+            let mut placeholder = function.borrow().body().body().back().as_pointer().unwrap();
+            function
+                .as_operation_ref()
+                .raw_prewalk_all::<Forward, _>(|mut op: OperationRef| {
+                    let mut op = op.borrow_mut();
+                    for index in 0..op.num_successors() {
+                        if op.successor(index).successor() == placeholder {
+                            op.successor_mut(index).set(entry);
+                        }
+                    }
+                });
+            placeholder.borrow_mut().erase();
+        }
+        let signature = function.borrow().signature().clone();
+        let mut passes = PassManager::on::<Function>(context, Nesting::Implicit);
+        passes.add_pass(Box::new(midenc_dialect_scf::transforms::LiftControlFlowToSCF));
+        passes.run(function.as_operation_ref())?;
+        assert_eq!(*function.borrow().signature(), signature);
+        function.as_operation_ref().borrow().recursively_verify()?;
+        function.as_operation_ref().raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+            assert!(!op.borrow().has_successors(), "unstructured branch remains");
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn entry_cycle_self_loop_without_arguments() -> Result<(), Report> {
+        lift(
+            r#"builtin.function public extern("C") @cycle() { ^entry: cf.br ^entry; };"#,
+            false,
+        )
+    }
+
+    #[test]
+    fn entry_cycle_self_loop_with_arguments() -> Result<(), Report> {
+        lift(
+            r#"builtin.function public extern("C") @cycle(%a: u32, %b: u64) {
+            cf.br ^back(%a, %b : u32, u64);
+            ^back(%x: u32, %y: u64): ub.unreachable;
+        };"#,
+            true,
+        )
+    }
+
+    #[test]
+    fn entry_cycle_multiple_blocks() -> Result<(), Report> {
+        lift(
+            r#"builtin.function public extern("C") @cycle() {
+            ^entry: cf.br ^next;
+            ^next: cf.br ^entry;
+        };"#,
+            false,
+        )
+    }
+
+    #[test]
+    fn entry_cycle_conditional_exit_with_mixed_arguments() -> Result<(), Report> {
+        lift(
+            r#"builtin.function public extern("C") @cycle(%a: u32, %b: u64) -> (u32, u64) {
+                %one = arith.constant 1 : u32;
+                %wide = arith.constant 7 : u64;
+                %next_a = arith.add %a, %one <{ overflow = #builtin.overflow<unchecked> }>;
+                %next_b = arith.add %b, %wide <{ overflow = #builtin.overflow<unchecked> }>;
+                %limit = arith.constant 4 : u32;
+                %done = arith.eq %next_a, %limit;
+                cf.cond_br %done ^exit, ^again : (i1);
+            ^again: cf.br ^back(%next_a, %next_b : u32, u64);
+            ^exit: builtin.ret %next_a, %next_b : (u32, u64);
+            ^back(%x: u32, %y: u64): ub.unreachable;
+        };"#,
+            true,
+        )
+    }
+
+    #[test]
+    fn entry_cycle_irreducible_region() -> Result<(), Report> {
+        lift(
+            r#"builtin.function public extern("C") @cycle(%c: i1) {
+                cf.cond_br %c ^left, ^right : (i1);
+            ^left: cf.cond_br %c ^right, ^exit : (i1);
+            ^right: cf.cond_br %c ^left, ^exit : (i1);
+            ^exit: builtin.ret;
+        };"#,
+            false,
+        )
+    }
+
+    #[test]
+    fn entry_cycle_acyclic_single_block() -> Result<(), Report> {
+        lift(
+            r#"builtin.function public extern("C") @cycle(%a: u32) -> u32 {
+            builtin.ret %a : u32;
+        };"#,
+            false,
+        )
+    }
+}
+
+#[cfg(test)]
+mod canonical_entry_tests {
+    use alloc::rc::Rc;
+
+    use midenc_hir::{
+        AsValueRange, Context, Region, Report, Spanned, Value,
+        diagnostics::Uri,
+        dialects::builtin::Function,
+        parse::{self, ParserConfig},
+        patterns::{RegionSimplificationLevel, RewriterImpl},
+    };
+
+    #[test]
+    fn canonical_redundant_two_arguments() -> Result<(), Report> {
+        redundant_arguments(false)
+    }
+
+    #[test]
+    fn canonical_redundant_mixed_arguments() -> Result<(), Report> {
+        redundant_arguments(true)
+    }
+
+    fn redundant_arguments(mixed: bool) -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = if mixed {
+            r#"builtin.function public extern("C") @args(%c: i1, %a: u32, %b: u64, %d: u32, %e: u32) -> (u32, u32, u64) {
+            cf.cond_br %c ^join(%a, %d, %b : u32, u32, u64), ^join(%a, %e, %b : u32, u32, u64) : (i1);
+        ^join(%x: u32, %retained: u32, %y: u64): builtin.ret %x, %retained, %y : (u32, u32, u64);
+        };"#
+        } else {
+            r#"builtin.function public extern("C") @args(%c: i1, %a: u32, %b: u64) -> (u32, u64) {
+            cf.cond_br %c ^join(%a, %b : u32, u64), ^join(%a, %b : u32, u64) : (i1);
+        ^join(%x: u32, %y: u64): builtin.ret %x, %y : (u32, u64);
+        };"#
+        };
+        let function = parse::parse::<Function>(
+            ParserConfig::new(context.clone()),
+            Uri::new("redundant.hir"),
+            source,
+        )?;
+        let entry = function.borrow().body().entry_block_ref().unwrap();
+        let join = function.borrow().body().body().back().as_pointer().unwrap();
+        let retained = if mixed {
+            Some(join.borrow().arguments()[1])
+        } else {
+            None
+        };
+        let region = function.borrow().body().as_region_ref();
+        let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+        let _ =
+            Region::simplify_all(&[region], &mut rewriter, RegionSimplificationLevel::Aggressive);
+        if let Some(retained) = retained {
+            assert_eq!(join.borrow().arguments().len(), 1);
+            assert_eq!(join.borrow().arguments()[0], retained);
+            let branch = entry.borrow().terminator().unwrap();
+            let branch = branch.borrow();
+            for i in 0..2 {
+                let operands = branch.successor(i).arguments;
+                assert_eq!(operands.len(), 1);
+                assert_eq!(
+                    operands[0].borrow().as_value_ref(),
+                    entry.borrow().arguments().as_value_range().get(3 + i).unwrap()
+                );
+            }
+        } else {
+            assert!(join.borrow().arguments().is_empty());
+        }
+        function.as_operation_ref().borrow().recursively_verify()?;
+        Ok(())
+    }
+
+    #[test]
+    fn canonical_entry_normal_preserves_initial_interface() -> Result<(), Report> {
+        preserve_entry(RegionSimplificationLevel::Normal, false)
+    }
+
+    #[test]
+    fn canonical_entry_aggressive_preserves_initial_interface() -> Result<(), Report> {
+        preserve_entry(RegionSimplificationLevel::Aggressive, false)
+    }
+
+    #[test]
+    fn canonical_entry_invariant_i1_normal_preserves_initial_interface() -> Result<(), Report> {
+        preserve_entry(RegionSimplificationLevel::Normal, true)
+    }
+
+    #[test]
+    fn canonical_entry_invariant_i1_aggressive_preserves_initial_interface() -> Result<(), Report> {
+        preserve_entry(RegionSimplificationLevel::Aggressive, true)
+    }
+
+    #[test]
+    fn canonical_entry_aggressive_region_preserves_initial_interface() -> Result<(), Report> {
+        preserve_entry_with_config(RegionSimplificationLevel::Aggressive, false, false)
+    }
+
+    fn preserve_entry(level: RegionSimplificationLevel, invariant: bool) -> Result<(), Report> {
+        preserve_entry_with_config(level, invariant, true)
+    }
+
+    fn preserve_entry_with_config(
+        level: RegionSimplificationLevel,
+        invariant: bool,
+        patterns: bool,
+    ) -> Result<(), Report> {
+        use alloc::{boxed::Box, vec::Vec};
+
+        use midenc_hir::{
+            pass::{Nesting, PassManager},
+            patterns::GreedyRewriteConfig,
+        };
+        let context = Rc::new(Context::default());
+        let source = r#"builtin.function public extern("C") @cycle(%a: u32, %b: u64) -> (u32, u64) {
+            %one = arith.constant 1 : u32;
+            %wide = arith.constant 7 : u64;
+            %next_a = arith.add %a, %one <{ overflow = #builtin.overflow<unchecked> }>;
+            %next_b = arith.add %b, %wide <{ overflow = #builtin.overflow<unchecked> }>;
+            %limit = arith.constant 4 : u32;
+            %done = arith.eq %next_a, %limit;
+            cf.cond_br %done ^exit, ^again : (i1);
+        ^again: cf.br ^placeholder(%next_a, %next_b : u32, u64);
+        ^exit: builtin.ret %next_a, %next_b : (u32, u64);
+        ^placeholder(%y: u32, %z: u64): builtin.ret %y, %z : (u32, u64);
+        };"#;
+        let source = if invariant {
+            source
+                .replace("@cycle(%a: u32, %b: u64)", "@cycle(%c: i1, %a: u32, %b: u64)")
+                .replace("cf.cond_br %done", "cf.cond_br %c")
+                .replace(
+                    "^placeholder(%next_a, %next_b : u32, u64)",
+                    "^placeholder(%c, %next_a, %next_b : i1, u32, u64)",
+                )
+                .replace("^placeholder(%y: u32, %z: u64)", "^placeholder(%x: i1, %y: u32, %z: u64)")
+        } else {
+            source.into()
+        };
+        let function = parse::parse::<Function>(
+            ParserConfig::new(context.clone()),
+            Uri::new("entry.hir"),
+            &source,
+        )?;
+        let entry = function.borrow().body().entry_block_ref().unwrap();
+        let args = entry.borrow().arguments().to_vec();
+        let initial = args
+            .iter()
+            .map(|arg| {
+                let arg = arg.borrow();
+                (arg.ty().clone(), arg.span())
+            })
+            .collect::<Vec<_>>();
+        let mut placeholder = function.borrow().body().body().back().as_pointer().unwrap();
+        let mut branch = placeholder
+            .borrow()
+            .get_single_predecessor()
+            .unwrap()
+            .borrow()
+            .terminator()
+            .unwrap();
+        let expected_backedge = branch
+            .borrow()
+            .successor(0)
+            .arguments
+            .iter()
+            .map(|operand| operand.borrow().as_value_ref())
+            .collect::<Vec<_>>();
+        let evolving_start = usize::from(invariant);
+        assert_eq!(expected_backedge.len(), evolving_start + 2);
+        if invariant {
+            assert_eq!(expected_backedge[0], args[0].borrow().as_value_ref());
+        }
+        for value in &expected_backedge[evolving_start..] {
+            assert!(
+                value
+                    .borrow()
+                    .get_defining_op()
+                    .unwrap()
+                    .borrow()
+                    .is::<midenc_dialect_arith::Add>()
+            );
+        }
+        branch.borrow_mut().successor_mut(0).set(entry);
+        placeholder.borrow_mut().erase();
+        function.as_operation_ref().borrow().recursively_verify()?;
+        let mut config = GreedyRewriteConfig::default();
+        config.with_region_simplification_level(level);
+        let mut passes = PassManager::on::<Function>(context.clone(), Nesting::Implicit);
+        if patterns {
+            passes.add_pass(Box::new(crate::Canonicalizer::new(config, true)));
+            passes.run(function.as_operation_ref())?;
+        } else {
+            let region = function.borrow().body().as_region_ref();
+            let mut rewriter: RewriterImpl = RewriterImpl::new(context.clone());
+            let _ = Region::simplify_all(&[region], &mut rewriter, level);
+        }
+        assert_eq!(
+            function.borrow().body().entry_block_ref(),
+            Some(entry),
+            "{}",
+            function.as_operation_ref().borrow()
+        );
+        assert_eq!(entry.borrow().arguments(), args.as_slice());
+        assert_eq!(
+            entry
+                .borrow()
+                .arguments()
+                .iter()
+                .map(|arg| {
+                    let arg = arg.borrow();
+                    (arg.ty().clone(), arg.span())
+                })
+                .collect::<Vec<_>>(),
+            initial
+        );
+        // Inspect the final incoming edges, including branches in any inserted split blocks.
+        // Types alone cannot distinguish evolving results from the initial entry arguments.
+        let mut backedges = 0;
+        for block in function.borrow().body().body().iter() {
+            let Some(op) = block.terminator() else {
+                continue;
+            };
+            let op = op.borrow();
+            for index in 0..op.num_successors() {
+                let target = op.successor(index);
+                if target.successor() == entry {
+                    backedges += 1;
+                    assert_eq!(
+                        target
+                            .arguments
+                            .iter()
+                            .map(|operand| operand.borrow().as_value_ref())
+                            .collect::<Vec<_>>(),
+                        expected_backedge
+                    );
+                }
+            }
+        }
+        assert!(
+            backedges > 0,
+            "the evolving backedge must remain at the canonicalization boundary"
+        );
+        function.as_operation_ref().borrow().recursively_verify()?;
+        let mut passes = PassManager::on::<Function>(context, Nesting::Implicit);
+        passes.add_pass(Box::new(midenc_dialect_scf::transforms::LiftControlFlowToSCF));
+        passes.run(function.as_operation_ref())?;
+        function.as_operation_ref().borrow().recursively_verify()?;
+        Ok(())
+    }
+
+    #[test]
+    fn canonical_entry_aggressive_visits_nested_regions() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let module = parse::parse::<midenc_hir::dialects::builtin::Module>(
+            ParserConfig::new(context.clone()),
+            Uri::new("nested.hir"),
+            r#"builtin.module public @outer {
+            builtin.function public extern("C") @nested(%c: i1, %x: u32, %y: u32) -> u32 {
+                cf.cond_br %c ^join(%x : u32), ^join(%x : u32) : (i1);
+            ^join(%ret: u32): builtin.ret %ret : (u32);
+            };
+        };"#,
+        )?;
+        let function = module.borrow().functions().next().unwrap();
+        let entry = function.borrow().body().entry_block_ref().unwrap();
+        let args = entry.borrow().arguments().to_vec();
+        let join = function.borrow().body().body().back().as_pointer().unwrap();
+        assert_eq!(join.borrow().arguments().len(), 1);
+        let region = module.borrow().body().as_region_ref();
+        let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+        let _ =
+            Region::simplify_all(&[region], &mut rewriter, RegionSimplificationLevel::Aggressive);
+        assert_eq!(entry.borrow().arguments(), args.as_slice());
+        assert!(join.borrow().arguments().is_empty());
+        function.as_operation_ref().borrow().recursively_verify()?;
+        Ok(())
+    }
 }

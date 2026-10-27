@@ -10,7 +10,7 @@ Most rewrite passes, at the time of writing, are maintained in the `midenc-hir-t
 - [Sparse Conditional Constant Propagation](#sparse-conditional-constant-propagation)
 - [Unstructured to Structured Control Flow Lifting](#control-flow-lifting)
 - [Control Flow Sinking](#control-flow-sinking)
-- [Spills](#spills)
+- [Physical Allocation](#physical-allocation)
 
 ## Region Simplification
 
@@ -102,10 +102,13 @@ The `ControlFlowSink` pass is generic, and will perform the transformation descr
 
 The `SinkOperandDefs` pass (which will be renamed in the near future), is designed specifically to move constant-like operations directly before their uses, and materialize copies if necessary so that each user gets its own copy. We do this to counter the effect of the control flow lifting transform and the canonicalizer, which both materialize constants in the entry block of a region. These constants then have overly broad live ranges that introduce a high likelihood of needing to spill values to memory. Furthermore, because the Miden VM is a stack machine, not a register machine, there is very little benefit to sharing constant definitions. Instead, by materializing constants immediately before they are used, we produce much more efficient code (as we do not need to shuffle the operand stack to access constants previously defined), and we significantly reduce the chances that we will need to spill values to memory.
 
-## Spills
+## Physical Allocation
 
-The `TransformSpills` pass, implemented in `midenc_dialect_hir`, applies the results of the `Spills` analysis described in [_Analyses_](analyses.md).
-
-It inserts all of the computed spills and reloads, and fixes up the IR to ensure that all uses of a spilled value, use the closest dominating reload or definition of that value.
-
-The resulting IR is guaranteed to keep the maximum operand stack pressure to 16 elements or less.
+Spill insertion and materialization are backend operations, not HIR rewrite passes.
+After representation legalization and final operand sinking, the
+[MASM selector](../../../codegen/masm/src/select/mod.rs) constructs the semantic graph.
+The [physical allocator](../../../codegen/masm/src/allocate/mod.rs) plans stack and
+frame storage, including spills and reloads, while preserving HIR SSA identities.
+Wide region interfaces remain intact; legality depends on each actual stack access,
+not a sixteen-element bound on HIR live values or region results. See
+[backend allocation analysis](analyses.md#backend-allocation-analysis).

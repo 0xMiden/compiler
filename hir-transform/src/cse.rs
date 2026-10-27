@@ -544,6 +544,7 @@ impl core::hash::Hash for OpKey {
 }
 
 impl Eq for OpKey {}
+
 impl PartialEq for OpKey {
     fn eq(&self, other: &Self) -> bool {
         use midenc_hir::equivalence::{DefaultValueEquivalence, OperationEquivalenceFlags};
@@ -1143,6 +1144,49 @@ builtin.function public extern("C") @different_attributes(%0: i32) -> (i32, i32)
     builtin.ret %2, %3 : (i32, i32);
 };
             "#
+        );
+    }
+
+    #[test]
+    fn generic_event_effect_order_survives_dce_cse_and_sinking() {
+        use midenc_dialect_hir::HirOpBuilder;
+        let mut test = Test::new("generic_barriers", &[Type::Felt], &[]);
+        {
+            let mut b = test.function_builder();
+            let id = b.entry_block().borrow().arguments()[0] as ValueRef;
+            b.emit_event(id, SourceSpan::UNKNOWN).unwrap();
+            b.emit_event_imm(midenc_hir::Felt::from(700001u32), SourceSpan::UNKNOWN)
+                .unwrap();
+            b.emit_event(id, SourceSpan::UNKNOWN).unwrap();
+            b.emit_event_imm(midenc_hir::Felt::from(700001u32), SourceSpan::UNKNOWN)
+                .unwrap();
+            b.ret([], SourceSpan::UNKNOWN).unwrap();
+        }
+        let expected = test
+            .function()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .map(|op| op.as_operation_ref())
+            .collect::<Vec<_>>();
+        test.apply_pass::<crate::DeadCodeElimination>(true).unwrap();
+        test.apply_pass::<CommonSubexpressionElimination>(true).unwrap();
+        test.apply_pass::<crate::ControlFlowSink>(true).unwrap();
+        test.apply_pass::<crate::SinkOperandDefs>(true).unwrap();
+        let actual = test
+            .function()
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .map(|op| op.as_operation_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            actual, expected,
+            "effectful events with dead results must retain identity and order"
         );
     }
 

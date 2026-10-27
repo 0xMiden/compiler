@@ -166,7 +166,10 @@ fn boundary_caller(library: std::sync::Arc<Package>, calls: usize) -> std::sync:
         .link_package(toolchain_core_package(), Linkage::Dynamic)
         .expect("core library package should link");
     let target = entrypoint(&library);
-    let calls = (0..calls).map(|_| format!("    call.{target}\n")).collect::<String>();
+    // Context calls may clobber every nonresult lane. Check each count before the next call.
+    let calls = (0..calls)
+        .map(|_| format!("    call.{target}\n    push.1\n    assert_eq\n"))
+        .collect::<String>();
     let source = format!("begin\n{calls}end\n");
     assembler
         .with_package(library, Linkage::Static)
@@ -206,13 +209,7 @@ fn a_trapping_component_start_prevents_entrypoint_execution() {
 fn each_library_boundary_call_initializes_one_fresh_non_reentrant_context() {
     let library = compile_library(COUNTING_START);
     let package = boundary_caller(library, 2);
-    let output = FastProcessor::new(StackInputs::default())
+    FastProcessor::new(StackInputs::default())
         .execute_sync(&package.unwrap_program(), &mut default_host_with_core_package())
-        .expect("both component boundary calls should execute");
-
-    assert_eq!(
-        output.stack.get_num_elements(2),
-        &[Felt::ONE, Felt::ONE],
-        "each fresh context must run start exactly once; the entrypoint's internal call must not"
-    );
+        .expect("each fresh context must run start exactly once, without reentrant initialization");
 }

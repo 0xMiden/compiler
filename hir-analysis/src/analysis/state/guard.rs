@@ -16,6 +16,7 @@ pub struct AnalysisStateGuard<'a, T: AnalysisState + 'static> {
     state: NonNull<T>,
     _borrow: BorrowRef<'a>,
 }
+
 impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     pub(crate) unsafe fn new(info: NonNull<AnalysisStateInfo>) -> Self {
         unsafe {
@@ -63,7 +64,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// The caller must ensure that `analysis` is owned by the [crate::DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
     fn subscribe_nonnull(guard: &Self, analysis: NonNull<dyn DataFlowAnalysis>) {
         let info = unsafe { guard.info.as_ref() };
@@ -71,12 +72,14 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuard<'a, T> {
         <T as AnalysisStateSubscriptionBehavior>::on_subscribe(state, analysis, info);
     }
 }
+
 impl<T: AnalysisState> AsRef<T> for AnalysisStateGuard<'_, T> {
     #[inline(always)]
     fn as_ref(&self) -> &T {
         unsafe { self.state.as_ref() }
     }
 }
+
 impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'_, T> {
     type Target = T;
 
@@ -85,16 +88,19 @@ impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuard<'_, T> {
         self.as_ref()
     }
 }
+
 impl<T: AnalysisState + core::fmt::Debug> core::fmt::Debug for AnalysisStateGuard<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Debug::fmt(self.as_ref(), f)
     }
 }
+
 impl<T: AnalysisState + core::fmt::Display> core::fmt::Display for AnalysisStateGuard<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Display::fmt(self.as_ref(), f)
     }
 }
+
 impl<T: AnalysisState> AnalysisState for AnalysisStateGuard<'_, T> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
@@ -113,6 +119,7 @@ pub struct AnalysisStateGuardMut<'a, T: AnalysisState + 'static> {
     _borrow: BorrowRefMut<'a>,
     changed: ChangeResult,
 }
+
 impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     pub(crate) unsafe fn new(
         info: NonNull<AnalysisStateInfo>,
@@ -225,7 +232,7 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
     ///
     /// # Safety
     ///
-    /// The caller must ensure that `analysis` is owned by the [DataFlowSolver], as that is the
+    /// The caller must ensure that `analysis` is owned by the [crate::DataFlowSolver], as that is the
     /// only situation in which it is safe for us to take the address of the analysis for later use.
     fn subscribe_nonnull(guard: &Self, analysis: NonNull<dyn DataFlowAnalysis>) {
         let info = unsafe { guard.info.as_ref() };
@@ -265,12 +272,14 @@ impl<'a, T: AnalysisState + 'static> AnalysisStateGuardMut<'a, T> {
         }
     }
 }
+
 impl<T: AnalysisState> AsRef<T> for AnalysisStateGuardMut<'_, T> {
     #[inline(always)]
     fn as_ref(&self) -> &T {
         unsafe { self.state.as_ref() }
     }
 }
+
 impl<T: AnalysisState> AsMut<T> for AnalysisStateGuardMut<'_, T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T {
@@ -285,6 +294,7 @@ impl<T: AnalysisState> AsMut<T> for AnalysisStateGuardMut<'_, T> {
         unsafe { self.state.as_mut() }
     }
 }
+
 impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuardMut<'_, T> {
     type Target = T;
 
@@ -293,27 +303,32 @@ impl<T: AnalysisState> core::ops::Deref for AnalysisStateGuardMut<'_, T> {
         self.as_ref()
     }
 }
+
 impl<T: AnalysisState> core::ops::DerefMut for AnalysisStateGuardMut<'_, T> {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_mut()
     }
 }
+
 impl<T: AnalysisState + 'static> Drop for AnalysisStateGuardMut<'_, T> {
     fn drop(&mut self) {
         self.notify_if_changed();
     }
 }
+
 impl<T: AnalysisState + core::fmt::Debug> core::fmt::Debug for AnalysisStateGuardMut<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Debug::fmt(self.as_ref(), f)
     }
 }
+
 impl<T: AnalysisState + core::fmt::Display> core::fmt::Display for AnalysisStateGuardMut<'_, T> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         core::fmt::Display::fmt(self.as_ref(), f)
     }
 }
+
 impl<T: AnalysisState> AnalysisState for AnalysisStateGuardMut<'_, T> {
     fn as_any(&self) -> &dyn Any {
         self.as_ref().as_any()
@@ -323,6 +338,7 @@ impl<T: AnalysisState> AnalysisState for AnalysisStateGuardMut<'_, T> {
         self.as_ref().anchor()
     }
 }
+
 impl<T: DenseLattice> DenseLattice for AnalysisStateGuardMut<'_, T> {
     type Lattice = <T as DenseLattice>::Lattice;
 
@@ -348,6 +364,7 @@ impl<T: DenseLattice> DenseLattice for AnalysisStateGuardMut<'_, T> {
         result
     }
 }
+
 impl<T: SparseLattice> SparseLattice for AnalysisStateGuardMut<'_, T> {
     type Lattice = <T as SparseLattice>::Lattice;
 

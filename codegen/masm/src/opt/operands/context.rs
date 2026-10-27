@@ -1,12 +1,17 @@
+use alloc::collections::BTreeMap;
 use core::num::NonZeroU8;
 
-use midenc_hir::{self as hir, FxHashMap, hashbrown};
+#[cfg(test)]
+use midenc_hir as hir;
+use midenc_hir::{FxHashMap, hashbrown};
 use smallvec::SmallVec;
 
 use super::{SolverError, SolverOptions, Stack, ValueOrAlias};
-use crate::{Constraint, OperandStack};
+use crate::Constraint;
+#[cfg(test)]
+use crate::OperandStack;
 
-/// The context associated with an instance of [OperandMovementConstraintSolver].
+/// The stack and copy obligations for one operand-shuffle search.
 ///
 /// Contained in this context is the current state of the stack, the expected operands, whether the
 /// expected operands may be out of order, the constraints on those operands, and metadata about
@@ -18,19 +23,93 @@ pub struct SolverContext {
     expected: Stack,
     copies: CopyInfo,
 }
+
 impl SolverContext {
+    #[cfg(test)]
     pub fn new(
         expected: &[hir::ValueRef],
         constraints: &[Constraint],
         stack: &OperandStack,
         options: SolverOptions,
     ) -> Result<Self, SolverError> {
+        // Preserve HIR identity ordering while removing all HIR references at this boundary.
+        let values: BTreeMap<_, _> = stack
+            .iter()
+            .rev()
+            .map(|operand| {
+                let value = operand.as_value().expect("expected a value operand");
+                (value.borrow().id(), value)
+            })
+            .chain(expected.iter().map(|value| (value.borrow().id(), *value)))
+            .collect();
+        let identities: BTreeMap<_, _> = values
+            .into_iter()
+            .enumerate()
+            .map(|(id, (key, value))| {
+                (key, ValueOrAlias::new(id as u32, value.borrow().ty().size_in_felts() as u8))
+            })
+            .collect();
+        let expected: Vec<_> =
+            expected.iter().map(|value| identities[&value.borrow().id()]).collect();
+        let stack: Vec<_> = stack
+            .iter()
+            .rev()
+            .map(|operand| {
+                identities[&operand.as_value().expect("expected a value operand").borrow().id()]
+            })
+            .collect();
+        Self::build(&expected, constraints, &stack, options)
+    }
+
+    /// Build a request from immutable grouped layouts, without creating temporary HIR values.
+    ///
+    /// `expected` and `stack` are ordered from the top; each expected value has one move/copy
+    /// constraint. Input identities must be unaliased, present in the stack, and use consistent
+    /// nonzero widths. Returns `NoSolution` if these conditions or the solver's index limits fail.
+    pub fn from_layouts(
+        expected: &[ValueOrAlias],
+        constraints: &[Constraint],
+        stack: &[ValueOrAlias],
+        options: SolverOptions,
+    ) -> Result<Self, SolverError> {
+        if expected.len() != constraints.len()
+            || expected.len() > u8::MAX as usize
+            || stack.len() > u8::MAX as usize
+            || stack.len() + constraints.iter().filter(|c| matches!(c, Constraint::Copy)).count()
+                > u8::MAX as usize
+            || expected
+                .iter()
+                .chain(stack)
+                .any(|value| value.stack_size() == 0 || value.is_alias())
+        {
+            return Err(SolverError::NoSolution);
+        }
+        let mut widths = BTreeMap::new();
+        for value in stack.iter().chain(expected) {
+            if widths.insert(value.id, value.width).is_some_and(|width| width != value.width) {
+                return Err(SolverError::NoSolution);
+            }
+        }
+        if expected.iter().any(|value| !stack.contains(value)) {
+            return Err(SolverError::NoSolution);
+        }
+        Self::build(expected, constraints, stack, options)
+    }
+
+    /// Both source forms use the same tactics and copy analysis. The selected-view
+    /// representability checks belong to its boundary, not to the retained HIR API.
+    fn build(
+        expected: &[ValueOrAlias],
+        constraints: &[Constraint],
+        stack: &[ValueOrAlias],
+        options: SolverOptions,
+    ) -> Result<Self, SolverError> {
         // Compute the expected output on the stack, as well as alias/copy information
-        let stack = Stack::from(stack);
+        let stack = Stack::from_iter(stack.iter().copied());
         let mut expected_output = Stack::default();
         let mut copies = CopyInfo::default();
         for (value, constraint) in expected.iter().rev().zip(constraints.iter().rev()) {
-            let value = ValueOrAlias::from(*value);
+            let value = *value;
             match constraint {
                 // If we observe a value with move semantics, then it is always referencing the
                 // original value
@@ -135,6 +214,7 @@ pub struct CopyInfo {
     copies: FxHashMap<ValueOrAlias, u8>,
     num_copies: u8,
 }
+
 impl CopyInfo {
     /// Returns the number of copies recorded in this structure
     #[inline(always)]
@@ -168,13 +248,6 @@ impl CopyInfo {
                 value.copy(unsafe { NonZeroU8::new_unchecked(*next_id) })
             }
         }
-    }
-
-    /// Returns true if `value` has at least one copy
-    pub fn has_copies(&self, value: &ValueOrAlias) -> bool {
-        // Make sure we're checking for copies of the unaliased value
-        let value = value.unaliased();
-        self.copies.get(&value).map(|count| *count > 0).unwrap_or(false)
     }
 
     /// Returns true if any of the values seen so far have copies

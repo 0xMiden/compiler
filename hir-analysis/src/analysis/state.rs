@@ -17,12 +17,13 @@ pub use self::{
 };
 use crate::{DataFlowAnalysis, LatticeAnchor, LatticeAnchorRef};
 
-/// The identifier for a uniqued [AnalysisStateKeyImpl]
+/// Identifies an analysis state by its concrete type and lattice anchor.
 #[derive(Copy, Clone)]
 pub struct AnalysisStateKey {
     type_id: core::any::TypeId,
     anchor: LatticeAnchorRef,
 }
+
 impl AnalysisStateKey {
     pub fn new<T>(anchor: LatticeAnchorRef) -> Self
     where
@@ -34,18 +35,22 @@ impl AnalysisStateKey {
         }
     }
 }
+
 impl Eq for AnalysisStateKey {}
+
 impl PartialEq for AnalysisStateKey {
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.anchor == other.anchor
     }
 }
+
 impl core::hash::Hash for AnalysisStateKey {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.type_id.hash(state);
         self.anchor.hash(state);
     }
 }
+
 impl core::fmt::Debug for AnalysisStateKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AnalysisStateKey")
@@ -54,6 +59,7 @@ impl core::fmt::Debug for AnalysisStateKey {
             .finish()
     }
 }
+
 impl core::fmt::Display for AnalysisStateKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.anchor)

@@ -286,6 +286,7 @@ define_unaligned_16bit_store_tests!(
     store_unaligned_u16_offset_2,
     store_unaligned_u16
 );
+
 define_unaligned_16bit_store_tests!(
     run_store_unaligned_i16,
     i16,
@@ -295,3 +296,49 @@ define_unaligned_16bit_store_tests!(
     store_unaligned_i16_offset_2,
     store_unaligned_i16
 );
+
+#[test]
+fn public_store_u16_touches_only_requested_cells() {
+    use super::load_u16::check_u16_intrinsic;
+    for offset in 0..=2 {
+        let expected = (0x1234_abcd_u32 & !(0xffff << (offset * 8))) | (0x5678 << (offset * 8));
+        check_u16_intrinsic(
+            &format!(
+                "push.1099511627783 mem_store.17 push.305441741 mem_store.16 \
+                 push.22136.{offset}.16 exec.::intrinsics::mem::store_u16 mem_load.16 \
+                 push.{expected} assert_eq mem_load.17 push.1099511627783 assert_eq"
+            ),
+            true,
+        );
+    }
+    check_u16_intrinsic(
+        "push.305441741 mem_store.4294967295 push.22136.2.4294967295 \
+         exec.::intrinsics::mem::store_u16 mem_load.4294967295 push.1450748877 assert_eq",
+        true,
+    );
+    check_u16_intrinsic(
+        "push.305441741 mem_store.16 push.2864434397 mem_store.17 push.22136.3.16 \
+         exec.::intrinsics::mem::store_u16 mem_load.16 push.2016717773 assert_eq mem_load.17 \
+         push.2864434262 assert_eq",
+        true,
+    );
+    for offset in [4, u32::MAX] {
+        check_u16_intrinsic(
+            &format!("push.22136.{offset}.16 exec.::intrinsics::mem::store_u16"),
+            false,
+        );
+    }
+    for offset in 0..=3 {
+        check_u16_intrinsic(
+            &format!(
+                "push.1099511627783 mem_store.16 push.22136.{offset}.16 \
+                 exec.::intrinsics::mem::store_u16"
+            ),
+            false,
+        );
+    }
+    check_u16_intrinsic(
+        "push.1099511627783 mem_store.17 push.22136.3.16 exec.::intrinsics::mem::store_u16",
+        false,
+    );
+}

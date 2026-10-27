@@ -11,7 +11,7 @@ use crate::{
 /// This enumeration represents the various ways in which source locations can be encoded as
 /// attributes associated with an operation.
 ///
-/// Typically, source locations are given via [SourceSpan](crate::diagnostics::SourceSpan), but
+/// Typically, source locations are given via [SourceSpan], but
 /// when parsing the IR, other location types are possible.
 #[derive(DialectAttribute, Debug, Clone, Default, PartialEq, Eq, Hash)]
 #[attribute(

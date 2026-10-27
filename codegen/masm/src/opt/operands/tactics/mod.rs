@@ -18,7 +18,7 @@ pub use self::{
     swap_and_move_up::SwapAndMoveUp, two_args::TwoArgs,
 };
 
-/// An error returned by an [OperandMovementConstraintSolver] tactic
+/// An error returned by an operand movement solver [tactic](Tactic)
 #[derive(Debug)]
 pub enum TacticError {
     /// The tactic could not be applied due to a precondition
@@ -44,7 +44,7 @@ pub type TacticResult = Result<(), TacticError>;
 /// out the stack as expected.
 ///
 /// A tactic does not need to check if the result of computing a solution actually
-/// solves all of the constraints, that is done by [OperandMovementConstraintSolver].
+/// solves all of the constraints; the [solver](super::OperandMovementConstraintSolver) checks that.
 ///
 /// Tactics can have an associated cost, which is used when iterating over multiple
 /// tactics looking for the best solution. You should strive to make the cost reflect
@@ -76,7 +76,7 @@ pub trait Tactic {
     fn apply(&mut self, builder: &mut SolutionBuilder) -> TacticResult;
 }
 
-/// This struct is constructed by an [OperandMovementConstraintSolver], and provided
+/// The [solver](super::OperandMovementConstraintSolver) constructs this builder and provides it
 /// to each [Tactic] it applies in search of a solution.
 ///
 /// The purpose of this builder is to abstract over the solver context, the pending
@@ -91,6 +91,7 @@ pub struct SolutionBuilder<'a> {
     /// The actions that represent the solution constructed so far.
     actions: Vec<Action>,
 }
+
 impl<'a> SolutionBuilder<'a> {
     #[doc(hidden)]
     pub fn new(context: &'a SolverContext) -> Self {

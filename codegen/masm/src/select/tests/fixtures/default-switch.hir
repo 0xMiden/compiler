@@ -1,0 +1,5 @@
+builtin.function public extern("C") @default_switch(%index: u32, %a: felt) -> felt {
+    %result = scf.index_switch %index
+    default { scf.yield %a : (felt); } : felt;
+    builtin.ret %result : (felt);
+};

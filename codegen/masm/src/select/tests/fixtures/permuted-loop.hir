@@ -1,0 +1,11 @@
+builtin.function public extern("C") @permutation(%go: i1, %a: felt, %b: felt, %dead: felt) -> (felt, felt) {
+    %first, %second, %unused = scf.while %go, %a, %b, %dead before {
+    ^before(%flag: i1, %x: felt, %y: felt, %z: felt):
+        scf.condition %flag, %x, %y, %z : (i1, felt, felt, felt);
+    } after {
+    ^after(%u: felt, %v: felt, %w: felt):
+        %no = arith.constant 0 : i1;
+        scf.yield %no, %v, %u, %w : (i1, felt, felt, felt);
+    } : (i1, felt, felt, felt) -> (felt, felt, felt);
+    builtin.ret %first, %second : (felt, felt);
+};

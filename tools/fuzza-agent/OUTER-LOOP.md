@@ -34,7 +34,7 @@ says who does what, in which order, and how to choose.
 
 Heuristics:
 - Pick by bug yield, not by cold-region count: emulation-heavy surface
-  (signed ops, wide integers, division), transform boundaries (spills,
+  (signed ops, wide integers, division), transform/allocation boundaries (physical spills,
   cfg-to-scf, lifting) and anything the corpus has never executed at runtime
   beat large-but-unreachable cold lists.
 - Feed forward: every report names outside-area surface it warmed
@@ -107,7 +107,7 @@ and keep it complete; thin briefs make agents re-derive known facts. Blocks:
 3. Re-run every ignored twin alone (`--ignored --exact` with the full test
    path); the ignore text must reproduce verbatim.
 4. Re-take one trace or dump per claimed mechanism (one pattern claim, one
-   spills claim, one IR dump) with the recipes in `KNOWLEDGE.md`. Classify
+   physical-allocation claim, one IR dump) with the recipes in `KNOWLEDGE.md`. Classify
    every compile-time panic by trace, never by crash site; agents mislabel
    twins by site often enough that this step is not optional.
 5. Arbitrate every runtime divergence with wasmtime on the harness-built

@@ -8,14 +8,19 @@ use crate::{Context, interner};
 
 /// A pointer to a [Block]
 pub type BlockRef = UnsafeIntrusiveEntityRef<Block>;
+
 /// An intrusive, doubly-linked list of [Block]
 pub type BlockList = EntityList<Block>;
+
 /// A cursor into a [BlockList]
 pub type BlockCursor<'a> = EntityListCursor<'a, Block>;
+
 /// A mutable cursor into a [BlockList]
 pub type BlockCursorMut<'a> = EntityListCursorMut<'a, Block>;
+
 /// An iterator over blocks produced by a depth-first, pre-order visit of the CFG
 pub type PreOrderBlockIter = cfg::PreOrderIter<BlockRef>;
+
 /// An iterator over blocks produced by a depth-first, post-order visit of the CFG
 pub type PostOrderBlockIter = cfg::PostOrderIter<BlockRef>;
 
@@ -118,11 +123,13 @@ pub struct Block {
 }
 
 impl Eq for Block {}
+
 impl PartialEq for Block {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
+
 impl core::hash::Hash for Block {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.id.hash(state);
@@ -314,6 +321,7 @@ impl cfg::InvertibleGraph for BlockRef {
 pub struct BlockSuccessorIter {
     iter: BlockSuccessorEdgesIter,
 }
+
 impl BlockSuccessorIter {
     pub fn new(parent: BlockRef) -> Self {
         Self {
@@ -321,6 +329,7 @@ impl BlockSuccessorIter {
         }
     }
 }
+
 impl ExactSizeIterator for BlockSuccessorIter {
     #[inline]
     fn len(&self) -> usize {
@@ -332,6 +341,7 @@ impl ExactSizeIterator for BlockSuccessorIter {
         self.iter.is_empty()
     }
 }
+
 impl Iterator for BlockSuccessorIter {
     type Item = BlockRef;
 
@@ -380,6 +390,7 @@ pub struct BlockSuccessorEdgesIter {
     num_successors: usize,
     index: usize,
 }
+
 impl BlockSuccessorEdgesIter {
     pub fn new(parent: BlockRef) -> Self {
         let terminator = parent.borrow().terminator();
@@ -391,6 +402,7 @@ impl BlockSuccessorEdgesIter {
         }
     }
 }
+
 impl ExactSizeIterator for BlockSuccessorEdgesIter {
     #[inline]
     fn len(&self) -> usize {
@@ -402,6 +414,7 @@ impl ExactSizeIterator for BlockSuccessorEdgesIter {
         self.index >= self.num_successors
     }
 }
+
 impl Iterator for BlockSuccessorEdgesIter {
     type Item = BlockOperandRef;
 
@@ -456,6 +469,7 @@ pub struct BlockPredecessorIter {
     preds: SmallVec<[BlockRef; 4]>,
     index: usize,
 }
+
 impl BlockPredecessorIter {
     pub fn new(child: BlockRef) -> Self {
         let preds = child.borrow().predecessors().map(|bo| bo.predecessor()).collect();
@@ -467,6 +481,7 @@ impl BlockPredecessorIter {
         self.preds
     }
 }
+
 impl ExactSizeIterator for BlockPredecessorIter {
     #[inline]
     fn len(&self) -> usize {
@@ -478,6 +493,7 @@ impl ExactSizeIterator for BlockPredecessorIter {
         self.index >= self.preds.len()
     }
 }
+
 impl Iterator for BlockPredecessorIter {
     type Item = BlockRef;
 
@@ -512,6 +528,7 @@ pub struct BlockPredecessorEdgesIter {
     preds: SmallVec<[BlockOperandRef; 4]>,
     index: usize,
 }
+
 impl BlockPredecessorEdgesIter {
     pub fn new(child: BlockRef) -> Self {
         let preds = child
@@ -522,6 +539,7 @@ impl BlockPredecessorEdgesIter {
         Self { preds, index: 0 }
     }
 }
+
 impl ExactSizeIterator for BlockPredecessorEdgesIter {
     #[inline]
     fn len(&self) -> usize {
@@ -533,6 +551,7 @@ impl ExactSizeIterator for BlockPredecessorEdgesIter {
         self.index >= self.preds.len()
     }
 }
+
 impl Iterator for BlockPredecessorEdgesIter {
     type Item = BlockOperandRef;
 
@@ -816,9 +835,14 @@ impl Block {
 
     /// Splice the body of `block` to `self` before `ip`, updating the parent of all spliced ops.
     ///
+    /// `ip` must belong to `self`; an invalid anchor panics before either block changes.
     /// It is up to the caller to ensure that this operation produces valid IR.
     pub fn splice_block_before(&mut self, block: &mut Self, ip: OperationRef) {
-        assert_eq!(ip.parent().unwrap(), block.as_block_ref());
+        assert!(
+            ip.parent()
+                .is_some_and(|parent| BlockRef::ptr_eq(&parent, &self.as_block_ref())),
+            "splice anchor must belong to the destination block"
+        );
 
         let ops = block.body_mut().take();
         let mut cursor = unsafe { self.body.cursor_mut_from_ptr(ip) };
@@ -827,9 +851,14 @@ impl Block {
 
     /// Splice the body of `block` to `self` after `ip`, updating the parent of all spliced ops.
     ///
+    /// `ip` must belong to `self`; an invalid anchor panics before either block changes.
     /// It is up to the caller to ensure that this operation produces valid IR.
     pub fn splice_block_after(&mut self, block: &mut Self, ip: OperationRef) {
-        assert_eq!(ip.parent().unwrap(), block.as_block_ref());
+        assert!(
+            ip.parent()
+                .is_some_and(|parent| BlockRef::ptr_eq(&parent, &self.as_block_ref())),
+            "splice anchor must belong to the destination block"
+        );
 
         let ops = block.body_mut().take();
         let mut cursor = unsafe { self.body.cursor_mut_from_ptr(ip) };
@@ -1207,12 +1236,16 @@ impl Block {
 }
 
 pub type BlockOperandRef = UnsafeIntrusiveEntityRef<BlockOperand>;
+
 /// An intrusive, doubly-linked list of [BlockOperand]
 pub type BlockOperandList = EntityList<BlockOperand>;
+
 #[allow(unused)]
 pub type BlockOperandCursor<'a> = EntityListCursor<'a, BlockOperand>;
+
 #[allow(unused)]
 pub type BlockOperandCursorMut<'a> = EntityListCursorMut<'a, BlockOperand>;
+
 pub type BlockOperandIter<'a> = EntityListIter<'a, BlockOperand>;
 
 /// A [BlockOperand] represents a use of a [Block] by an [Operation]
@@ -1224,9 +1257,11 @@ pub struct BlockOperand {
 }
 
 impl Entity for BlockOperand {}
+
 impl EntityWithParent for BlockOperand {
     type Parent = Block;
 }
+
 impl EntityListItem for BlockOperand {
     #[track_caller]
     fn on_inserted(
@@ -1288,11 +1323,13 @@ impl fmt::Debug for BlockOperand {
             .finish()
     }
 }
+
 impl fmt::Display for BlockOperand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.block_id())
     }
 }
+
 impl StorableEntity for BlockOperand {
     #[inline(always)]
     fn index(&self) -> usize {

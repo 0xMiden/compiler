@@ -120,11 +120,6 @@ pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool
     with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package)
 }
 
-/// Compiles a Rust project that is expected to be rejected and returns the compilation error.
-pub(crate) fn compile_rust_package_err(project_path: impl AsRef<Path>, release: bool) -> String {
-    with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package_err)
-}
-
 /// Builds the compiler test for a Rust project and runs `compile` on it under the example build
 /// lock.
 fn with_rust_package_test<T>(

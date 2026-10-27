@@ -130,7 +130,13 @@ impl RewritePattern for SplitCriticalEdges {
             // Create new empty block, and insert an unconditional branch to `successor` with the
             // original operands of the branch.
             let mut guard = InsertionGuard::new(rewriter);
-            let mut new_block = guard.create_block_before(successor, &[]);
+            // A region's first block supplies its initial interface, so a split block must
+            // never be inserted before an entry target.
+            let mut new_block = if successor.borrow().is_entry_block() {
+                guard.create_block(successor.parent().unwrap(), Some(successor), &[])
+            } else {
+                guard.create_block_before(successor, &[])
+            };
             guard.br(successor, operands, span)?;
 
             // Rewrite successor block operand

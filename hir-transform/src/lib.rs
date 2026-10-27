@@ -2,6 +2,7 @@
 #![deny(warnings)]
 
 extern crate alloc;
+
 #[cfg(test)]
 extern crate std;
 
@@ -12,7 +13,6 @@ mod dce;
 //mod inliner;
 mod sccp;
 mod sink;
-mod spill;
 
 pub use self::dce::DeadCodeElimination;
 //pub use self::inliner::Inliner;
@@ -22,5 +22,4 @@ pub use self::{
     cse::CommonSubexpressionElimination,
     sccp::SparseConditionalConstantPropagation,
     sink::{ControlFlowSink, SinkOperandDefs},
-    spill::{ReloadLike, SpillLike, TransformSpillsInterface, transform_spills},
 };

@@ -92,11 +92,11 @@ impl Dialect for HirDialect {
 
         // Check for `PointerAttr`
         if let Ok(attr) = attr.try_downcast_attr::<PointerAttr>() {
-            let pointee_type = ty
-                .pointee()
-                .expect("unexpected pointer constant given when materializing non-pointer value")
-                .clone();
-            let attr = attributes::Pointer::new(attr.borrow().addr(), pointee_type);
+            let Type::Ptr(pointer_type) = ty else {
+                panic!("unexpected pointer constant given when materializing non-pointer value");
+            };
+            let attr =
+                attributes::Pointer::new(attr.borrow().addr(), pointer_type.as_ref().clone());
             let op_builder = builder.create::<ConstantPointer, _>(span);
             return op_builder(attr).ok().map(|op| op.as_operation_ref());
         }
@@ -108,17 +108,16 @@ impl Dialect for HirDialect {
         }
 
         // Only pointer constants are supported here for now
-        if !ty.is_pointer() {
+        let Type::Ptr(pointer_type) = ty else {
             return None;
-        }
+        };
 
         // Currently, we expect folds to produce `IntegerLikeAttr`-valued attributes
         let attr = attr.borrow();
         if let Some(imm) = attr.as_attr().as_trait::<dyn IntegerLikeAttr>() {
             // We're materializing a constant pointer from an integer immediate
-            let pointee_type = ty.pointee().unwrap();
             if let Some(addr) = imm.as_immediate().as_u32() {
-                let attr = attributes::Pointer::new(addr, pointee_type.clone());
+                let attr = attributes::Pointer::new(addr, pointer_type.as_ref().clone());
                 let op_builder = builder.create::<ConstantPointer, _>(span);
                 op_builder(attr).ok().map(|op| op.as_operation_ref())
             } else {
@@ -127,6 +126,52 @@ impl Dialect for HirDialect {
             }
         } else {
             None
+        }
+    }
+}
+
+#[cfg(test)]
+mod pointer_constant_tests {
+    use alloc::rc::Rc;
+
+    use midenc_hir::{
+        AddressSpace, Context, OpBuilder, PointerType, Value, attributes::InferAttributeValueType,
+        dialects::builtin::attributes::U32Attr,
+    };
+
+    use super::*;
+
+    #[test]
+    fn pointer_constant_materialization_preserves_requested_complete_type() {
+        let context = Rc::new(Context::default());
+        let dialect = context.get_or_register_dialect::<HirDialect>();
+        let mut builder = OpBuilder::new(context.clone());
+        for space in [AddressSpace::Byte, AddressSpace::Element] {
+            for pointee in [
+                Type::U32,
+                PointerType::new(Type::U8).into(),
+                PointerType::new_with_address_space(Type::U8, AddressSpace::Element).into(),
+            ] {
+                let ty = Type::from(PointerType::new_with_address_space(pointee, space));
+                let integer: AttributeRef =
+                    context.create_attribute::<U32Attr, _>(u32::MAX).as_attribute_ref();
+                let pointer: AttributeRef = context
+                    .create_attribute::<PointerAttr, _>(Pointer::new(
+                        u32::MAX,
+                        PointerType::new(Type::U8),
+                    ))
+                    .as_attribute_ref();
+                for attr in [integer, pointer] {
+                    let op = dialect
+                        .materialize_constant(&mut builder, attr, &ty, SourceSpan::UNKNOWN)
+                        .unwrap();
+                    let op = op.borrow();
+                    let constant = op.downcast_ref::<ConstantPointer>().unwrap();
+                    assert_eq!(constant.get_value().addr(), u32::MAX);
+                    assert_eq!(constant.result().ty(), &ty);
+                    assert_eq!(constant.get_value().infer_type_from_value(), ty);
+                }
+            }
         }
     }
 }

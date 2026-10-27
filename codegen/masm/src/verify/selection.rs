@@ -1,0 +1,912 @@
+//! Source correspondence is checked before any physical contract becomes a premise.
+//!
+//! Reconstructing current HIR with the trusted selector detects changes to the source or candidate;
+//! it does not independently prove the selector's semantics. Physical replay derives its own facts
+//! from the checked graph rather than accepting the allocator's conclusions.
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    vec::Vec,
+};
+use core::ops::Deref;
+
+use miden_core::Felt;
+use midenc_hir::Op;
+
+use super::{VerificationError, error};
+use crate::{masm::Instruction, plan::*};
+
+/// Implemented by registered generated definitions, never by an allocation plan.
+/// The definition reconstructs stages and bindings from its semantic parameters.
+pub(crate) trait GeneratedDefinition {
+    /// Identity matched against the selected procedure's generated origin.
+    fn id(&self) -> GeneratedDefinitionId;
+    /// Reconstruct the complete semantic stages and proof relations, rejecting unsupported
+    /// parameter sets rather than weakening the registered definition.
+    fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError>;
+    /// Reconstruct observational markers from source; these never supply semantic liveness.
+    fn observations(
+        &self,
+        _parameters: &[Felt],
+    ) -> Result<Vec<crate::lower::debug::Observation>, VerificationError> {
+        Ok(Vec::new())
+    }
+}
+
+/// Trusted source from which selection evidence is reconstructed, supplied independently of
+/// the allocation plan being checked.
+pub(crate) enum SourceContext<'a> {
+    Generated(&'a dyn GeneratedDefinition),
+    /// Reconstruct HIR selection using the function and its resolved selection environment.
+    Hir {
+        function: &'a midenc_hir::dialects::builtin::Function,
+        env: &'a crate::select::SelectEnv<'a>,
+    },
+}
+
+/// Complete source-derived expectation used to check selection. Implementors must derive
+/// this from registered semantics and parameters rather than copying an untrusted plan.
+#[derive(Debug, Clone)]
+pub(crate) struct DefinitionEvidence {
+    /// Exact source-owned frame prefix to preserve during assignment.
+    pub source_locals: SourceLocalLayout,
+    pub program: SelectedProgram,
+    pub units: BTreeMap<SelectedStepId, UnitEvidence>,
+}
+
+/// Source-derived relations and internal control/call contracts absent from the allocator's
+/// physical choices. These become private evidence in the checked selected program.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct UnitEvidence {
+    /// Permitted complete-operand exchange, reconstructed from the source operation/type/mode.
+    pub input_symmetry: InputSymmetry,
+    pub aliases: LaneAliases,
+    /// Reconstructed from the registered source, sealed before allocation.
+    pub generated_event: Option<GeneratedEvent>,
+    /// Positions in the complete semantic output tuple, independent of machine access depth.
+    pub equal_outputs: Vec<(u32, u32)>,
+    /// Scratch cells that must equal positions of the unit's complete semantic output tuple.
+    pub scratch_outputs: Vec<(FrameRef, u32)>,
+    /// Schemas for loops wholly internal to this unit, keyed by annotated control identity.
+    pub loops: BTreeMap<ControlId, LoopSchema>,
+    /// Ordered source-authorized call sites, with order interpreted within each path.
+    pub calls: Vec<CallSite>,
+}
+
+/// Source authority for generic event emission. This permits only the registered event form;
+/// it does not grant typed payload observations or operand-memory access.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum GeneratedEvent {
+    Dynamic(Atom),
+    Immediate,
+}
+
+/// Closed selector obligations reconstructed from registered source definitions.
+#[derive(Debug, Clone)]
+pub(crate) enum SelectorEvidence {
+    /// Selector is the address of a frame-resident root with these exact stored lanes.
+    FrameRoot {
+        reference: FrameRef,
+        root: Vec<StoredValue>,
+    },
+    /// Selector comes from a source-checked indirect table lookup.
+    CheckedTableSlot(crate::select::TableLookup),
+}
+
+/// One static invocation in a registered unit algorithm. Sites are ordered within their
+/// internal control path, so replay checks target, argument identity, and result publication
+/// against the exact site that executes.
+#[derive(Debug, Clone)]
+pub(crate) struct CallSite {
+    /// Resolved target identity, including invocation family.
+    pub instruction: Instruction,
+    pub abi: ProcedureAbi,
+    /// Exact exposed arguments, excluding padding and indirect selector.
+    pub inputs: Vec<CallArgument>,
+    /// Nested internal branch/loop route on which this static site occurs.
+    pub path: Vec<CallPath>,
+    /// Registered return-normalization helper; legal only at context/root boundaries.
+    pub truncate: bool,
+    /// Positions in the full ABI result tuple.
+    pub outputs: Vec<(FrameRef, u32)>,
+    /// Semantic atoms that must receive the corresponding full ABI result positions.
+    pub publications: Vec<(Atom, u32)>,
+    /// Required root provenance for a dynamic invocation.
+    pub selector: Option<SelectorEvidence>,
+}
+
+/// Source-derived constraint on one raw call argument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CallArgument {
+    /// Argument equals the named atom or literal.
+    Exact(StoredValue),
+    /// Unit-local arithmetic is part of the registered algorithm, not an SSA binding.
+    Local,
+}
+
+/// One nesting step identifying an internal call path within a lowering unit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum CallPath {
+    Then(ControlId),
+    Else(ControlId),
+    Loop(ControlId),
+}
+
+/// Source-derived relation for one physical position at an internal loop header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LoopPosition {
+    /// Preserve the token at this location on forward entry.
+    Invariant,
+    /// Simultaneous occurrences of a carried parameter must agree.
+    Carry(u32),
+}
+
+/// Inductive schema for a loop internal to one lowering unit. Listed stack positions are
+/// top-first; unlisted stack suffix positions remain invariant. Cells use symbolic frame refs.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LoopSchema {
+    pub stack: Vec<LoopPosition>,
+    pub cells: Vec<(FrameRef, LoopPosition)>,
+}
+
+/// Only source checking constructs this wrapper. Its contents cannot be mutated by allocation.
+#[derive(Debug, Clone)]
+pub(crate) struct CheckedSelectedProgram {
+    observations: Vec<crate::lower::debug::Observation>,
+    source_locals: SourceLocalLayout,
+    program: SelectedProgram,
+    units: BTreeMap<SelectedStepId, UnitEvidence>,
+}
+
+impl CheckedSelectedProgram {
+    /// Sealed permission used to price input orders and independently check physical bindings.
+    pub(crate) fn input_symmetry(
+        &self,
+        step: SelectedStepId,
+    ) -> Result<InputSymmetry, VerificationError> {
+        Ok(self.evidence(step)?.input_symmetry)
+    }
+
+    /// Source-sealed markers queried by allocation without becoming semantic uses.
+    pub(crate) fn observations(&self) -> &[crate::lower::debug::Observation] {
+        &self.observations
+    }
+
+    /// Identify an independently reconstructed context-return cleanup segment.
+    /// Its allocator contract must expose only result inputs before invoking truncation.
+    pub(crate) fn return_cleanup(&self, segment: SegmentId) -> bool {
+        matches!(
+            self.program.abi.convention(),
+            CallingConvention::Context | CallingConvention::Kernel
+        ) && self.program.segments.iter().find(|s| s.id == segment).is_some_and(|s| {
+            s.units.len() == 1
+                && self.units[&s.units[0].id].calls.len() == 1
+                && self.units[&s.units[0].id].calls[0].truncate
+                && self.program.edges.iter().filter(|edge| edge.source == segment).count() == 1
+                && self.program.edges.iter().any(|edge| {
+                    edge.source == segment
+                        && edge.destination.is_none()
+                        && edge.kind == EdgeKind::Return
+                })
+        })
+    }
+
+    /// Sealed source-local layout used to check the assigned physical frame.
+    pub(super) fn source_locals(&self) -> &SourceLocalLayout {
+        &self.source_locals
+    }
+
+    /// Retrieve the registered proof relations for a unit, rejecting missing coverage.
+    pub(super) fn evidence(
+        &self,
+        step: SelectedStepId,
+    ) -> Result<&UnitEvidence, VerificationError> {
+        self.units.get(&step).ok_or_else(|| error("missing registered unit evidence"))
+    }
+}
+
+impl Deref for CheckedSelectedProgram {
+    type Target = SelectedProgram;
+
+    fn deref(&self) -> &Self::Target {
+        &self.program
+    }
+}
+
+/// Reconstruct source evidence, require exact agreement with the proposed selection, and
+/// validate graph coverage, definitions, reconstruction, scratch, and structured control.
+/// Success seals the program so allocation can borrow its semantics without rewriting them.
+pub(crate) fn check_selection(
+    program: SelectedProgram,
+    source: &SourceContext<'_>,
+) -> Result<CheckedSelectedProgram, VerificationError> {
+    let (expected, observations) = match (&program.origin, source) {
+        (
+            ProcedureOrigin::Generated {
+                definition,
+                parameters,
+            },
+            SourceContext::Generated(source),
+        ) if *definition == source.id() => {
+            (source.instantiate(parameters)?, source.observations(parameters)?)
+        }
+        (ProcedureOrigin::Hir(origin), SourceContext::Hir { function, env })
+            if *origin == function.as_operation_ref() =>
+        {
+            let evidence = crate::select::evidence(function, env)
+                .map_err(|e| error_with_source(&e.to_string()))?;
+            (evidence.source, evidence.observations)
+        }
+        _ => return Err(error("unregistered or incompatible source definition")),
+    };
+    if program != expected.program {
+        let mut failure =
+            error("selected phases, uses, effects, coverage or control disagree with source");
+        // A matching selected ID identifies the differing unit; trusted source evidence
+        // supplies its location rather than the candidate's potentially altered source map.
+        if let Some(unit) = expected
+            .program
+            .segments
+            .iter()
+            .flat_map(|segment| &segment.units)
+            .find(|expected| {
+                program
+                    .segments
+                    .iter()
+                    .flat_map(|segment| &segment.units)
+                    .any(|actual| actual.id == expected.id && actual != *expected)
+            })
+        {
+            failure = failure.at_step(
+                unit.id,
+                expected.program.source_map.get(&unit.source).map(|record| &record.location),
+            );
+        }
+        return Err(failure);
+    }
+    validate_graph(&program, &expected.units)?;
+    Ok(CheckedSelectedProgram {
+        observations,
+        source_locals: expected.source_locals,
+        program,
+        units: expected.units,
+    })
+}
+
+fn validate_graph(
+    program: &SelectedProgram,
+    units: &BTreeMap<SelectedStepId, UnitEvidence>,
+) -> Result<(), VerificationError> {
+    let mut objects = BTreeMap::<ScratchId, (ScratchRequirement, BTreeSet<SelectedStepId>)>::new();
+    for unit in program.segments.iter().flat_map(|segment| &segment.units) {
+        let mut seen = BTreeSet::new();
+        for requirement in &unit.scratch {
+            requirement.validate()?;
+            let mut normalized = requirement.clone();
+            normalized.uses.sort();
+            if !seen.insert(requirement.id)
+                || normalized.uses.windows(2).any(|uses| uses[0] == uses[1])
+            {
+                return Err(error("duplicate scratch declaration or use"));
+            }
+            let entry = objects
+                .entry(requirement.id)
+                .or_insert_with(|| (normalized.clone(), BTreeSet::new()));
+            if entry.0 != normalized {
+                return Err(error("inconsistent fixed scratch descriptor"));
+            }
+            entry.1.insert(unit.id);
+        }
+    }
+    for (requirement, uses) in objects.values() {
+        if requirement.uses.iter().copied().collect::<BTreeSet<_>>() != *uses {
+            return Err(error("scratch declared uses disagree with consuming units"));
+        }
+    }
+    let mut segments = BTreeSet::new();
+    let mut steps = BTreeSet::new();
+    let mut edges = BTreeSet::new();
+    let mut definitions = BTreeSet::new();
+    for (id, value) in &program.values {
+        if *id != value.id {
+            return Err(error("value ID disagrees with definition"));
+        }
+    }
+    for segment in &program.segments {
+        if !segments.insert(segment.id) {
+            return Err(error("duplicate segment"));
+        }
+        for (index, parameter) in segment.parameters.iter().enumerate() {
+            let value =
+                program.values.get(parameter).ok_or_else(|| error("undefined parameter"))?;
+            match value.origin {
+                ValueOrigin::Parameter {
+                    segment: owner,
+                    index: position,
+                } if owner == segment.id && position as usize == index => {}
+                ValueOrigin::Hir(_) => {}
+                _ => return Err(error("parameter origin disagrees with segment ownership")),
+            }
+            for lane in 0..value.layout.lanes() {
+                if !definitions.insert(Atom::new(*parameter, lane)) {
+                    return Err(error("duplicate selected atom definition"));
+                }
+            }
+        }
+        for unit in &segment.units {
+            (|| {
+                if !steps.insert(unit.id)
+                    || !units.contains_key(&unit.id)
+                    || !program.source_map.contains_key(&unit.source)
+                {
+                    return Err(error("duplicate phase or missing source/definition coverage"));
+                }
+                for input in &unit.semantic_inputs {
+                    if !program.values.contains_key(input) {
+                        return Err(error("undefined semantic input"));
+                    }
+                }
+                for atom in unit.stack_inputs.iter().chain(unit.outputs.iter()).chain(
+                    unit.stored_inputs.iter().filter_map(|input| match &input.value {
+                        StoredValue::Atom(atom) => Some(atom),
+                        _ => None,
+                    }),
+                ) {
+                    validate_atom(program, *atom)?;
+                }
+                if let InputSymmetry::CommutativePair { lanes_per_operand } =
+                    units[&unit.id].input_symmetry
+                {
+                    let width = usize::from(lanes_per_operand);
+                    if width == 0
+                        || unit.stack_inputs.len() != 2 * width
+                        || unit.publication != OutputPublication::Stack
+                    {
+                        return Err(error(
+                            "commutative inputs must contain two complete operand groups",
+                        ));
+                    }
+                    let left = unit.stack_inputs[0].value;
+                    let right = unit.stack_inputs[width].value;
+                    let lhs = &program.values[&left].layout;
+                    let rhs = &program.values[&right].layout;
+                    if lhs != rhs
+                        || lhs.lanes() != lanes_per_operand
+                        || unit.stack_inputs.iter().enumerate().any(|(index, atom)| {
+                            *atom
+                                != Atom::new(
+                                    if index < width { left } else { right },
+                                    (index % width) as u8,
+                                )
+                        })
+                        || unit.semantic_inputs.iter().copied().collect::<BTreeSet<_>>()
+                            != BTreeSet::from([left, right])
+                    {
+                        return Err(error(
+                            "commutative inputs must preserve complete equally typed values",
+                        ));
+                    }
+                }
+                if let Some(event) = units[&unit.id].generated_event {
+                    let valid = match event {
+                        GeneratedEvent::Dynamic(id) => {
+                            unit.stack_inputs == [id]
+                                && unit.outputs.len() == 1
+                                && units[&unit.id].aliases
+                                    == LaneAliases::new(vec![(unit.outputs[0], id)])
+                        }
+                        GeneratedEvent::Immediate => {
+                            unit.stack_inputs.is_empty() && unit.outputs.is_empty()
+                        }
+                    };
+                    if !valid
+                        || unit.publication != OutputPublication::Stack
+                        || !unit.effects.may_trap
+                        || !unit.effects.normal_return
+                        || unit.effects.memory != SourceMemoryEffects::default()
+                        || !unit.scratch.is_empty()
+                        || !unit.stored_inputs.is_empty()
+                    {
+                        return Err(error("invalid generated event source contract"));
+                    }
+                }
+                if unit.publication == OutputPublication::Aliases {
+                    let evidence = &units[&unit.id];
+                    if !unit.stack_inputs.is_empty()
+                        || !unit.stored_inputs.is_empty()
+                        || !unit.scratch.is_empty()
+                        || !unit.scratch_effects.is_empty()
+                        || !unit.address_results.is_empty()
+                        || unit.effects != LoweringEffects::default()
+                        || evidence.generated_event.is_some()
+                        || !evidence.calls.is_empty()
+                        || !evidence.loops.is_empty()
+                        || !evidence.scratch_outputs.is_empty()
+                    {
+                        return Err(error(
+                            "alias publication has a physical or effectful contract",
+                        ));
+                    }
+                    for output in &unit.outputs {
+                        let Some(Reconstruction::Alias(sources)) =
+                            &program.values[&output.value].reconstruction
+                        else {
+                            return Err(error("alias publication lacks a checked lane mapping"));
+                        };
+                        if sources
+                            .iter()
+                            .any(|source| !unit.semantic_inputs.contains(&source.value))
+                        {
+                            return Err(error("alias publication source is not a semantic input"));
+                        }
+                    }
+                }
+                let mut output_lanes = BTreeMap::<ValueId, u8>::new();
+                for atom in &unit.outputs {
+                    if !definitions.insert(*atom) {
+                        return Err(error("duplicate selected atom definition"));
+                    }
+                    *output_lanes.entry(atom.value).or_default() += 1;
+                }
+                // Distinct, in-range atoms must cover each defined value at this completion.
+                // A cross-unit partial computation uses explicit complete phase temporaries.
+                for (value, lanes) in output_lanes {
+                    if lanes != program.values[&value].layout.lanes() {
+                        return Err(error(
+                            "unit publication does not define the complete value layout",
+                        ));
+                    }
+                }
+                for requirement in &unit.scratch {
+                    requirement.validate()?;
+                    let wrong_owner = match requirement.lifetime {
+                        ScratchLifetime::Unit(owner) => {
+                            owner != unit.id || requirement.uses != [unit.id]
+                        }
+                        ScratchLifetime::Spanning => false,
+                    };
+                    if !requirement.uses.contains(&unit.id) || wrong_owner {
+                        return Err(error("scratch ownership does not match consuming unit"));
+                    }
+                }
+                for effect in &unit.scratch_effects {
+                    if matches!(
+                        effect,
+                        ScratchEffect::Borrow {
+                            write: false,
+                            definite_write: true,
+                            ..
+                        }
+                    ) {
+                        return Err(error("definite borrowed write requires write permission"));
+                    }
+                    let (object, offset, width) = match effect {
+                        ScratchEffect::Read(fact) | ScratchEffect::Write(fact) => {
+                            (fact.object, fact.offset, 1)
+                        }
+                        ScratchEffect::Borrow {
+                            object,
+                            offset,
+                            size,
+                            ..
+                        }
+                        | ScratchEffect::PossibleWrite {
+                            object,
+                            offset,
+                            size,
+                        } => (*object, *offset, *size),
+                    };
+                    let requirement = unit
+                        .scratch
+                        .iter()
+                        .find(|requirement| requirement.id == object)
+                        .ok_or_else(|| error("scratch effect references undeclared object"))?;
+                    if width == 0
+                        || offset.checked_add(width).is_none_or(|end| end > requirement.size)
+                    {
+                        return Err(error("scratch effect exceeds declared object"));
+                    }
+                }
+                let mut pointers = BTreeSet::new();
+                for fact in &unit.address_results {
+                    let output = Atom::new(fact.pointer, 0);
+                    let requirement = unit.scratch.iter().find(|object| object.id == fact.object);
+                    if !pointers.insert(fact.pointer)
+                        || !unit.outputs.contains(&output)
+                        || program.values[&fact.pointer].layout.lanes() != 1
+                        || requirement.is_none_or(|object| {
+                            object.lifetime != ScratchLifetime::Spanning
+                                || fact.offset >= object.size
+                                || fact
+                                    .offset
+                                    .checked_add(fact.accessible)
+                                    .is_none_or(|end| end > object.size)
+                        })
+                    {
+                        return Err(error("invalid scratch-address output declaration"));
+                    }
+                }
+                for (output, input) in units[&unit.id].aliases.pairs() {
+                    if !unit.outputs.contains(output)
+                        || !(unit.stack_inputs.contains(input)
+                            || unit
+                                .stored_inputs
+                                .iter()
+                                .any(|stored| stored.value == StoredValue::Atom(*input))
+                            || unit.publication == OutputPublication::Aliases
+                                && unit.semantic_inputs.contains(&input.value))
+                    {
+                        return Err(error(
+                            "registered publication relation references undeclared input/output",
+                        ));
+                    }
+                }
+                Ok(())
+            })()
+            .map_err(|error: VerificationError| {
+                error.at_step(
+                    unit.id,
+                    program.source_map.get(&unit.source).map(|record| &record.location),
+                )
+            })?;
+        }
+    }
+    if steps.len() != units.len() {
+        return Err(error("orphan unit definition"));
+    }
+    for edge in &program.edges {
+        if !edges.insert(edge.id)
+            || !segments.contains(&edge.source)
+            || edge.destination.is_some_and(|id| !segments.contains(&id))
+        {
+            return Err(error("invalid transfer endpoint"));
+        }
+        let mut destinations = BTreeSet::new();
+        for binding in &edge.bindings {
+            if !destinations.insert(binding.destination)
+                || !program.values.contains_key(&binding.source)
+            {
+                return Err(error("duplicate or undefined edge binding"));
+            }
+            if let Some(destination) = edge.destination {
+                let target =
+                    program.segments.iter().find(|segment| segment.id == destination).unwrap();
+                if !target.parameters.contains(&binding.destination)
+                    || program.values[&binding.source].layout
+                        != program.values[&binding.destination].layout
+                {
+                    return Err(error("edge binding disagrees with parameter layout"));
+                }
+            }
+        }
+        if let Some(destination) = edge.destination {
+            let target = program.segments.iter().find(|segment| segment.id == destination).unwrap();
+            if destinations.len() != target.parameters.len() {
+                return Err(error("omitted edge parameter/capture"));
+            }
+        }
+        if edge.destination.is_none() != matches!(edge.kind, EdgeKind::Return | EdgeKind::Trap) {
+            return Err(error("terminal edge kind disagrees with its destination"));
+        }
+    }
+    let mut used_segments = BTreeSet::new();
+    let mut used_edges = BTreeSet::new();
+    walk_tree(&program.structure, &mut used_segments, &mut used_edges, &mut BTreeSet::new())?;
+    if used_segments != segments || used_edges != edges {
+        return Err(error("structured skeleton and graph disagree"));
+    }
+    validate_flow(program)?;
+    super::reconstruction::validate(program)?;
+    super::storage::validate(program)?;
+    Ok(())
+}
+
+fn walk_tree(
+    tree: &ControlTree,
+    segments: &mut BTreeSet<SegmentId>,
+    edges: &mut BTreeSet<EdgeId>,
+    controls: &mut BTreeSet<ControlId>,
+) -> Result<(), VerificationError> {
+    match tree {
+        ControlTree::Segment(id) => {
+            if !segments.insert(*id) {
+                return Err(error("segment occurs twice in skeleton"));
+            }
+        }
+        ControlTree::Edge(id) => {
+            if !edges.insert(*id) {
+                return Err(error("edge occurs twice in skeleton"));
+            }
+        }
+        ControlTree::Sequence(children) => {
+            for child in children {
+                walk_tree(child, segments, edges, controls)?;
+            }
+        }
+        ControlTree::If {
+            id,
+            on_true,
+            then_body,
+            on_false,
+            else_body,
+            ..
+        } => {
+            if !controls.insert(*id) {
+                return Err(error("duplicate selected control identity"));
+            }
+            if !edges.insert(*on_true) || !edges.insert(*on_false) {
+                return Err(error("duplicate branch edge"));
+            }
+            walk_tree(then_body, segments, edges, controls)?;
+            walk_tree(else_body, segments, edges, controls)?;
+        }
+        ControlTree::Loop {
+            id,
+            condition,
+            header,
+            before,
+            body,
+            backedges,
+            on_true,
+            on_false,
+            ..
+        } => {
+            if !controls.insert(*id) || !controls.insert(*condition) {
+                return Err(error("duplicate selected control identity"));
+            }
+            if !edges.insert(*on_true) || !edges.insert(*on_false) {
+                return Err(error("duplicate loop condition edge"));
+            }
+            fn entry(tree: &ControlTree) -> Option<SegmentId> {
+                match tree {
+                    ControlTree::Segment(id) => Some(*id),
+                    ControlTree::Sequence(children) => children.first().and_then(entry),
+                    _ => None,
+                }
+            }
+            if entry(before) != Some(*header) {
+                return Err(error("loop header disagrees with before-subtree entry"));
+            }
+            walk_tree(before, segments, edges, controls)?;
+            walk_tree(body, segments, edges, controls)?;
+            for edge in backedges {
+                if !edges.contains(edge) {
+                    return Err(error("missing backedge in loop body"));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Reject atoms whose value or lane is absent from the selected value table.
+pub(super) fn validate_atom(
+    program: &SelectedProgram,
+    atom: Atom,
+) -> Result<(), VerificationError> {
+    if program
+        .values
+        .get(&atom.value)
+        .is_none_or(|value| atom.lane >= value.layout.lanes())
+    {
+        return Err(error("undefined raw atom").expecting(atom));
+    }
+    Ok(())
+}
+
+/// Validate executable fallthrough as well as node coverage. A marker for a logical
+/// return cannot jump over later MASM, and loop edges must reach their actual header.
+fn validate_flow(program: &SelectedProgram) -> Result<(), VerificationError> {
+    #[derive(Clone)]
+    struct Frontier {
+        segment: Option<SegmentId>,
+        pending: Vec<EdgeId>,
+        entry: bool,
+    }
+    struct Outcome {
+        normal: Option<Frontier>,
+        returns: bool,
+    }
+    fn edge(
+        program: &SelectedProgram,
+        id: EdgeId,
+        frontier: &Frontier,
+    ) -> Result<Outcome, VerificationError> {
+        let edge = program
+            .edges
+            .iter()
+            .find(|edge| edge.id == id)
+            .ok_or_else(|| error("missing structured edge"))?;
+        if frontier.segment != Some(edge.source) || !frontier.pending.is_empty() {
+            return Err(error("structured edge has wrong source segment"));
+        }
+        Ok(Outcome {
+            normal: edge.destination.map(|_| Frontier {
+                segment: None,
+                pending: alloc::vec![id],
+                entry: false,
+            }),
+            returns: edge.kind == EdgeKind::Return,
+        })
+    }
+    fn alternatives(
+        program: &SelectedProgram,
+        on_true: EdgeId,
+        on_false: EdgeId,
+    ) -> Result<(), VerificationError> {
+        for (id, kind) in [(on_true, EdgeKind::True), (on_false, EdgeKind::False)] {
+            if program
+                .edges
+                .iter()
+                .find(|edge| edge.id == id)
+                .is_none_or(|edge| edge.kind != kind)
+            {
+                return Err(error("structured alternative disagrees with edge kind"));
+            }
+        }
+        Ok(())
+    }
+    fn segment(
+        program: &SelectedProgram,
+        id: SegmentId,
+        frontier: Frontier,
+    ) -> Result<Frontier, VerificationError> {
+        let established = if frontier.entry {
+            program.segments.first().is_some_and(|entry| entry.id == id)
+        } else {
+            !frontier.pending.is_empty()
+                && frontier.pending.iter().all(|edge| {
+                    program
+                        .edges
+                        .iter()
+                        .find(|item| item.id == *edge)
+                        .is_some_and(|edge| edge.destination == Some(id))
+                })
+        };
+        if frontier.segment.is_some() || !established {
+            return Err(error("structured segment is not reached by its incoming graph edges"));
+        }
+        Ok(Frontier {
+            segment: Some(id),
+            pending: Vec::new(),
+            entry: false,
+        })
+    }
+    fn walk(
+        program: &SelectedProgram,
+        tree: &ControlTree,
+        input: Outcome,
+    ) -> Result<Outcome, VerificationError> {
+        if let ControlTree::Sequence(children) = tree {
+            let mut result = input;
+            for child in children {
+                result = walk(program, child, result)?;
+            }
+            return Ok(result);
+        }
+        let frontier = input
+            .normal
+            .ok_or_else(|| error("executable code follows a terminal selected path"))?;
+        match tree {
+            ControlTree::Segment(id) => Ok(Outcome {
+                normal: Some(segment(program, *id, frontier)?),
+                returns: input.returns,
+            }),
+            ControlTree::Edge(id) => {
+                let mut result = edge(program, *id, &frontier)?;
+                result.returns |= input.returns;
+                Ok(result)
+            }
+            ControlTree::If {
+                on_true,
+                then_body,
+                on_false,
+                else_body,
+                ..
+            } => {
+                alternatives(program, *on_true, *on_false)?;
+                let a = walk(program, then_body, edge(program, *on_true, &frontier)?)?;
+                let b = walk(program, else_body, edge(program, *on_false, &frontier)?)?;
+                if (a.returns && b.normal.is_some()) || (b.returns && a.normal.is_some()) {
+                    return Err(error(
+                        "logical return would fall through into a normal continuation",
+                    ));
+                }
+                let normal = match (a.normal, b.normal) {
+                    (Some(mut a), Some(b)) => {
+                        if a.segment.is_some()
+                            || b.segment.is_some()
+                            || a.pending.is_empty()
+                            || b.pending.is_empty()
+                        {
+                            return Err(error("normal branch lacks outgoing transfer"));
+                        }
+                        let target = program
+                            .edges
+                            .iter()
+                            .find(|edge| edge.id == a.pending[0])
+                            .unwrap()
+                            .destination;
+                        if b.pending.iter().any(|id| {
+                            program.edges.iter().find(|edge| edge.id == *id).unwrap().destination
+                                != target
+                        }) {
+                            return Err(error("normal arms disagree on executable continuation"));
+                        }
+                        a.pending.extend(b.pending);
+                        Some(a)
+                    }
+                    (a, None) | (None, a) => a,
+                };
+                Ok(Outcome {
+                    normal,
+                    returns: input.returns || a.returns || b.returns,
+                })
+            }
+            ControlTree::Loop {
+                header,
+                on_true,
+                on_false,
+                before,
+                body,
+                backedges,
+                ..
+            } => {
+                alternatives(program, *on_true, *on_false)?;
+                let incoming = walk(
+                    program,
+                    before,
+                    Outcome {
+                        normal: Some(frontier),
+                        returns: false,
+                    },
+                )?;
+                if incoming.returns {
+                    return Err(error("a logical return cannot bypass while flag consumption"));
+                }
+                let condition =
+                    incoming.normal.ok_or_else(|| error("loop lacks its executable condition"))?;
+                let after = walk(program, body, edge(program, *on_true, &condition)?)?;
+                if after.returns {
+                    return Err(error("a logical return cannot bypass while flag consumption"));
+                }
+                if let Some(after) = after.normal
+                    && (after.segment.is_some()
+                        || after.pending.is_empty()
+                        || after.pending.iter().any(|id| {
+                            !backedges.contains(id)
+                                || program.edges.iter().find(|edge| edge.id == *id).is_none_or(
+                                    |edge| {
+                                        edge.kind != EdgeKind::Backedge
+                                            || edge.destination != Some(*header)
+                                    },
+                                )
+                        }))
+                {
+                    return Err(error("loop body does not establish its declared backedges"));
+                }
+                edge(program, *on_false, &condition)
+            }
+            ControlTree::Sequence(_) => unreachable!(),
+        }
+    }
+    let outcome = walk(
+        program,
+        &program.structure,
+        Outcome {
+            normal: Some(Frontier {
+                segment: None,
+                pending: Vec::new(),
+                entry: true,
+            }),
+            returns: false,
+        },
+    )?;
+    if outcome.normal.is_some() {
+        return Err(error("selected procedure lacks an explicit terminal transfer"));
+    }
+    Ok(())
+}
+
+fn error_with_source(message: &str) -> VerificationError {
+    PlanError::new(DiagnosticCategory::InvalidSelectedLowering, message)
+}

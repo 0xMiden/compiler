@@ -63,7 +63,7 @@ type AttrValueGetMut = for<'a> unsafe fn(
 type TryFromAttr =
     unsafe fn(*mut (), &AttrInfo, AttributeRef) -> Result<(), crate::diagnostics::Report>;
 
-/// This trait provides for type-erased writes to an attribute property of an [Operation].
+/// This trait provides for type-erased writes to an attribute property of an [crate::Operation].
 ///
 /// Implementations must use the provided pointer, derive a pointer to the field holding the
 /// [UnsafeIntrusiveEntityRef] of the current attribute value via the provided [AttrInfo], and
@@ -74,7 +74,7 @@ type TryFromAttr =
 ///
 /// Implementors of this trait can assume the following, and _only_ the following:
 ///
-/// 1. `op` is a pointer to an [Op] implementation
+/// 1. `op` is a pointer to an [crate::Op] implementation
 /// 2. `info` contains trusted metadata about the field to write to. Namely, deriving a pointer to
 ///    the attribute field using the offset in that metadata is guaranteed to be correct.
 /// 3. `value` is a valid reference to some `Attribute` implementation, i.e. it is not dangling.
@@ -417,12 +417,14 @@ impl OperationName {
             .map(|index| &traits[index])
     }
 }
+
 impl fmt::Debug for OperationName {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(self, f)
     }
 }
+
 impl fmt::Display for OperationName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}.{}", self.dialect(), self.name())
@@ -430,16 +432,19 @@ impl fmt::Display for OperationName {
 }
 
 impl Eq for OperationInfo {}
+
 impl PartialEq for OperationInfo {
     fn eq(&self, other: &Self) -> bool {
         self.dialect == other.dialect && self.name == other.name && self.type_id == other.type_id
     }
 }
+
 impl PartialOrd for OperationInfo {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl Ord for OperationInfo {
     fn cmp(&self, other: &Self) -> core::cmp::Ordering {
         self.dialect
@@ -448,6 +453,7 @@ impl Ord for OperationInfo {
             .then_with(|| self.type_id.cmp(&other.type_id))
     }
 }
+
 impl core::hash::Hash for OperationInfo {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.dialect.hash(state);

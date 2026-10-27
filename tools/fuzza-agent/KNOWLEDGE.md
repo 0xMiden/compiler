@@ -55,23 +55,25 @@ build only, asserts it fails with an error containing the expected text).
 
 ## Evidence commands
 
-- `MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`: spills, reloads,
-  `edges to split = N`, `erase unused reload`, `pruning unused phi`,
-  `additional spills required`, `convert reload to load`.
+- `MIDENC_TRACE='codegen=trace,peephole=trace'`: completed physical plans,
+  frame layouts, scheduling decisions, allocation/verification timings and
+  peephole rewrites. Inspect semantic lane requirements, action streams and edge
+  contracts; HIR dumps contain no backend spill/reload operations. Owners:
+  [`allocate`](../../codegen/masm/src/allocate/mod.rs),
+  [`plan/actions.rs`](../../codegen/masm/src/plan/actions.rs), and
+  [`verify`](../../codegen/masm/src/verify/mod.rs).
 - `MIDENC_TRACE='pattern-rewrite-driver=trace'`: `trying to match '<pattern>'`
   before each attempt, `pattern matched successfully` after a rewrite (lines
   carry `dialect=`/`op=`).
-- `MIDENC_TRACE='codegen:operand-scheduling=trace'`: `there are N used operands
-  out of M`; the last `dropping unused operands at:` names the op the emitter
-  was on when it panicked.
 - `MIDENC_TRACE='pass:local2reg=trace'` logs `found promotable local` BEFORE
   the debug check; subtract the `debug declarations cannot all be converted
   safely` lines.
 - `-Z print-ir-after-pass=<pass>` logs to target `pass:<pass>`: it needs the
   flag, `MIDENC_TRACE='pass:<pass>=trace'` and `--nocapture`. Pass names:
   `canonicalizer`, `cse`, `sparse-conditional-constant-propagation`,
-  `sink-operand-defs`, `local2reg`, `transform-spills`, `lift-control-flow`
-  (the second canonicalizer/spill runs share the name; tell them by order).
+  `sink-operand-defs`, `local2reg`, `lift-control-flow`. These match `Pass::name`,
+  not registration arguments such as `sccp` or `cfg-to-scf`. Repeated
+  canonicalizer/sinking runs share names; tell them by order.
 - `cargo make fuzza-probe <test> hir|wat|masm` dumps to
   `target/fuzza-probe/<case>/`; by hand, `MIDENC_EMIT` needs absolute
   `kind=DIR` specs.
@@ -91,31 +93,33 @@ build only, asserts it fails with an error containing the expected text).
 
 ## Classifying a compile-time panic
 
-The crash site does not name the mechanism. Take the spills, pattern and (for
-emitter panics) drop traces, then apply in order:
-1. Index overflow in `codegen/masm/src/emit/mod.rs
-   (OpEmitter::copy_operand_to_position)` after a second spills run (after
-   control-flow lifting) that reports `edges to split = 0`, spills a few
-   values and logs `additional spills required`: over-window pressure the
-   analysis did not relieve (#1422 item 2). The last drop-trace op is often
-   the spill `hir.store_local` itself. Split-edge reloads are no longer
-   dropped, so `erase unused reload` is not a marker of any open class.
-2. Arity-2 `NoSolution` with a Copy constraint on a stack of at most 16 felts:
-   the arity-2 gap (#1422), even if the function spilled elsewhere. The felt
-   total alone does not decide at -Oz (dead, undropped operands are invisible
-   to the analysis).
-3. An `internal error` from the spills transform (`… is passed to … from …,
-   which its definition in … does not dominate`, `a spill of … and a reload
-   of it are in different functions`, `control flow between a spill of … and
-   a reload of it is not well-defined`): a new spills-transform bug; file it.
+The crash site does not name the mechanism. Capture the physical plan, relevant
+HIR pass dumps and pattern trace, then identify the first failing boundary:
+
+1. Incorrect final HIR: inspect the transformation that first changes its
+   semantics or violates SSA, using the last matched rewrite and pass dumps.
+2. Selection or allocation failure: inspect source coverage, lowering inputs,
+   ABI limits and the selected graph. An unavailable optimized preparation must
+   fall back to normalization; solver refusal alone is not a compiler failure.
+3. Physical verification failure: inspect the failed stack, frame, transfer or
+   ABI obligation in [`verify/replay.rs`](../../codegen/masm/src/verify/replay.rs).
+   Determine whether allocation, expansion or the verifier model is responsible.
+   Completed plan traces require allocation/frame assignment to succeed; earlier
+   failures need focused inspection of those stages.
 4. `AliasingViolationError` at `rewriter.rs`: the last `trying to match` names
    the pattern.
+
+Historical #1420/#1422 reproducers exercised removed HIR spill transforms and
+legacy emitter scheduling. Their `edges to split`, `additional spills required`,
+reload/phi diagnostics and arity-2 `NoSolution` signatures do not classify a
+current failure. Keep the fixture names and compare actual current evidence; see
+[historical spill observations](PIPELINE-FACTS.md#historical-hir-spill-observations).
 
 A pass is not a fix. Before un-ignoring, tell a compiler fix (passes with the
 old guest toolchain too) from a guest-toolchain fix (wasmtime now returns
 native, op still in the wasm) and a shape loss (old toolchain still panics),
 then sweep every level. When a twin and its control differ by one trapping
-edge, the markers can appear in both: report the spill/reload balance, and
+edge, report the physical-plan traffic and the differing HIR/control path, and
 build the masked-index control before calling a trap-edge variant new.
 
 ## Gotchas
