@@ -1,7 +1,10 @@
+use alloc::rc::Rc;
+
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::attributes::{StringAttr, U32Attr},
     effects::*,
+    patterns::RewritePatternSet,
     traits::*,
     *,
 };
@@ -56,6 +59,12 @@ pub struct Assertz {
     message: StringAttr,
     #[result]
     result: AnyInteger,
+}
+
+impl Canonicalizable for Assertz {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::RemoveRepeatedAssertz::new(context));
+    }
 }
 
 #[derive(EffectOpInterface, OpPrinter, OpParser)]

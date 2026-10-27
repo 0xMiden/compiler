@@ -1,0 +1,51 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=remove-repeated-assertz}))' | filecheck %s
+
+// Only an earlier assertion on the same SSA value in the same block can discharge a check.
+// Verify after the pass to catch invalid replacement values or dominance violations.
+builtin.module private @repeated_assertz {
+    // Keep the first check and its diagnostic, even when its result was originally unused.
+    // All later results must refer to the first assertion's refined result.
+    // CHECK: @same_value(%[[X:\d+]]: u32)
+    // CHECK-NEXT: %[[ZERO:\d+]] = hir.assertz %[[X]] <{ code = #builtin.u32<11>, message = #builtin.string<"first"> }>;
+    // CHECK-NEXT: builtin.ret %[[ZERO]], %[[ZERO]] : (u32, u32);
+    builtin.function public extern("C") @same_value(%0: u32) -> (u32, u32) {
+        %1 = hir.assertz %0 <{ code = #builtin.u32<11>, message = "first" }>;
+        %2 = hir.assertz %0 <{ code = #builtin.u32<22>, message = "second" }>;
+        %3 = hir.assertz %0 <{ code = #builtin.u32<33>, message = "third" }>;
+        builtin.ret %2, %3 : (u32, u32);
+    };
+
+    // An assertion about a different value proves nothing about this operand.
+    // CHECK: @different_values(%[[X:\d+]]: u32, %[[Y:\d+]]: u32)
+    // CHECK-NEXT: %[[A:\d+]] = hir.assertz %[[X]]
+    // CHECK-NEXT: %[[B:\d+]] = hir.assertz %[[Y]]
+    // CHECK-NEXT: builtin.ret %[[A]], %[[B]] : (u32, u32);
+    builtin.function public extern("C") @different_values(%0: u32, %1: u32) -> (u32, u32) {
+        %2 = hir.assertz %0 <{ code = #builtin.u32<0>, message = "" }>;
+        %3 = hir.assertz %1 <{ code = #builtin.u32<0>, message = "" }>;
+        builtin.ret %2, %3 : (u32, u32);
+    };
+
+    // Checks in sibling blocks cannot replace one another or a check in their parent block.
+    // CHECK: @different_blocks(%[[C:\d+]]: i1, %[[X:\d+]]: u32)
+    // CHECK-NEXT: %[[R:\d+]] = scf.if %[[C]] then {
+    // CHECK-NEXT: %[[A:\d+]] = hir.assertz %[[X]]
+    // CHECK-NEXT: scf.yield %[[A]] : (u32);
+    // CHECK-NEXT: } else {
+    // CHECK-NEXT: %[[B:\d+]] = hir.assertz %[[X]]
+    // CHECK-NEXT: scf.yield %[[B]] : (u32);
+    // CHECK-NEXT: } : (i1) -> (u32);
+    // CHECK-NEXT: %[[Z:\d+]] = hir.assertz %[[X]]
+    // CHECK-NEXT: builtin.ret %[[R]], %[[Z]] : (u32, u32);
+    builtin.function public extern("C") @different_blocks(%0: i1, %1: u32) -> (u32, u32) {
+        %2 = scf.if %0 then {
+            %3 = hir.assertz %1 <{ code = #builtin.u32<0>, message = "" }>;
+            scf.yield %3 : (u32);
+        } else {
+            %4 = hir.assertz %1 <{ code = #builtin.u32<0>, message = "" }>;
+            scf.yield %4 : (u32);
+        } : (i1) -> (u32);
+        %5 = hir.assertz %1 <{ code = #builtin.u32<0>, message = "" }>;
+        builtin.ret %2, %5 : (u32, u32);
+    };
+};
