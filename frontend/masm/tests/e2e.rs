@@ -40,6 +40,26 @@ end
 }
 
 #[test]
+fn e2e_horner_keeps_stack_coefficients_across_iterations() {
+    for operation in ["horner_eval_base", "horner_eval_ext"] {
+        let source = format!(
+            r#"
+pub proc entry() -> felt
+    push.99 mem_store.0
+    push.1 mem_store.32
+    push.0.0 push.32 push.0 padw padw padw
+    {operation} {operation}
+    dropw dropw dropw drop drop
+    assertz assertz
+    push.1
+end
+"#
+        );
+        assert_roundtrip_outputs(&source, &[], 1);
+    }
+}
+
+#[test]
 fn e2e_roundtrip_u32_arithmetic() {
     assert_roundtrip_outputs(
         r#"
