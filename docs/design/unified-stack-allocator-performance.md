@@ -2,6 +2,64 @@
 
 This report separates current CI comparisons, local scheduling measurements, and historical cutover evidence. VM cycles, serialized MAST bytes and compiler wall time answer different questions; none substitutes for the others.
 
+## Real-workload preparation histogram
+
+The October 27, 2026 capture at source snapshot `56cefca8` ran the same 23 metric-bearing integration tests used for the preceding cost refresh. All 23 passed, including their later semantic assertions, with `UPDATE_EXPECT` unset and no expectation edits. This snapshot follows bounded dead-prefix cleanup; it is not a measurement of earlier revisions or an attribution of the total cycle increase over `next`.
+
+**No committed unit or control preparation selected full normalization, and no allocator spill loads or stores occurred in unit, control, or edge glue.** The batch kernel likewise selected no full normalization. The previous trace defaulted alias publications to `Normalization`: all 10,994 such labels in the paired baseline are zero-action aliases in the corrected trace. They were not full drains. `Loads` can reconstruct literals without reading a spill slot, and `Selective` can succeed without a spill; the class name alone is not a traffic count.
+
+The capture contains 977 raw procedure encounters and 522 distinct planning captures, deduplicated within each test. There are 271 distinct procedure identities across the capture. Repeated identities with different complete trace contents remain separate variants. These are static committed preparation counts, not attempted candidates, runtime call counts, or cycle-weighted frequencies. The trace covers procedures handled by this compiler, not the bodies of precompiled libraries.
+
+| Preparation | Raw encounters | Distinct: preparations | Actions | Estimated cost |
+| --- | ---: | ---: | ---: | ---: |
+| Stack | 44,629 | 28,514 | 6,949 | 7,562 |
+| Loads | 11 | 10 | 20 | 20 |
+| Selective | 4,155 | 2,709 | 4,229 | 5,180 |
+| Normalization | 0 | 0 | 0 | 0 |
+| Aliases | 10,994 | 7,091 | 0 | 0 |
+
+The distinct-capture unit total is 38,324 preparations, 11,198 actions and 12,762 estimated instructions. Control preparation contributes 1,576 records (all Stack), 98 actions and estimated cost 98; 1,478 are no-ops. Edge transfers contribute 6,773 records, 2,755 actions and estimated cost 2,962; 6,079 are no-ops. All loads/stores are zero. These estimates cover preparation and edge glue only; entry cleanup outside a preparation, debug anchors, lowering bodies, control-flow execution frequency and MAST packing are excluded. Edge repair remains a separate category even if its private construction uses a fallback.
+
+### Per-workload results
+
+Tier counts and costs below use distinct planning captures within each workload. `network`, `protocol`, and `integration` abbreviate the `midenc-integration-network-tests`, `midenc-integration-protocol-tests`, and `midenc-integration-tests` crates respectively; the remainder is the exact test name. The nine dashed SWAPP rows reuse the package pair compiled by `swapp_note_creator_reclaims_offered_asset` in this serial run. They passed their semantic/cost assertions but did not invoke compilation again; dashes do not claim an empty compilation.
+
+| Workload | Captures raw/distinct | Stack | Loads | Selective | Normalization | Aliases | Control cost | Edge cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `network: mockchain::counter::basic_auth::counter_note_basic_auth_increments_storage` | 36/21 | 911 | 0 | 88 | 0 | 230 | 4 | 23 |
+| `network: mockchain::counter::no_auth::counter_note_no_auth_increments_storage_without_signature` | 47/30 | 1321 | 0 | 130 | 0 | 342 | 5 | 35 |
+| `network: mockchain::counter::rpo_auth::counter_rpo_auth_rejects_unauthenticated_note_creation` | 56/39 | 1524 | 0 | 176 | 0 | 406 | 5 | 30 |
+| `network: mockchain::notes::basic_wallet::basic_wallet_p2id_transfers_asset_with_custom_tx_script` | 76/43 | 2036 | 1 | 201 | 0 | 541 | 6 | 87 |
+| `network: mockchain::notes::basic_wallet::basic_wallet_p2ide_allows_recipient_claim` | 78/44 | 2144 | 2 | 211 | 0 | 575 | 6 | 128 |
+| `network: mockchain::notes::basic_wallet::basic_wallet_p2ide_allows_sender_reclaim` | 78/44 | 2144 | 2 | 211 | 0 | 575 | 6 | 128 |
+| `network: mockchain::notes::note_constructor::tx_script_creates_p2id_note_via_note_constructor` | 93/43 | 2023 | 1 | 200 | 0 | 546 | 6 | 87 |
+| `network: mockchain::stored_procedure::masm_standard::masm_standard` | 30/19 | 814 | 0 | 77 | 0 | 223 | 3 | 17 |
+| `network: mockchain::stored_procedure::overhead::overhead` | 174/50 | 2246 | 0 | 207 | 0 | 563 | 8 | 46 |
+| `network: mockchain::stored_procedure::rust_sibling::rust_sibling` | 78/41 | 2278 | 0 | 219 | 0 | 558 | 8 | 62 |
+| `network: mockchain::stored_procedure::signatures::dispatches_bool_wide_unit_and_word_signatures` | 54/38 | 1494 | 0 | 141 | 0 | 386 | 5 | 27 |
+| `network: mockchain::swapp::swapp_note_creator_reclaims_offered_asset` | 54/38 | 2236 | 2 | 235 | 0 | 575 | 5 | 230 |
+| `network: mockchain::swapp::swapp_note_full_fill_transfers_assets` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_inflight_cross_swap_without_capital` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_non_divisible_full_fill_fails` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_overfill_fails` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_overfill_fails_when_payout_fits` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_package_size` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_partial_fill_creates_remainder_and_chains` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_private_partial_fill_creates_private_notes` | 0/0 | — | — | — | — | — | — | — |
+| `network: mockchain::swapp::swapp_note_zero_fill_fails` | 0/0 | — | — | — | — | — | — | — |
+| `protocol: end_to_end::examples::basic_wallet_package_sizes::basic_wallet_and_p2id` | 106/55 | 2810 | 2 | 278 | 0 | 746 | 8 | 152 |
+| `integration: end_to_end::batch_kernel::batch_kernel` | 17/17 | 4533 | 0 | 335 | 0 | 825 | 23 | 1910 |
+
+For the batch kernel specifically, its 17 captures contain 5,693 unit preparations: 4,533 Stack, 335 Selective and 825 Aliases. Unit preparation costs an estimated 2,088 instructions, control glue 23 and edge repair 1,910. This identifies edge and stack arrangement as useful profiling targets; it does not assign guest cycles to them without execution weighting.
+
+### Capture identity and reproduction
+
+The compiler uses the dev profile, locked dependencies and the repository's `miden-toolchain.toml` sysroot (0.17.0), on Darwin arm64. Tests ran serially with `MIDENC_TRACE='codegen:^$=trace'`, `MIDENC_TRACE_STYLE=never`, and successful nextest output retained. The command selected the exact test names above through a disjunction of `test(...)` filters across the three crates. See [the debugging guide](../internal/src/codegen-debugging.md#measure-preparation-choices-in-real-workloads) for a single-workload command and the parser invocation.
+
+The paired pre-reporting baseline is `0146824f`. After excluding the changed preparation-reporting fields and source-span debug formatting, all 977 ordered captures match in action streams, unit shapes, contracts, semantic storage reads and final frame layouts. This checks unchanged observable allocation choices; it is not a proof of identical trusted lowering bodies. The unchanged numerical pins and all semantic assertions also pass.
+
+The complete trace SHA256 is `e1e09177fada707c4906455a9f802635b71f556afc237ee703ef491197b46178`; the histogram JSON SHA256 is `2e2c35e3d5171265915fa560bb3098c89b6a4ed80094cff8f95f35227a18a19c`. The running batch-test executable was identified directly from the nextest child process and has SHA256 `c16b5fef77db768f4c5f92f81a7cf467f1e7020c548d8b2880625520fcb7688b`. These identify this local capture, not a later rebuild. The histogram JSON records every full HIR path or generated definition/parameter identity, each complete planning-capture hash and its encounter count; it does not equate a capture hash with equivalent native code.
+
 ## Current CI comparison
 
 [PR 1484 benchmark run 40246156884](https://github.com/0xMiden/compiler/actions/runs/40246156884/job/121328054304), completed October 26, 2026 UTC, reports candidate `37aa93e240af` against `next` `51c31fdbf447`. The run belongs to PR head `6361b76b6`; the candidate is the workflow checkout revision, not a claim that those two hashes identify the same commit. These measurements precede the dead-prefix cleanup below. Both sides use the workflow's own builds and sysroots; the run retains compiled packages, replay snapshots and VM cycle flamegraphs.
