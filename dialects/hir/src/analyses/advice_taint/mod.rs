@@ -2,6 +2,7 @@ mod diagnostics;
 mod lattice;
 mod layout;
 mod propagation;
+mod ranges;
 mod sinks;
 mod storage;
 #[cfg(test)]
@@ -35,16 +36,15 @@ pub use self::{
 };
 use self::{
     lattice::value_taint,
-    sinks::{
-        external_call_param_types, external_parameter_range_constraint, is_external_call,
-        range_constrained_operand_indices,
-        unsatisfied_range_constrained_operand_indices_after_analysis,
-        value_satisfies_range_constraint_after_analysis,
-    },
+    ranges::RangeFacts,
+    sinks::{external_call_param_types, external_parameter_range_constraint, is_external_call},
     storage::AdviceTaintStoragePropagation,
 };
 
-/// Analysis wrapper that runs the sparse taint propagation and materializes diagnostics.
+/// Analysis wrapper that stabilizes integer ranges before propagating taint and diagnostics.
+///
+/// The worklist budget applies separately to ranges and taint. Exhausting the range budget
+/// retains the static operand requirements; taint still receives its full budget.
 ///
 /// # Analysis root
 ///
@@ -57,6 +57,7 @@ use self::{
 #[derive(Default)]
 pub struct AdviceTaintAnalysis {
     solver: DataFlowSolver,
+    ranges: RangeFacts,
     findings: Vec<AdviceTaintFinding>,
     exit_findings: Vec<AdviceTaintExitFinding>,
     external_call_findings: Vec<AdviceTaintExternalCallFinding>,
@@ -128,7 +129,7 @@ impl AdviceTaintAnalysis {
         config: DataFlowConfig,
     ) -> Result<(), Report> {
         self.run_solver_with_config(op, analysis_manager, config)?;
-        self.collect_analysis_results(op, true);
+        self.collect_analysis_results(op);
         Ok(())
     }
 
@@ -138,17 +139,20 @@ impl AdviceTaintAnalysis {
         analysis_manager: AnalysisManager,
         config: DataFlowConfig,
     ) -> Result<(), Report> {
+        self.ranges = RangeFacts::analyze(op, analysis_manager.clone(), config.clone())?;
         self.solver = DataFlowSolver::new(config);
-        self.solver.load::<AdviceTaintPropagation>();
+        let propagation =
+            AdviceTaintPropagation::with_ranges(&mut self.solver, self.ranges.clone());
+        self.solver.load_with_strategy(propagation);
         self.solver.load::<AdviceTaintStoragePropagation>();
         self.solver.initialize_and_run(op, analysis_manager)
     }
 
-    fn collect_analysis_results(&mut self, op: &Operation, ranges_complete: bool) {
-        self.findings = collect_findings(op, &self.solver, ranges_complete);
+    fn collect_analysis_results(&mut self, op: &Operation) {
+        self.findings = collect_findings(op, &self.solver, &self.ranges);
         self.exit_findings = collect_exit_findings(op, &self.solver);
         self.external_call_findings =
-            collect_external_call_findings(op, &self.solver, ranges_complete);
+            collect_external_call_findings(op, &self.solver, &self.ranges);
     }
 
     pub fn run_with_config(
@@ -173,7 +177,7 @@ impl AdviceTaintAnalysis {
             Err(err) if is_dataflow_budget_exhaustion(&err) => Some(err.to_string()),
             Err(err) => return Err(err),
         };
-        analysis.collect_analysis_results(op, incomplete_reason.is_none());
+        analysis.collect_analysis_results(op);
         Ok(AdviceTaintAnalysisResult {
             analysis,
             incomplete_reason,
@@ -218,17 +222,11 @@ impl Analysis for AdviceTaintAnalysis {
 fn collect_findings(
     op: &Operation,
     solver: &DataFlowSolver,
-    ranges_complete: bool,
+    ranges: &RangeFacts,
 ) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
-        // Before convergence, a proven range may still omit predecessors. Only
-        // complete range facts can discharge a sink's runtime requirements.
-        let operand_indices = if ranges_complete {
-            unsatisfied_range_constrained_operand_indices_after_analysis(operation, solver)
-        } else {
-            range_constrained_operand_indices(operation)
-        };
+        let operand_indices = ranges.unsatisfied_operands(operation);
         if operand_indices.is_empty() {
             return;
         }
@@ -342,7 +340,7 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
 fn collect_external_call_findings(
     op: &Operation,
     solver: &DataFlowSolver,
-    ranges_complete: bool,
+    ranges: &RangeFacts,
 ) -> Vec<AdviceTaintExternalCallFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
@@ -368,9 +366,7 @@ fn collect_external_call_findings(
             };
 
             let argument = argument.borrow().as_value_ref();
-            if ranges_complete
-                && value_satisfies_range_constraint_after_analysis(argument, &constraint, solver)
-            {
+            if ranges.satisfies(argument, &constraint) {
                 continue;
             }
 
@@ -523,50 +519,63 @@ mod tests {
     type ExitResults = (Vec<AdviceTaintExitFinding>, Vec<AdviceTaintDiagnostic>);
 
     #[test]
-    fn regression_partial_range_facts_do_not_suppress_findings() -> Result<(), Report> {
+    fn exhausted_range_phase_retains_static_sink_and_external_call_checks() -> Result<(), Report> {
         use midenc_dialect_arith::ArithOpBuilder;
         use midenc_hir::{
-            Immediate, IntegerValueRange, Type,
+            Type,
             dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, attributes::Signature},
         };
-        use midenc_hir_analysis::{SparseLattice, analyses::integer_range::IntegerRangeLattice};
+        use midenc_hir_analysis::{DataFlowConfig, DataFlowSolver};
 
-        use super::lattice::AdviceTaintSparseLattice;
+        use super::{AdviceTaintPropagation, ranges::RangeFacts};
         use crate::HirOpBuilder;
 
         let span = SourceSpan::UNKNOWN;
-        let mut test = Test::named("partial_range_findings").in_module("m");
+        let mut test = Test::named("range_budget_fallback").in_module("m");
         let external = test.define_function("external", &[Type::U32], &[]);
+        let helper = test.define_function("helper", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(helper, test.builder_mut());
+            let arg = builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            builder.ret([arg], span)?;
+        }
         let entry = test.define_function("entry", &[], &[Type::U32]);
-        let unchecked = {
+        {
             let signature = Signature::new(&test.context_rc(), [Type::U32], []);
+            let helper_signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
             let mut builder = FunctionBuilder::new(entry, test.builder_mut());
             let raw = builder.advice_pop(span)?;
-            let unchecked = builder.unrealized_conversion_cast(raw, Type::U32, span)?;
-            builder.exec(external, signature, [unchecked], span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let value = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+            builder.exec(external, signature, [value], span)?;
+            builder.exec(helper, helper_signature, [value], span)?;
             let one = builder.u32(1, span);
-            let sum = builder.add(unchecked, one, span)?;
+            let sum = builder.add(value, one, span)?;
             builder.ret([sum], span)?;
-            unchecked
-        };
-        let mut analysis = AdviceTaintAnalysis::default();
-        // Model a partial join: known predecessors fit u32, but an unchecked advice
-        // origin has arrived and other predecessors may still widen the range.
-        analysis
-            .solver
-            .get_or_create_mut::<IntegerRangeLattice, _>(unchecked)
-            .join(&IntegerValueRange::constant(Immediate::U32(7)));
-        analysis
-            .solver
-            .get_or_create_mut::<AdviceTaintSparseLattice, _>(unchecked)
-            .join(&super::ContextualAdviceTaintValue::raw(span));
+        }
         let root = test.module().as_operation_ref();
-        analysis.collect_analysis_results(&root.borrow(), false);
+        let manager = AnalysisManager::new(root, None);
+        let mut config = DataFlowConfig::new();
+        config.set_interprocedural(true);
+        config.set_max_worklist_iterations(Some(0));
+        let ranges = RangeFacts::analyze(&root.borrow(), manager.clone(), config.clone())?;
+        // Run the actual taint phase with a full budget after range inference has exhausted
+        // its own. Even initialization-time boolean facts must not suppress static checks.
+        config.set_max_worklist_iterations(None);
+        let mut solver = DataFlowSolver::new(config);
+        let propagation = AdviceTaintPropagation::with_ranges(&mut solver, ranges.clone());
+        solver.load_with_strategy(propagation);
+        solver.load::<super::storage::AdviceTaintStoragePropagation>();
+        solver.initialize_and_run(&root.borrow(), manager)?;
+        let mut analysis = AdviceTaintAnalysis {
+            solver,
+            ranges,
+            ..Default::default()
+        };
+        analysis.collect_analysis_results(&root.borrow());
         assert_eq!(analysis.findings().len(), 1);
         assert_eq!(analysis.external_call_findings().len(), 1);
-        analysis.collect_analysis_results(&root.borrow(), true);
-        assert!(analysis.findings().is_empty());
-        assert!(analysis.external_call_findings().is_empty());
         Ok(())
     }
 

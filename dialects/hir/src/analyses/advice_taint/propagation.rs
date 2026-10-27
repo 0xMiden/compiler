@@ -5,33 +5,40 @@ use midenc_hir::{
 use midenc_hir_analysis::{
     AnalysisStateGuard, AnalysisStateGuardMut, BuildableDataFlowAnalysis, CallControlFlowAction,
     DataFlowSolver, SparseForwardDataFlowAnalysis, SparseLattice,
-    analyses::{DeadCodeAnalysis, IntegerRangeAnalysis, SparseConstantPropagation},
+    analyses::{DeadCodeAnalysis, SparseConstantPropagation},
     sparse::SparseDataFlowAnalysis,
 };
 
 use super::{
     lattice::{AdviceTaintSparseLattice, CallContextFrame, ContextualAdviceTaintValue},
     layout::ADVICE_PIPE_RAW_RESULT_COUNT,
+    ranges::RangeFacts,
     sinks::{
-        external_call_result_has_unconstrained_advice_effect, is_range_constrained_sink,
+        external_call_result_has_unconstrained_advice_effect,
         is_unconstrained_external_result_type, operation_result_has_advice_read_effect,
-        unsatisfied_range_constrained_operand_indices,
     },
 };
 use crate::AdvicePipe;
 
 /// Sparse propagation of unconstrained advice taint through SSA values.
 #[derive(Default)]
-pub struct AdviceTaintPropagation;
+pub struct AdviceTaintPropagation {
+    ranges: RangeFacts,
+}
 
 impl BuildableDataFlowAnalysis for AdviceTaintPropagation {
     type Strategy = SparseDataFlowAnalysis<Self, Forward>;
 
     fn new(solver: &mut DataFlowSolver) -> Self {
+        Self::with_ranges(solver, RangeFacts::default())
+    }
+}
+
+impl AdviceTaintPropagation {
+    pub(super) fn with_ranges(solver: &mut DataFlowSolver, ranges: RangeFacts) -> Self {
         solver.load::<DeadCodeAnalysis>();
         solver.load::<SparseConstantPropagation>();
-        solver.load::<IntegerRangeAnalysis>();
-        Self
+        Self { ranges }
     }
 }
 
@@ -51,7 +58,7 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         op: &Operation,
         operands: &[AnalysisStateGuard<'_, Self::Lattice>],
         results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
-        solver: &mut DataFlowSolver,
+        _solver: &mut DataFlowSolver,
     ) -> Result<(), Report> {
         if op.is::<AdvicePipe>() {
             return join_advice_pipe_results(op, operands, results);
@@ -60,7 +67,8 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         let operand_taint =
             ContextualAdviceTaintValue::join_all(operands.iter().map(|operand| operand.value()));
         let range_constrained_operand_taint = ContextualAdviceTaintValue::join_all(
-            unsatisfied_range_constrained_operand_indices(op, solver)
+            self.ranges
+                .unsatisfied_operands(op)
                 .into_iter()
                 .filter_map(|index| operands.get(index).map(|operand| operand.value())),
         );
@@ -125,8 +133,7 @@ fn transfer_results(
     range_constrained_operand_taint: ContextualAdviceTaintValue,
     results: &mut [AnalysisStateGuardMut<'_, AdviceTaintSparseLattice>],
 ) -> Result<(), Report> {
-    let transferred_operand_taint =
-        transfer_taint(op, operand_taint, range_constrained_operand_taint);
+    let transferred_operand_taint = transfer_taint(operand_taint, range_constrained_operand_taint);
     let op_results = op.results().all();
     for (index, result) in results.iter_mut().enumerate() {
         let result_value = op_results[index].borrow().as_value_ref();
@@ -160,11 +167,10 @@ fn join_advice_pipe_results(
 }
 
 fn transfer_taint(
-    op: &Operation,
     operand_taint: ContextualAdviceTaintValue,
     range_constrained_operand_taint: ContextualAdviceTaintValue,
 ) -> ContextualAdviceTaintValue {
-    if is_range_constrained_sink(op) && range_constrained_operand_taint.has_unreported_origin() {
+    if range_constrained_operand_taint.has_unreported_origin() {
         operand_taint.mark_origins_reported(range_constrained_operand_taint.unreported_origins())
     } else {
         operand_taint
@@ -176,8 +182,10 @@ mod tests {
     use alloc::vec::Vec;
 
     use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_hir::{
         ArrayType, Op, SourceSpan, Type, ValueRef,
+        diagnostics::SourceLanguage,
         dialects::builtin::{
             BuiltinOpBuilder, FunctionBuilder,
             attributes::{AdviceEffectDescriptor, AdviceResourceKind, Signature},
@@ -201,18 +209,103 @@ mod tests {
     -> Result<(), midenc_hir::Report> {
         let span = SourceSpan::UNKNOWN;
         let mut test = Test::new("unchecked_boolean_overflow", &[], &[Type::I1]);
+        let source = test.context().source_manager().load(
+            SourceLanguage::Rust,
+            "/project/overflow.rs".into(),
+            "unchecked; checked;".into(),
+        );
+        let unchecked_span = SourceSpan::new(source.id(), 0..9);
+        let checked_span = SourceSpan::new(source.id(), 11..18);
         {
             let mut builder = test.function_builder();
             let raw = builder.advice_pop(span)?;
             let zero = builder.felt(midenc_hir::Felt::ZERO, span);
             let boolean = builder.eq(raw, zero, span)?;
-            let unchecked = builder.add_unchecked(boolean, boolean, span)?;
-            let checked = builder.add(unchecked, boolean, span)?;
+            let unchecked = builder.add_unchecked(boolean, boolean, unchecked_span)?;
+            let checked = builder.add(unchecked, boolean, checked_span)?;
             builder.ret([checked], span)?;
         }
         let findings = advice_taint_findings(&test)?;
         assert_eq!(findings.len(), 1, "unchecked overflow must not discharge a later range check");
         assert_eq!(sink_names(&findings), ["arith.add"]);
+        assert_eq!(findings[0].sink_span, checked_span);
+        Ok(())
+    }
+
+    #[test]
+    fn loop_range_widening_preserves_first_sink_deduplication() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("widening_taint", &[Type::I1], &[Type::Felt]);
+        let source = test.context().source_manager().load(
+            SourceLanguage::Rust,
+            "/project/loop.rs".into(),
+            "advice; multiply; add;".into(),
+        );
+        let advice_span = SourceSpan::new(source.id(), 0..6);
+        let multiply_span = SourceSpan::new(source.id(), 8..16);
+        let add_span = SourceSpan::new(source.id(), 18..21);
+        let span = SourceSpan::UNKNOWN;
+        {
+            let cond = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            let mut builder = test.function_builder();
+            let entry = builder.current_block();
+            let raw = builder.advice_pop(advice_span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let initial = builder.unrealized_conversion_cast(boolean, Type::Felt, span)?;
+            let loop_op = builder.r#while([initial], &[Type::Felt], span)?;
+            let before = loop_op.borrow().before().entry().as_block_ref();
+            let after = loop_op.borrow().after().entry().as_block_ref();
+            builder.switch_to_block(before);
+            let current = before.borrow().arguments()[0].borrow().as_value_ref();
+            builder.condition(cond, [current], span)?;
+            builder.switch_to_block(after);
+            let current = after.borrow().arguments()[0].borrow().as_value_ref();
+            let current = builder.unrealized_conversion_cast(current, Type::U32, span)?;
+            let two = builder.u32(2, span);
+            let product = builder.mul(current, two, multiply_span)?;
+            let one = builder.u32(1, span);
+            builder.add(product, one, add_span)?;
+            // The first visit sees a boolean. The backedge later introduces the same
+            // advice origin without a proven range, invalidating that early bound.
+            builder.r#yield([raw], span)?;
+            builder.switch_to_block(entry);
+            let result = loop_op.borrow().results()[0].borrow().as_value_ref();
+            builder.ret([result], span)?;
+        }
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(findings[0].sink_span, multiply_span);
+        assert_eq!(findings[0].advice_span, advice_span);
+        Ok(())
+    }
+
+    #[test]
+    fn discharged_sink_preserves_taint_for_later_unproven_result() -> Result<(), midenc_hir::Report>
+    {
+        let mut test = Test::new("discharged_sink", &[], &[Type::U32]);
+        let source = test.context().source_manager().load(
+            SourceLanguage::Rust,
+            "/project/discharged.rs".into(),
+            "multiply; add;".into(),
+        );
+        let multiply_span = SourceSpan::new(source.id(), 0..8);
+        let add_span = SourceSpan::new(source.id(), 10..13);
+        let span = SourceSpan::UNKNOWN;
+        {
+            let mut builder = test.function_builder();
+            let raw = builder.advice_pop(span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let value = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+            let two = builder.u32(2, span);
+            let product = builder.mul(value, two, multiply_span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(product, one, add_span)?;
+            builder.ret([sum], span)?;
+        }
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(findings[0].sink_span, add_span);
         Ok(())
     }
 

@@ -1102,39 +1102,39 @@ end
     /// Budget exhaustion keeps findings reached before the cutoff and reports incomplete coverage.
     #[test]
     fn lint_reports_partial_findings_when_the_worklist_budget_is_exhausted() {
-        let project = budget_project("masm_frontend_partial_budget");
+        // The independent straight-line procedure establishes a finding during solver
+        // initialization. BUDGET_ROOT also queues interprocedural work, so a zero budget
+        // stops before convergence without depending on the order of queued analyses.
+        let root = testing::fixture_source(
+            "masm_frontend_partial_budget",
+            "lib.masm",
+            &format!(
+                "{BUDGET_ROOT}\npub proc initialized_finding() -> \
+                 u32\nadv_push\npush.1\nu32wrapping_add\nend\n"
+            ),
+        );
+        let project =
+            VirtualProject::new("masm_frontend_partial_budget", &root, TargetType::Library)
+                .expect("should build project");
         let incomplete_prefix = "MASM advice taint analysis incomplete: dataflow solver exceeded \
                                  worklist iteration budget";
 
-        // Each loaded analysis changes the worklist order and the cost of reaching
-        // the first finding. Find a cutoff after that finding, before convergence,
-        // rather than pinning the test to one solver schedule.
-        for budget in 0..256 {
-            let (context, diagnostics) = capturing_context(&project, |options| options.lint = true);
-            let assembly = project.assembly_context().expect("assembly context");
-            let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
-            let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
-            let frontend = MasmProjectFrontend::with_lint_worklist_budget(budget);
-            let flow =
-                frontend.compile(&cx).expect("budget exhaustion must return a partial result");
-            assert!(flow.is_break(), "the partial HIR world must reach hir.analyzed");
+        let (context, diagnostics) = capturing_context(&project, |options| options.lint = true);
+        let assembly = project.assembly_context().expect("assembly context");
+        let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+        let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+        let frontend = MasmProjectFrontend::with_lint_worklist_budget(0);
+        let flow = frontend.compile(&cx).expect("budget exhaustion must return a partial result");
+        assert!(flow.is_break(), "the partial HIR world must reach hir.analyzed");
 
-            let warnings = warning_messages(&diagnostics.captured());
-            match warnings.as_slice() {
-                [finding, incomplete] => {
-                    assert_eq!(
-                        finding,
-                        "unconstrained advice value reaches operation requiring a constrained \
-                         value in function 'entry'"
-                    );
-                    assert!(incomplete.starts_with(incomplete_prefix), "{warnings:?}");
-                    return;
-                }
-                [incomplete] if incomplete.starts_with(incomplete_prefix) => {}
-                _ => panic!("expected partial findings before convergence, got {warnings:?}"),
-            }
-        }
-        panic!("fixture did not produce partial findings within the worklist budget");
+        let warnings = warning_messages(&diagnostics.captured());
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
+        assert_eq!(
+            warnings[0],
+            "unconstrained advice value reaches operation requiring a constrained value in \
+             function 'initialized_finding'"
+        );
+        assert!(warnings[1].starts_with(incomplete_prefix), "{warnings:?}");
     }
 
     /// Coverage warnings use the session diagnostics policy and fail under `-Dwarnings`.

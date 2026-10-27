@@ -1,13 +1,10 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    CallOpInterface, IntegerValueRange, Operation, ProgramPoint, Symbol, Type, ValueRef,
+    CallOpInterface, Operation, Symbol, Type,
     effects::{AdviceEffect, AdviceEffectOpInterface},
-    traits::{
-        ValueRangeConstraint, is_unconstrained_value_type, operation_operand_range_requirement,
-    },
+    traits::{ValueRangeConstraint, is_unconstrained_value_type},
 };
-use midenc_hir_analysis::{DataFlowSolver, analyses::integer_range::IntegerRangeLattice};
 
 pub(super) fn is_external_call(call: &dyn CallOpInterface) -> bool {
     // Unknown targets are external by definition; a known set is external if any member has no
@@ -61,65 +58,16 @@ pub(super) fn is_unconstrained_external_result_type(ty: &Type) -> bool {
     is_unconstrained_value_type(ty)
 }
 
-pub(super) fn is_range_constrained_sink(op: &Operation) -> bool {
-    !range_constrained_operand_indices(op).is_empty()
-}
+#[cfg(test)]
+use midenc_hir::traits::operation_operand_range_requirement;
 
+#[cfg(test)]
 pub(super) fn range_constrained_operand_indices(op: &Operation) -> Vec<usize> {
     op.operands()
         .iter()
         .enumerate()
         .filter_map(|(index, _)| operation_operand_range_requirement(op, index).map(|_| index))
         .collect()
-}
-
-pub(super) fn unsatisfied_range_constrained_operand_indices(
-    op: &Operation,
-    solver: &mut DataFlowSolver,
-) -> Vec<usize> {
-    op.operands()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, operand)| {
-            let constraint = operation_operand_range_requirement(op, index)?;
-            let value = operand.borrow().as_value_ref();
-            let range = solver.require::<IntegerRangeLattice, _>(value, ProgramPoint::after(op));
-            (!integer_range_satisfies_constraint(range.value(), &constraint)).then_some(index)
-        })
-        .collect()
-}
-
-pub(super) fn unsatisfied_range_constrained_operand_indices_after_analysis(
-    op: &Operation,
-    solver: &DataFlowSolver,
-) -> Vec<usize> {
-    op.operands()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, operand)| {
-            let constraint = operation_operand_range_requirement(op, index)?;
-            let value = operand.borrow().as_value_ref();
-            (!value_satisfies_range_constraint_after_analysis(value, &constraint, solver))
-                .then_some(index)
-        })
-        .collect()
-}
-
-pub(super) fn value_satisfies_range_constraint_after_analysis(
-    value: ValueRef,
-    constraint: &ValueRangeConstraint,
-    solver: &DataFlowSolver,
-) -> bool {
-    solver
-        .get::<IntegerRangeLattice, _>(&value)
-        .is_some_and(|range| integer_range_satisfies_constraint(range.value(), constraint))
-}
-
-fn integer_range_satisfies_constraint(
-    range: &IntegerValueRange,
-    constraint: &ValueRangeConstraint,
-) -> bool {
-    range.is_proven() && range.range().is_some_and(|range| range.satisfies(constraint))
 }
 
 pub(super) fn operation_result_has_advice_read_effect(
