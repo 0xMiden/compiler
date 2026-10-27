@@ -79,32 +79,30 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
         ^block12(%31: i32):
 
         ^block13:
-            %85 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
-            %86 = hir.bitcast %85 <{ ty = #builtin.type<u32> }>;
-            %87 = arith.constant 8 : u32;
-            %88 = arith.add %86, %87 <{ overflow = #builtin.overflow<checked> }>;
-            %89 = arith.constant 4 : u32;
-            %90, %91 = arith.divmod %88, %89;
-            %92 = hir.assertz %90 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
-            %93 = hir.int_to_ptr %91 <{ ty = #builtin.type<ptr<i32, element>> }>;
-            %94 = hir.load %93;
-            builtin.ret %94 : (i32);
+            %83 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+            %84 = hir.bitcast %83 <{ ty = #builtin.type<u32> }>;
+            %85 = arith.constant 8 : u32;
+            %86 = arith.add %84, %85 <{ overflow = #builtin.overflow<checked> }>;
+            %87 = arith.constant 4 : u32;
+            %88, %89 = arith.divmod %86, %87;
+            %90 = hir.assertz %88 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
+            %91 = hir.int_to_ptr %89 <{ ty = #builtin.type<ptr<i32, element>> }>;
+            %92 = hir.load %91;
+            builtin.ret %92 : (i32);
         ^block14:
             %70 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
             %71 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
             %72 = arith.constant 1 : i32;
-            %73 = hir.bitcast %72 <{ ty = #builtin.type<u32> }>;
-            %74 = arith.constant 31 : u32;
-            %75 = arith.band %73, %74;
-            %76 = arith.shl %71, %75;
-            %77 = hir.bitcast %70 <{ ty = #builtin.type<u32> }>;
-            %78 = arith.constant 8 : u32;
-            %79 = arith.add %77, %78 <{ overflow = #builtin.overflow<checked> }>;
-            %80 = arith.constant 4 : u32;
-            %81, %82 = arith.divmod %79, %80;
-            %83 = hir.assertz %81 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
-            %84 = hir.int_to_ptr %82 <{ ty = #builtin.type<ptr<i32, element>> }>;
-            hir.store %84, %76 : (ptr<i32, element>, i32);
+            %73 = arith.constant 1 : u32;
+            %74 = arith.shl %71, %73;
+            %75 = hir.bitcast %70 <{ ty = #builtin.type<u32> }>;
+            %76 = arith.constant 8 : u32;
+            %77 = arith.add %75, %76 <{ overflow = #builtin.overflow<checked> }>;
+            %78 = arith.constant 4 : u32;
+            %79, %80 = arith.divmod %77, %78;
+            %81 = hir.assertz %79 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
+            %82 = hir.int_to_ptr %80 <{ ty = #builtin.type<ptr<i32, element>> }>;
+            hir.store %82, %74 : (ptr<i32, element>, i32);
             cf.br ^block13;
         ^block15:
             %58 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;

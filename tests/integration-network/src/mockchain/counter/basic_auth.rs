@@ -69,7 +69,7 @@ pub fn counter_note_basic_auth_increments_storage() {
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     // Pin the generated note execution cost, including component initialization and calls.
-    expect!["9266"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["8913"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
     assert_counter_storage(
