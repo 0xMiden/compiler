@@ -22,31 +22,15 @@ impl LatticeLike for IntegerValueRange {
             (None, Some(_)) => other.clone(),
             (Some(lhs), Some(rhs)) => Self::with_confidence(
                 lhs.union(&rhs),
-                join_confidence(self.confidence(), other.confidence()),
+                self.join_confidence(other).expect("initialized ranges have confidence"),
             ),
         }
     }
 
-    fn meet(&self, other: &Self) -> Self {
-        match (self.range().copied(), other.range().copied()) {
-            (None, _) | (_, None) => Self::uninitialized(),
-            (Some(lhs), Some(rhs)) => Self::with_confidence(
-                lhs.intersection(&rhs),
-                join_confidence(self.confidence(), other.confidence()),
-            ),
-        }
-    }
-}
-
-fn join_confidence(
-    lhs: Option<IntegerRangeConfidence>,
-    rhs: Option<IntegerRangeConfidence>,
-) -> IntegerRangeConfidence {
-    match (lhs, rhs) {
-        (Some(IntegerRangeConfidence::Proven), Some(IntegerRangeConfidence::Proven)) => {
-            IntegerRangeConfidence::Proven
-        }
-        _ => IntegerRangeConfidence::Assumed,
+    fn meet(&self, _other: &Self) -> Self {
+        // This analysis uses a join semilattice. Trust metadata and pending facts do not
+        // define an intersection operation; LatticeLike requires unsupported operations to panic.
+        unimplemented!("IntegerValueRange is a join semilattice")
     }
 }
 
@@ -88,9 +72,13 @@ impl SparseForwardDataFlowAnalysis for IntegerRangeAnalysis {
         for (index, result_lattice) in results.iter_mut().enumerate() {
             let result = op.results()[index].borrow().as_value_ref();
 
-            if let Some(constant_range) = constant_range_from_solver(result, op, solver) {
-                result_lattice.join(&constant_range);
-                continue;
+            match constant_range_from_solver(result, op, solver) {
+                ConstantRange::Pending => continue,
+                ConstantRange::Known(range) => {
+                    result_lattice.join(&range);
+                    continue;
+                }
+                ConstantRange::NotConstant => {}
             }
 
             if let Some(refined_range) = refined_result_range(op, result, operands) {
@@ -160,10 +148,14 @@ impl IntegerRangeAnalysis {
             }
 
             let result = op.results()[index].borrow().as_value_ref();
-            if let Some(constant_range) = constant_range_from_solver(result, op, solver) {
-                result_lattice.join(&constant_range);
-            } else if !has_uninitialized_operand {
-                self.set_to_entry_state(result_lattice);
+            match constant_range_from_solver(result, op, solver) {
+                ConstantRange::Known(range) => {
+                    result_lattice.join(&range);
+                }
+                ConstantRange::NotConstant if !has_uninitialized_operand => {
+                    self.set_to_entry_state(result_lattice);
+                }
+                ConstantRange::Pending | ConstantRange::NotConstant => {}
             }
         }
 
@@ -179,28 +171,26 @@ pub fn value_range(solver: &DataFlowSolver, value: ValueRef) -> Option<IntegerVa
         .filter(|range| !range.is_uninitialized())
 }
 
-/// Return true if `value` is known to be non-negative from a signed perspective.
-pub fn statically_non_negative(solver: &DataFlowSolver, value: ValueRef) -> bool {
-    value_range(solver, value)
-        .and_then(|range| range.range().copied())
-        .is_some_and(|range| range.is_statically_non_negative())
+enum ConstantRange {
+    Pending,
+    Known(IntegerValueRange),
+    NotConstant,
 }
 
 fn constant_range_from_solver(
     result: ValueRef,
     op: &Operation,
     solver: &mut DataFlowSolver,
-) -> Option<IntegerValueRange> {
+) -> ConstantRange {
     let constant = solver.require::<Lattice<ConstantValue>, _>(result, ProgramPoint::after(op));
     if constant.value().is_uninitialized() {
-        return None;
+        return ConstantRange::Pending;
     }
 
-    constant
-        .value()
-        .constant_value()
-        .and_then(immediate_from_attribute)
-        .map(IntegerValueRange::constant)
+    match constant.value().constant_value().and_then(immediate_from_attribute) {
+        Some(value) => ConstantRange::Known(IntegerValueRange::constant(value)),
+        None => ConstantRange::NotConstant,
+    }
 }
 
 fn immediate_from_attribute(attr: AttributeRef) -> Option<Immediate> {
@@ -256,7 +246,6 @@ mod tests {
         assert_eq!(range.umax(), 42);
         assert_eq!(range.smin(), 42);
         assert_eq!(range.smax(), 42);
-        assert!(statically_non_negative(&solver, value));
         assert!(value_range(&solver, value).expect("expected integer range").is_proven());
 
         Ok(())
@@ -575,6 +564,118 @@ mod tests {
         };
         let solver = run_integer_range_analysis(&test)?;
         assert!(range_for(&solver, loop_result).umax() >= 100);
+        Ok(())
+    }
+
+    /// Exercise the transfer functions before SCCP initializes its facts. Normal loading runs
+    /// SCCP first, which would hide an eager type-top fallback in integer range analysis.
+    struct RangesBeforeConstants;
+
+    impl BuildableDataFlowAnalysis for RangesBeforeConstants {
+        type Strategy = SparseDataFlowAnalysis<Self, Forward>;
+
+        fn new(_solver: &mut DataFlowSolver) -> Self {
+            Self
+        }
+    }
+
+    impl SparseForwardDataFlowAnalysis for RangesBeforeConstants {
+        type Lattice = IntegerRangeLattice;
+
+        fn visit_operation(
+            &self,
+            op: &Operation,
+            operands: &[AnalysisStateGuard<'_, Self::Lattice>],
+            results: &mut [AnalysisStateGuardMut<'_, Self::Lattice>],
+            solver: &mut DataFlowSolver,
+        ) -> Result<(), Report> {
+            IntegerRangeAnalysis.visit_operation(op, operands, results, solver)
+        }
+
+        fn set_to_entry_state(&self, lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>) {
+            IntegerRangeAnalysis.set_to_entry_state(lattice);
+        }
+    }
+
+    fn run_ranges_before_constants(test: &Test) -> Result<DataFlowSolver, Report> {
+        let mut solver = DataFlowSolver::new(DataFlowConfig::new());
+        solver.load::<DeadCodeAnalysis>();
+        solver.load::<RangesBeforeConstants>();
+        solver.load::<SparseConstantPropagation>();
+        let op = test.function().as_operation_ref();
+        solver.initialize_and_run(&op.borrow(), AnalysisManager::new(op, None))?;
+        Ok(solver)
+    }
+
+    #[test]
+    fn delayed_constant_and_fold_facts_keep_exact_ranges() -> Result<(), Report> {
+        let mut test = Test::new("delayed_constants", &[], &[Type::U32, Type::I32]);
+        let (constant, folded) = {
+            let mut builder = test.function_builder();
+            let constant = builder.u32(42, SourceSpan::UNKNOWN);
+            let folded = builder.bitcast(constant, Type::I32, SourceSpan::UNKNOWN)?;
+            builder.ret([constant, folded], SourceSpan::UNKNOWN)?;
+            (constant, folded)
+        };
+        let solver = run_ranges_before_constants(&test)?;
+        for value in [constant, folded] {
+            let range = value_range(&solver, value).expect("range after delayed SCCP fact");
+            assert_eq!(range, IntegerValueRange::constant(Immediate::U32(42)));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn delayed_operand_facts_keep_checked_refinements_precise() -> Result<(), Report> {
+        let mut test = Test::new("delayed_refinements", &[Type::I1], &[Type::U32, Type::U32]);
+        let (raw, asserted, cast) = {
+            let condition = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            let mut builder = test.function_builder();
+            let entry = builder.current_block();
+            let branch = builder.r#if(condition, &[Type::Felt], SourceSpan::UNKNOWN)?;
+            let raw = branch.as_operation_ref().borrow().results()[0] as ValueRef;
+            let (then_region, else_region) = {
+                let branch = branch.borrow();
+                (branch.then_body().as_region_ref(), branch.else_body().as_region_ref())
+            };
+            for region in [then_region, else_region] {
+                let block = builder.create_block_in_region(region);
+                builder.switch_to_block(block);
+                let seven = builder.felt(Felt::new(7).unwrap(), SourceSpan::UNKNOWN);
+                builder.r#yield([seven], SourceSpan::UNKNOWN)?;
+            }
+            builder.switch_to_block(entry);
+            let asserted = builder.assert_u32(raw, SourceSpan::UNKNOWN)?;
+            let cast = builder.cast(raw, Type::U32, SourceSpan::UNKNOWN)?;
+            builder.ret([asserted, cast], SourceSpan::UNKNOWN)?;
+            (raw, asserted, cast)
+        };
+        // Complete SCCP before loading range analysis. The checked operations therefore have
+        // nonconstant facts when range analysis first sees their still-pending region input.
+        // No constant fallback can mask an eager full-range publication by constrained_by.
+        let mut config = DataFlowConfig::new();
+        config.set_interprocedural(true);
+        let mut solver = DataFlowSolver::new(config);
+        solver.load::<DeadCodeAnalysis>();
+        solver.load::<SparseConstantPropagation>();
+        let op = test.function().as_operation_ref();
+        solver.initialize_and_run(&op.borrow(), AnalysisManager::new(op, None))?;
+        solver.load::<IntegerRangeAnalysis>();
+        solver.initialize_and_run(&op.borrow(), AnalysisManager::new(op, None))?;
+        assert_eq!(
+            range_for(&solver, raw),
+            ConstantIntRange::constant(Immediate::Felt(Felt::new(7).unwrap()))
+        );
+        for value in [asserted, cast] {
+            let constant = solver.get::<Lattice<ConstantValue>, _>(&value).expect("SCCP fact");
+            assert!(!constant.value().is_uninitialized());
+            assert!(
+                constant.value().constant_value().is_none(),
+                "precision must come from checked refinement, not constant fallback"
+            );
+            let range = value_range(&solver, value).expect("range after delayed operand fact");
+            assert_eq!(range, IntegerValueRange::constant(Immediate::U32(7)));
+        }
         Ok(())
     }
 

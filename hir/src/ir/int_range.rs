@@ -5,6 +5,10 @@ use crate::traits::ValueRangeConstraint;
 
 /// Bounds on an integer value, tracked using both signed and unsigned interpretations.
 ///
+/// Unsigned bounds describe the stored raw representation: an N-bit integer, including a signed
+/// integer, is zero-extended to its storage width. Signed bounds interpret the same bit pattern
+/// at `width`; they are only meaningful for signed ordering at that width.
+///
 /// This mirrors MLIR's `ConstantIntRanges`, but is intentionally bounded to the integer widths HIR
 /// can currently materialize as immediates. Values with unsupported or non-integer types are
 /// represented by `width == 0`.
@@ -216,16 +220,17 @@ impl ConstantIntRange {
         }
     }
 
-    /// Compute the greatest lower bound of two ranges.
-    pub fn intersection(&self, other: &Self) -> Self {
+    /// Intersect two ranges, returning `None` for an empty intersection or incompatible widths.
+    /// An untracked range imposes no bounds, so it is the identity for intersection.
+    pub fn intersection(&self, other: &Self) -> Option<Self> {
         if self.is_untracked() {
-            return *self;
+            return Some(*other);
         }
         if other.is_untracked() {
-            return *other;
+            return Some(*self);
         }
         if self.width != other.width {
-            return Self::untracked();
+            return None;
         }
 
         let umin = self.umin.max(other.umin);
@@ -233,49 +238,57 @@ impl ConstantIntRange {
         let smin = self.smin.max(other.smin);
         let smax = self.smax.min(other.smax);
         if umin > umax || smin > smax {
-            return Self::untracked();
+            return None;
         }
 
-        Self {
-            width: self.width,
-            umin,
-            umax,
-            smin,
-            smax,
-        }
+        // Intersect each sign's raw representation separately. Overlapping unsigned and signed
+        // bounds alone do not guarantee a common bit pattern.
+        let positive = (smax >= 0).then(|| (umin.max(smin.max(0) as u128), umax.min(smax as u128)));
+        let negative = (smin < 0).then(|| {
+            (
+                umin.max(signed_to_unsigned(self.width, smin)),
+                umax.min(signed_to_unsigned(self.width, smax.min(-1))),
+            )
+        });
+        [positive, negative]
+            .into_iter()
+            .flatten()
+            .filter(|(min, max)| min <= max)
+            .map(|(min, max)| Self::from_unsigned(self.width, min, max))
+            .reduce(|lhs, rhs| lhs.union(&rhs))
     }
 
-    /// Infer the result range of an addition when overflow is statically impossible.
-    pub fn add_without_overflow(&self, other: &Self) -> Option<Self> {
+    /// Infer addition when the raw unsigned representation cannot overflow.
+    pub fn add_unsigned_without_overflow(&self, other: &Self) -> Option<Self> {
         if self.is_untracked() || other.is_untracked() || self.width != other.width {
             return None;
         }
-
         let umin = self.umin.checked_add(other.umin)?;
         let umax = self.umax.checked_add(other.umax)?;
-        if umax > unsigned_max(self.width) {
-            return None;
-        }
-
-        let smin = self.smin.checked_add(other.smin)?;
-        let smax = self.smax.checked_add(other.smax)?;
-        if smin < signed_min(self.width) || smax > signed_max(self.width) {
-            return None;
-        }
-
-        Some(Self {
-            width: self.width,
-            umin,
-            umax,
-            smin,
-            smax,
-        })
+        (umax <= unsigned_max(self.width)).then(|| Self::from_unsigned(self.width, umin, umax))
     }
 
-    /// Return true if the signed lower bound is known to be non-negative.
-    #[inline]
-    pub const fn is_statically_non_negative(&self) -> bool {
-        !self.is_untracked() && self.smin >= 0
+    /// Infer addition when the signed interpretation cannot overflow.
+    pub fn add_signed_without_overflow(&self, other: &Self) -> Option<Self> {
+        if self.is_untracked() || other.is_untracked() || self.width != other.width {
+            return None;
+        }
+        let smin = self.smin.checked_add(other.smin)?;
+        let smax = self.smax.checked_add(other.smax)?;
+        (smin >= signed_min(self.width) && smax <= signed_max(self.width))
+            .then(|| Self::from_signed(self.width, smin, smax))
+    }
+
+    /// Infer bitwise wrapping addition from either non-overflowing interpretation.
+    /// Each interpretation can independently constrain the same resulting bit pattern.
+    pub fn add_wrapping(&self, other: &Self) -> Option<Self> {
+        match (
+            self.add_unsigned_without_overflow(other),
+            self.add_signed_without_overflow(other),
+        ) {
+            (Some(unsigned), Some(signed)) => unsigned.intersection(&signed),
+            (range, None) | (None, range) => range,
+        }
     }
 
     /// Return true if this range is fully contained by `constraint`.
@@ -286,17 +299,7 @@ impl ConstantIntRange {
                 if self.is_untracked() || constraint.is_untracked() {
                     return false;
                 }
-                let unsigned_fits = self.umin >= constraint.umin && self.umax <= constraint.umax;
-                if matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128) {
-                    // Signed bounds describe bit patterns at a particular width. Do not
-                    // interpret wider bounds as facts about a narrower signed value.
-                    unsigned_fits
-                        && self.width == constraint.width
-                        && self.smin >= constraint.smin
-                        && self.smax <= constraint.smax
-                } else {
-                    unsigned_fits
-                }
+                self.umin >= constraint.umin && self.umax <= constraint.umax
             }
         }
     }
@@ -344,42 +347,26 @@ impl IntegerRangeConfidence {
 /// The integer range lattice value attached to an SSA value.
 #[derive(Default, Clone, PartialEq, Eq)]
 pub struct IntegerValueRange {
-    value: Option<ConstantIntRange>,
-    confidence: Option<IntegerRangeConfidence>,
+    value: Option<(ConstantIntRange, IntegerRangeConfidence)>,
 }
 
 impl IntegerValueRange {
     /// Create an uninitialized lattice value.
     #[inline]
     pub const fn uninitialized() -> Self {
-        Self {
-            value: None,
-            confidence: None,
-        }
-    }
-
-    /// Create a proven initialized lattice value from `range`.
-    #[inline]
-    pub const fn new(range: ConstantIntRange) -> Self {
-        Self::proven(range)
+        Self { value: None }
     }
 
     /// Create a proven initialized lattice value from `range`.
     #[inline]
     pub const fn proven(range: ConstantIntRange) -> Self {
-        Self {
-            value: Some(range),
-            confidence: Some(IntegerRangeConfidence::Proven),
-        }
+        Self::with_confidence(range, IntegerRangeConfidence::Proven)
     }
 
     /// Create an assumed initialized lattice value from `range`.
     #[inline]
     pub const fn assumed(range: ConstantIntRange) -> Self {
-        Self {
-            value: Some(range),
-            confidence: Some(IntegerRangeConfidence::Assumed),
-        }
+        Self::with_confidence(range, IntegerRangeConfidence::Assumed)
     }
 
     /// Create an initialized lattice value from `range` and `confidence`.
@@ -389,8 +376,7 @@ impl IntegerValueRange {
         confidence: IntegerRangeConfidence,
     ) -> Self {
         Self {
-            value: Some(range),
-            confidence: Some(confidence),
+            value: Some((range, confidence)),
         }
     }
 
@@ -415,47 +401,65 @@ impl IntegerValueRange {
     /// Return the confidence for this range, if initialized.
     #[inline]
     pub const fn confidence(&self) -> Option<IntegerRangeConfidence> {
-        self.confidence
+        match self.value {
+            Some((_, confidence)) => Some(confidence),
+            None => None,
+        }
+    }
+
+    /// Join operand confidence, waiting until both operands have initialized facts.
+    #[inline]
+    pub fn join_confidence(&self, other: &Self) -> Option<IntegerRangeConfidence> {
+        Some(self.confidence()?.join(other.confidence()?))
     }
 
     /// Return true if this lattice value is a proven range fact.
     #[inline]
     pub const fn is_proven(&self) -> bool {
-        matches!(self.confidence, Some(IntegerRangeConfidence::Proven))
+        matches!(self.confidence(), Some(IntegerRangeConfidence::Proven))
     }
 
     /// Return the underlying range if initialized.
     #[inline]
     pub const fn range(&self) -> Option<&ConstantIntRange> {
-        self.value.as_ref()
+        match &self.value {
+            Some((range, _)) => Some(range),
+            None => None,
+        }
     }
 
-    /// Return this range intersected with `constraint`.
+    /// Create a proven exact boolean in the raw representation of `ty`.
+    pub fn exact_bool(ty: &Type, value: bool) -> Self {
+        let width = ConstantIntRange::max_for_type(ty).width();
+        let value = u128::from(value);
+        Self::proven(ConstantIntRange::from_unsigned(width, value, value))
+    }
+
+    /// Apply a runtime constraint to the zero-extended raw representation.
+    /// Cross-width refinement does not model sign extension.
     pub fn constrained_by(&self, constraint: &ValueRangeConstraint) -> Self {
+        let Some((current, confidence)) = self.value else {
+            return Self::uninitialized();
+        };
         let constraint = ConstantIntRange::max_for_type(constraint.ty());
-        // A runtime check proves its own constraint, not unchecked assumptions
-        // inherited from the input's static type.
-        if !self.is_proven() {
-            return Self::proven(constraint);
-        }
-        match self.value {
-            None => Self::proven(constraint),
-            Some(current) if current.width == constraint.width => {
-                Self::proven(current.intersection(&constraint))
+        // A runtime check proves its own constraint, not assumptions inherited from the type.
+        let narrowed = match confidence {
+            IntegerRangeConfidence::Assumed => None,
+            IntegerRangeConfidence::Proven if current.width == constraint.width => {
+                current.intersection(&constraint)
             }
-            Some(current) if !current.is_untracked() && !constraint.is_untracked() => {
+            IntegerRangeConfidence::Proven
+                if !current.is_untracked() && !constraint.is_untracked() =>
+            {
                 let umin = current.umin.max(constraint.umin);
                 let umax = current.umax.min(constraint.umax);
-                if umin <= umax {
-                    Self::proven(ConstantIntRange::from_unsigned(constraint.width, umin, umax))
-                } else {
-                    // A checked assertion/cast with no overlapping runtime values would trap. The
-                    // result can only exist on paths where the constraint holds.
-                    Self::proven(constraint)
-                }
+                (umin <= umax)
+                    .then(|| ConstantIntRange::from_unsigned(constraint.width, umin, umax))
             }
-            Some(_) => Self::proven(constraint),
-        }
+            IntegerRangeConfidence::Proven => None,
+        };
+        // Disjoint proven inputs trap. Any result that exists still satisfies the constraint.
+        Self::proven(narrowed.unwrap_or(constraint))
     }
 }
 
@@ -467,14 +471,13 @@ impl fmt::Debug for IntegerValueRange {
 
 impl fmt::Display for IntegerValueRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (self.value, self.confidence) {
-            (None, _) => f.write_str("uninitialized"),
-            (Some(range), confidence) => {
+        match self.value {
+            None => f.write_str("uninitialized"),
+            Some((range, confidence)) => {
                 fmt::Display::fmt(&range, f)?;
                 match confidence {
-                    Some(IntegerRangeConfidence::Proven) => f.write_str(" proven"),
-                    Some(IntegerRangeConfidence::Assumed) => f.write_str(" assumed"),
-                    None => Ok(()),
+                    IntegerRangeConfidence::Proven => f.write_str(" proven"),
+                    IntegerRangeConfidence::Assumed => f.write_str(" assumed"),
                 }
             }
         }
@@ -560,5 +563,143 @@ mod tests {
         let constant =
             ConstantIntRange::constant(Immediate::Felt(Felt::new(Felt::ORDER - 1).unwrap()));
         assert_eq!(top.union(&constant), top);
+    }
+
+    #[test]
+    fn wrapping_add_uses_each_interpretation_independently() {
+        let unsigned = ConstantIntRange::constant(Immediate::U32(0x7fff_ffff));
+        let one = ConstantIntRange::constant(Immediate::U32(1));
+        assert_eq!(
+            unsigned.add_wrapping(&one),
+            Some(ConstantIntRange::constant(Immediate::U32(0x8000_0000)))
+        );
+        let signed = ConstantIntRange::constant(Immediate::I32(-1));
+        assert_eq!(signed.add_wrapping(&one), Some(ConstantIntRange::constant(Immediate::I32(0))));
+        let straddling = ConstantIntRange::from_unsigned(32, 0, 0x8000_0000);
+        assert_eq!(
+            straddling.add_wrapping(&one),
+            Some(ConstantIntRange::from_unsigned(32, 1, 0x8000_0001))
+        );
+    }
+
+    #[test]
+    fn checked_add_uses_the_selected_interpretation() {
+        let max = ConstantIntRange::constant(Immediate::U32(0x7fff_ffff));
+        let one = ConstantIntRange::constant(Immediate::U32(1));
+        assert!(max.add_unsigned_without_overflow(&one).is_some());
+        assert!(max.add_signed_without_overflow(&one).is_none());
+        let minus_one = ConstantIntRange::constant(Immediate::I32(-1));
+        assert!(minus_one.add_unsigned_without_overflow(&one).is_none());
+        assert_eq!(
+            minus_one.add_signed_without_overflow(&one),
+            Some(ConstantIntRange::constant(Immediate::I32(0)))
+        );
+    }
+
+    #[test]
+    fn intersection_respects_top_empty_and_incompatible_ranges() {
+        let range = ConstantIntRange::from_unsigned(8, 0, 5);
+        assert_eq!(range.intersection(&ConstantIntRange::untracked()), Some(range));
+        assert_eq!(ConstantIntRange::untracked().intersection(&range), Some(range));
+        assert_eq!(range.intersection(&ConstantIntRange::from_unsigned(8, 6, 10)), None);
+        assert_eq!(range.intersection(&ConstantIntRange::max_for_type(&Type::U16)), None);
+        let lhs = ConstantIntRange::from_unsigned(8, 0, 50)
+            .union(&ConstantIntRange::from_unsigned(8, 128, 200));
+        let rhs = ConstantIntRange::from_unsigned(8, 60, 127)
+            .union(&ConstantIntRange::from_unsigned(8, 206, 255));
+        assert_eq!(lhs.intersection(&rhs), None);
+    }
+
+    #[test]
+    fn refinement_waits_for_input_and_preserves_proven_bounds() {
+        let constraint = ValueRangeConstraint::Type(Type::U32);
+        assert!(
+            IntegerValueRange::uninitialized()
+                .constrained_by(&constraint)
+                .is_uninitialized()
+        );
+        let precise = IntegerValueRange::proven(ConstantIntRange::from_unsigned(64, 0, 10));
+        assert_eq!(
+            precise.constrained_by(&constraint).range(),
+            Some(&ConstantIntRange::from_unsigned(32, 0, 10))
+        );
+        let disjoint = IntegerValueRange::constant(Immediate::U64(u64::MAX));
+        assert_eq!(
+            disjoint.constrained_by(&constraint),
+            IntegerValueRange::proven(ConstantIntRange::max_for_type(&Type::U32))
+        );
+    }
+
+    #[test]
+    fn signed_constraints_check_the_zero_extended_representation() {
+        for (ty, width) in [(Type::I8, 8), (Type::I16, 16), (Type::I32, 32)] {
+            let constraint = ValueRangeConstraint::Type(ty);
+            let max = (1u128 << width) - 1;
+            assert!(ConstantIntRange::from_unsigned(64, 0, max).satisfies(&constraint));
+            assert!(!ConstantIntRange::from_unsigned(64, 0, max + 1).satisfies(&constraint));
+        }
+    }
+
+    #[test]
+    fn confidence_join_waits_and_never_upgrades_assumptions() {
+        let proven = IntegerValueRange::exact_bool(&Type::I1, true);
+        let assumed = IntegerValueRange::max_for_type(&Type::I1);
+        assert_eq!(proven.join_confidence(&proven), Some(IntegerRangeConfidence::Proven));
+        assert_eq!(proven.join_confidence(&assumed), Some(IntegerRangeConfidence::Assumed));
+        assert_eq!(assumed.join_confidence(&proven), Some(IntegerRangeConfidence::Assumed));
+        assert_eq!(proven.join_confidence(&IntegerValueRange::uninitialized()), None);
+        assert_eq!(proven.range(), Some(&ConstantIntRange::constant(Immediate::I1(true))));
+    }
+
+    #[test]
+    fn small_intersections_match_concrete_bit_patterns() {
+        fn contains(range: &ConstantIntRange, value: u128) -> bool {
+            let signed = unsigned_to_signed(4, value);
+            range.umin <= value
+                && value <= range.umax
+                && range.smin <= signed
+                && signed <= range.smax
+        }
+        for umin in 0..16 {
+            for umax in umin..16 {
+                let unsigned = ConstantIntRange::from_unsigned(4, umin, umax);
+                for smin in -8..8 {
+                    for smax in smin..8 {
+                        let signed = ConstantIntRange::from_signed(4, smin, smax);
+                        let intersection = unsigned.intersection(&signed);
+                        for value in 0..16 {
+                            assert_eq!(
+                                intersection.as_ref().is_some_and(|range| contains(range, value)),
+                                contains(&unsigned, value) && contains(&signed, value),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn small_wrapping_ranges_contain_every_concrete_result() {
+        for lmin in 0..16 {
+            for lmax in lmin..16 {
+                let lhs = ConstantIntRange::from_unsigned(4, lmin, lmax);
+                for rmin in 0..16 {
+                    for rmax in rmin..16 {
+                        let rhs = ConstantIntRange::from_unsigned(4, rmin, rmax);
+                        if let Some(result) = lhs.add_wrapping(&rhs) {
+                            for lhs in lmin..=lmax {
+                                for rhs in rmin..=rmax {
+                                    let value = (lhs + rhs) & 15;
+                                    let signed = unsigned_to_signed(4, value);
+                                    assert!(result.umin <= value && value <= result.umax);
+                                    assert!(result.smin <= signed && signed <= result.smax);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

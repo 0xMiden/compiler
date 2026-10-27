@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
-    dialects::builtin::attributes::{BoolAttr, OverflowAttr},
+    dialects::builtin::attributes::{BoolAttr, Overflow, OverflowAttr},
     effects::*,
     traits::*,
     *,
@@ -88,32 +88,57 @@ impl InferIntRangeInterface for Add {
         let [lhs, rhs] = operands else {
             return;
         };
-        let confidence = if lhs.is_proven() && rhs.is_proven() {
-            IntegerRangeConfidence::Proven
-        } else {
-            IntegerRangeConfidence::Assumed
+        let Some(confidence) = lhs.join_confidence(rhs) else {
+            return;
         };
         let (Some(lhs), Some(rhs)) = (lhs.range(), rhs.range()) else {
             return;
         };
-
-        let result_top = ConstantIntRange::max_for_type(self.result().ty());
-        let range = lhs
-            .add_without_overflow(rhs)
-            .filter(|range| result_top.union(range) == result_top)
-            .map(|range| IntegerValueRange::with_confidence(range, confidence))
-            .unwrap_or_else(|| {
-                // Unchecked arithmetic can produce a field value outside the
-                // declared integer type; only checked/wrapping operations prove
-                // the fallback bound at runtime.
-                if self.get_overflow().is_unchecked() {
-                    IntegerValueRange::assumed(result_top)
-                } else {
-                    IntegerValueRange::proven(result_top)
-                }
-            });
+        let range = infer_add_range(self.result().ty(), lhs, rhs, *self.get_overflow(), confidence);
         set_result_range(self.result().as_value_ref(), range);
     }
+}
+
+fn infer_add_range(
+    ty: &Type,
+    lhs: &ConstantIntRange,
+    rhs: &ConstantIntRange,
+    overflow: Overflow,
+    confidence: IntegerRangeConfidence,
+) -> IntegerValueRange {
+    let result_top = ConstantIntRange::max_for_type(ty);
+    // Checked and wrapping operations establish the result domain independently of their
+    // operands. Assumptions cannot prove a narrower bound, but must not hide that guarantee.
+    if confidence == IntegerRangeConfidence::Assumed
+        && matches!(overflow, Overflow::Checked | Overflow::Wrapping)
+    {
+        return IntegerValueRange::proven(result_top);
+    }
+    let precise = match overflow {
+        // The one-result Add operation rejects overflowing mode during lowering.
+        // AddOverflowing is a separate operation with an additional result.
+        Overflow::Overflowing => return IntegerValueRange::max_for_type(ty),
+        _ if lhs.width() != result_top.width() || rhs.width() != result_top.width() => None,
+        // Felt wrapping is modulo the field order, not modulo its 64-bit storage width.
+        // Keep exact unsigned sums only when they remain inside the canonical field domain.
+        _ if ty == &Type::Felt => lhs.add_unsigned_without_overflow(rhs),
+        // Unchecked operations may use field arithmetic. A signed interpretation that wraps
+        // the raw sum cannot establish a bound on the value actually stored.
+        Overflow::Unchecked => lhs.add_unsigned_without_overflow(rhs),
+        Overflow::Checked if ty.is_signed_integer() => lhs.add_signed_without_overflow(rhs),
+        Overflow::Checked => lhs.add_unsigned_without_overflow(rhs),
+        Overflow::Wrapping => lhs.add_wrapping(rhs),
+    };
+    precise
+        .filter(|range| result_top.union(range) == result_top)
+        .map(|range| IntegerValueRange::with_confidence(range, confidence))
+        .unwrap_or_else(|| {
+            if overflow.is_unchecked() {
+                IntegerValueRange::assumed(result_top)
+            } else {
+                IntegerValueRange::proven(result_top)
+            }
+        })
 }
 
 /// Two's complement sum with overflow bit
@@ -652,10 +677,8 @@ macro_rules! impl_infer_int_range_for_comparison {
                 let [lhs, rhs] = operands else {
                     return;
                 };
-                let confidence = if lhs.is_proven() && rhs.is_proven() {
-                    IntegerRangeConfidence::Proven
-                } else {
-                    IntegerRangeConfidence::Assumed
+                let Some(confidence) = lhs.join_confidence(rhs) else {
+                    return;
                 };
                 let (Some(lhs), Some(rhs)) = (lhs.range(), rhs.range()) else {
                     return;
@@ -821,8 +844,12 @@ fn infer_comparison_range(
     result_ty: &Type,
     confidence: IntegerRangeConfidence,
 ) -> IntegerValueRange {
-    if lhs.is_untracked() || rhs.is_untracked() || lhs.width() != rhs.width() {
-        return IntegerValueRange::max_for_type(result_ty);
+    if confidence != IntegerRangeConfidence::Proven
+        || lhs.is_untracked()
+        || rhs.is_untracked()
+        || lhs.width() != rhs.width()
+    {
+        return IntegerValueRange::proven(ConstantIntRange::max_for_type(result_ty));
     }
 
     if lhs.width() != ConstantIntRange::max_for_type(operand_ty).width() {
@@ -834,12 +861,16 @@ fn infer_comparison_range(
     let outcome = match comparison {
         IntComparison::Eq => infer_eq(lhs, rhs),
         IntComparison::Neq => infer_eq(lhs, rhs).map(|is_equal| !is_equal),
-        comparison if is_signed_ordering(operand_ty) => infer_signed_ordering(lhs, rhs, comparison),
-        comparison => infer_unsigned_ordering(lhs, rhs, comparison),
+        comparison if operand_ty.is_signed_integer() => {
+            infer_ordering((lhs.smin(), lhs.smax()), (rhs.smin(), rhs.smax()), comparison)
+        }
+        comparison => {
+            infer_ordering((lhs.umin(), lhs.umax()), (rhs.umin(), rhs.umax()), comparison)
+        }
     };
 
     outcome
-        .map(|value| exact_bool_range(result_ty, value, confidence))
+        .map(|value| IntegerValueRange::exact_bool(result_ty, value))
         .unwrap_or_else(|| IntegerValueRange::proven(ConstantIntRange::max_for_type(result_ty)))
 }
 
@@ -853,116 +884,28 @@ fn infer_eq(lhs: &ConstantIntRange, rhs: &ConstantIntRange) -> Option<bool> {
     }
 }
 
-fn infer_signed_ordering(
-    lhs: &ConstantIntRange,
-    rhs: &ConstantIntRange,
-    comparison: IntComparison,
-) -> Option<bool> {
-    match comparison {
-        IntComparison::Lt => {
-            if lhs.smax() < rhs.smin() {
-                Some(true)
-            } else if lhs.smin() >= rhs.smax() {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        IntComparison::Lte => {
-            if lhs.smax() <= rhs.smin() {
-                Some(true)
-            } else if lhs.smin() > rhs.smax() {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        IntComparison::Gt => {
-            if lhs.smin() > rhs.smax() {
-                Some(true)
-            } else if lhs.smax() <= rhs.smin() {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        IntComparison::Gte => {
-            if lhs.smin() >= rhs.smax() {
-                Some(true)
-            } else if lhs.smax() < rhs.smin() {
-                Some(false)
-            } else {
-                None
-            }
-        }
+fn infer_ordering<T: Ord>(lhs: (T, T), rhs: (T, T), comparison: IntComparison) -> Option<bool> {
+    let ((lmin, lmax), (rmin, rmax), inclusive) = match comparison {
+        IntComparison::Lt => (lhs, rhs, false),
+        IntComparison::Lte => (lhs, rhs, true),
+        IntComparison::Gt => (rhs, lhs, false),
+        IntComparison::Gte => (rhs, lhs, true),
         IntComparison::Eq | IntComparison::Neq => unreachable!("handled separately"),
-    }
-}
-
-fn infer_unsigned_ordering(
-    lhs: &ConstantIntRange,
-    rhs: &ConstantIntRange,
-    comparison: IntComparison,
-) -> Option<bool> {
-    match comparison {
-        IntComparison::Lt => {
-            if lhs.umax() < rhs.umin() {
-                Some(true)
-            } else if lhs.umin() >= rhs.umax() {
-                Some(false)
-            } else {
-                None
-            }
+    };
+    if inclusive {
+        if lmax <= rmin {
+            Some(true)
+        } else if lmin > rmax {
+            Some(false)
+        } else {
+            None
         }
-        IntComparison::Lte => {
-            if lhs.umax() <= rhs.umin() {
-                Some(true)
-            } else if lhs.umin() > rhs.umax() {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        IntComparison::Gt => {
-            if lhs.umin() > rhs.umax() {
-                Some(true)
-            } else if lhs.umax() <= rhs.umin() {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        IntComparison::Gte => {
-            if lhs.umin() >= rhs.umax() {
-                Some(true)
-            } else if lhs.umax() < rhs.umin() {
-                Some(false)
-            } else {
-                None
-            }
-        }
-        IntComparison::Eq | IntComparison::Neq => unreachable!("handled separately"),
-    }
-}
-
-fn is_signed_ordering(ty: &Type) -> bool {
-    matches!(ty, Type::I8 | Type::I16 | Type::I32 | Type::I64 | Type::I128)
-}
-
-fn exact_bool_range(
-    ty: &Type,
-    value: bool,
-    confidence: IntegerRangeConfidence,
-) -> IntegerValueRange {
-    let width = ConstantIntRange::max_for_type(ty).width();
-    if width == 0 {
-        IntegerValueRange::max_for_type(ty)
+    } else if lmax < rmin {
+        Some(true)
+    } else if lmin >= rmax {
+        Some(false)
     } else {
-        let value = u128::from(value);
-        IntegerValueRange::with_confidence(
-            ConstantIntRange::from_unsigned(width, value, value),
-            confidence,
-        )
+        None
     }
 }
 
@@ -1001,3 +944,205 @@ pub struct Max {
 }
 
 infer_return_ty_for_binary_op!(Max);
+
+#[cfg(test)]
+mod integer_range_tests {
+    use super::*;
+
+    #[test]
+    fn checked_and_wrapping_add_prove_the_domain_without_proving_assumptions() {
+        for lhs in [
+            ConstantIntRange::max_for_type(&Type::U32),
+            ConstantIntRange::from_unsigned(32, 0, 10),
+        ] {
+            for rhs in [0, 1] {
+                for overflow in [Overflow::Checked, Overflow::Wrapping] {
+                    let result = infer_add_range(
+                        &Type::U32,
+                        &lhs,
+                        &ConstantIntRange::constant(Immediate::U32(rhs)),
+                        overflow,
+                        IntegerRangeConfidence::Assumed,
+                    );
+                    assert_eq!(
+                        result,
+                        IntegerValueRange::proven(ConstantIntRange::max_for_type(&Type::U32))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn addition_distinguishes_checked_wrapping_and_field_arithmetic() {
+        let cases = [
+            (Type::U32, Immediate::U32(0x7fff_ffff), Immediate::U32(1), 0x8000_0000),
+            (Type::I32, Immediate::I32(-1), Immediate::I32(1), 0),
+        ];
+        for (ty, lhs, rhs, expected) in cases {
+            for overflow in [Overflow::Checked, Overflow::Wrapping] {
+                let result = infer_add_range(
+                    &ty,
+                    &ConstantIntRange::constant(lhs),
+                    &ConstantIntRange::constant(rhs),
+                    overflow,
+                    IntegerRangeConfidence::Proven,
+                );
+                assert_eq!(
+                    result.range().map(|r| (r.umin(), r.umax())),
+                    Some((expected, expected))
+                );
+                assert!(result.is_proven());
+            }
+        }
+        for (ty, lhs) in [(Type::U32, Immediate::U32(u32::MAX)), (Type::I32, Immediate::I32(-1))] {
+            let result = infer_add_range(
+                &ty,
+                &ConstantIntRange::constant(lhs),
+                &ConstantIntRange::constant(Immediate::U32(1)),
+                Overflow::Unchecked,
+                IntegerRangeConfidence::Proven,
+            );
+            assert!(!result.is_proven(), "unchecked raw overflow must not acquire a wrapped proof");
+        }
+        let boolean_overflow = infer_add_range(
+            &Type::I1,
+            &ConstantIntRange::constant(Immediate::I1(true)),
+            &ConstantIntRange::constant(Immediate::I1(true)),
+            Overflow::Unchecked,
+            IntegerRangeConfidence::Proven,
+        );
+        assert!(!boolean_overflow.is_proven());
+    }
+
+    #[test]
+    fn overflowing_mode_is_unsupported_for_one_result_addition() {
+        for (ty, lhs, rhs) in [
+            (Type::U32, Immediate::U32(1), Immediate::U32(2)),
+            (Type::I32, Immediate::I32(-1), Immediate::I32(1)),
+            (
+                Type::Felt,
+                Immediate::Felt(Felt::new(1).unwrap()),
+                Immediate::Felt(Felt::new(2).unwrap()),
+            ),
+        ] {
+            let result = infer_add_range(
+                &ty,
+                &ConstantIntRange::constant(lhs),
+                &ConstantIntRange::constant(rhs),
+                Overflow::Overflowing,
+                IntegerRangeConfidence::Proven,
+            );
+            assert_eq!(result, IntegerValueRange::max_for_type(&ty));
+        }
+    }
+
+    #[test]
+    fn felt_addition_uses_the_field_modulus_in_supported_modes() {
+        let lhs = ConstantIntRange::constant(Immediate::Felt(Felt::new(Felt::ORDER - 1).unwrap()));
+        let rhs = ConstantIntRange::constant(Immediate::Felt(Felt::new(1u64 << 32).unwrap()));
+        let field_top = ConstantIntRange::max_for_type(&Type::Felt);
+        // The raw sum is 2^64, but field addition yields 2^32 - 1 rather than zero.
+        for overflow in [Overflow::Wrapping, Overflow::Checked, Overflow::Unchecked] {
+            let result =
+                infer_add_range(&Type::Felt, &lhs, &rhs, overflow, IntegerRangeConfidence::Proven);
+            assert_eq!(result.range(), Some(&field_top));
+            assert_eq!(result.is_proven(), !overflow.is_unchecked());
+        }
+        let one = ConstantIntRange::constant(Immediate::Felt(Felt::new(1).unwrap()));
+        let two = ConstantIntRange::constant(Immediate::Felt(Felt::new(2).unwrap()));
+        for overflow in [Overflow::Wrapping, Overflow::Checked, Overflow::Unchecked] {
+            let result =
+                infer_add_range(&Type::Felt, &one, &two, overflow, IntegerRangeConfidence::Proven);
+            assert_eq!(
+                result,
+                IntegerValueRange::proven(ConstantIntRange::constant(Immediate::Felt(
+                    Felt::new(3).unwrap()
+                )))
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_always_proves_boolean_domain_without_proving_assumptions() {
+        let top = ConstantIntRange::max_for_type(&Type::U32);
+        let zero = ConstantIntRange::constant(Immediate::U32(0));
+        for (lhs, rhs, confidence) in [
+            (top, zero, IntegerRangeConfidence::Assumed),
+            (ConstantIntRange::untracked(), zero, IntegerRangeConfidence::Proven),
+            (ConstantIntRange::max_for_type(&Type::U64), zero, IntegerRangeConfidence::Proven),
+        ] {
+            let result = infer_comparison_range(
+                &Type::U32,
+                &lhs,
+                &rhs,
+                IntComparison::Gte,
+                &Type::I1,
+                confidence,
+            );
+            assert_eq!(
+                result,
+                IntegerValueRange::proven(ConstantIntRange::max_for_type(&Type::I1))
+            );
+        }
+        let result = infer_comparison_range(
+            &Type::U32,
+            &top,
+            &zero,
+            IntComparison::Gte,
+            &Type::I1,
+            IntegerRangeConfidence::Proven,
+        );
+        assert_eq!(result, IntegerValueRange::exact_bool(&Type::I1, true));
+    }
+
+    #[test]
+    fn signed_comparison_retains_the_interpretation_width_guard() {
+        let raw = ConstantIntRange::constant(Immediate::U64(u32::MAX as u64));
+        let zero = ConstantIntRange::constant(Immediate::U64(0));
+        let result = infer_comparison_range(
+            &Type::I32,
+            &raw,
+            &zero,
+            IntComparison::Lt,
+            &Type::I1,
+            IntegerRangeConfidence::Proven,
+        );
+        assert_eq!(result, IntegerValueRange::proven(ConstantIntRange::max_for_type(&Type::I1)));
+    }
+
+    #[test]
+    fn ordering_decisions_match_every_value_in_small_intervals() {
+        for lmin in -3..=3 {
+            for lmax in lmin..=3 {
+                for rmin in -3..=3 {
+                    for rmax in rmin..=3 {
+                        for comparison in [
+                            IntComparison::Lt,
+                            IntComparison::Lte,
+                            IntComparison::Gt,
+                            IntComparison::Gte,
+                        ] {
+                            if let Some(outcome) =
+                                infer_ordering((lmin, lmax), (rmin, rmax), comparison)
+                            {
+                                for lhs in lmin..=lmax {
+                                    for rhs in rmin..=rmax {
+                                        let actual = match comparison {
+                                            IntComparison::Lt => lhs < rhs,
+                                            IntComparison::Lte => lhs <= rhs,
+                                            IntComparison::Gt => lhs > rhs,
+                                            IntComparison::Gte => lhs >= rhs,
+                                            _ => unreachable!(),
+                                        };
+                                        assert_eq!(outcome, actual);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

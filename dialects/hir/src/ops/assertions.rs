@@ -95,7 +95,6 @@ pub struct AssertEq {
     dialect = HirDialect,
     implements(
         InferTypeOpInterface,
-        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ValueRangeAssertionOpInterface,
@@ -150,7 +149,7 @@ impl InferIntRangeInterface for Assert {
         set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
     ) {
         let result = self.result().as_value_ref();
-        set_result_range(result, exact_zero_or_one_range(self.result().ty(), true));
+        set_result_range(result, IntegerValueRange::exact_bool(self.result().ty(), true));
     }
 }
 
@@ -188,7 +187,7 @@ impl InferIntRangeInterface for Assertz {
         set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
     ) {
         let result = self.result().as_value_ref();
-        set_result_range(result, exact_zero_or_one_range(self.result().ty(), false));
+        set_result_range(result, IntegerValueRange::exact_bool(self.result().ty(), false));
     }
 }
 
@@ -196,31 +195,6 @@ impl InferTypeOpInterface for AssertU32 {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         self.result_mut().set_type(Type::U32);
         Ok(())
-    }
-}
-
-impl InferIntRangeInterface for AssertU32 {
-    fn infer_result_ranges(
-        &self,
-        operands: &[IntegerValueRange],
-        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
-    ) {
-        let result = self.result().as_value_ref();
-        let Some(refinement) = self.value_range_assertion(result) else {
-            return;
-        };
-        let range = operands.first().cloned().unwrap_or_else(IntegerValueRange::uninitialized);
-        set_result_range(result, range.constrained_by(&refinement.constraint));
-    }
-}
-
-fn exact_zero_or_one_range(ty: &Type, one: bool) -> IntegerValueRange {
-    let width = ConstantIntRange::max_for_type(ty).width();
-    if width == 0 {
-        IntegerValueRange::max_for_type(ty)
-    } else {
-        let value = u128::from(one);
-        IntegerValueRange::new(ConstantIntRange::from_unsigned(width, value, value))
     }
 }
 
