@@ -1,0 +1,23 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(sink-operand-defs))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(sink-operand-defs))' | hir-opt --verify - | filecheck %s
+
+// Sinking visits a binary operation's left dependency before its right dependency, including
+// their own operands. This leaves the right value on top for the selected arithmetic layout.
+// Subtraction makes operand order observable; nested dependencies exercise resuming the traversal.
+builtin.module private @sink_binary {
+    // CHECK: @nested(%[[X:\d+]]: u32, %[[Y:\d+]]: u32)
+    // CHECK-NEXT: %[[THREE:\d+]] = arith.constant 3 : u32;
+    // CHECK-NEXT: %[[LHS:\d+]] = arith.sub %[[X]], %[[THREE]] <{ overflow = #builtin.overflow<wrapping> }>;
+    // CHECK-NEXT: %[[SEVEN:\d+]] = arith.constant 7 : u32;
+    // CHECK-NEXT: %[[RHS:\d+]] = arith.sub %[[Y]], %[[SEVEN]] <{ overflow = #builtin.overflow<wrapping> }>;
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.sub %[[LHS]], %[[RHS]] <{ overflow = #builtin.overflow<wrapping> }>;
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (u32);
+    builtin.function public extern("C") @nested(%0: u32, %1: u32) -> u32 {
+        %2 = arith.constant 7 : u32;
+        %3 = arith.constant 3 : u32;
+        %4 = arith.sub %1, %2 <{ overflow = #builtin.overflow<wrapping> }>;
+        %5 = arith.sub %0, %3 <{ overflow = #builtin.overflow<wrapping> }>;
+        %6 = arith.sub %5, %4 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %6 : (u32);
+    };
+};
