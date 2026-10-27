@@ -9,7 +9,19 @@ use midenc_hir::{
 use super::support::run_args;
 use crate::{testing::compile_test_module_with_masm, trap_helpers::panic_message};
 
-const EDGES: &[i32] = &[i32::MIN, i32::MIN + 1, -65_537, -1, 0, 1, 65_537, i32::MAX - 1, i32::MAX];
+pub(super) const EDGES: &[i32] = &[
+    i32::MIN,
+    i32::MIN + 1,
+    -65_537,
+    -65_536,
+    -1,
+    0,
+    1,
+    65_536,
+    65_537,
+    i32::MAX - 1,
+    i32::MAX,
+];
 
 #[test]
 fn target_cost_wrapping_multiplication_preserves_sign_bits_and_wrapping_overflow() {

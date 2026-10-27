@@ -1,4 +1,8 @@
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic))' > %t.once
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic,masm-arithmetic))' > %t.twice
+// RUN: diff -u %t.once %t.twice
+// RUN: hir-opt --verify - < %t.once | filecheck %s
 
 builtin.module public @arithmetic {
     // CHECK-LABEL: @wrapping_product

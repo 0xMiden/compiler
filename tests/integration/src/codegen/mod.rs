@@ -1,4 +1,5 @@
 mod arithmetic;
+mod arithmetic_eval;
 mod control_flow;
 mod felt;
 mod int128;
