@@ -296,9 +296,16 @@ fn allocate_inner(
         stats.events.push(PlanningEvent::Body(id));
         let mut normal = true;
         for (position, unit) in segment.units.iter().enumerate() {
-            observe(&program, id, position, &state, &context, &mut actions, &mut debug_locations)?;
+            let at_unit = |error: AllocationError| {
+                error.at_step(
+                    unit.id,
+                    program.source_map.get(&unit.source).map(|source| &source.location),
+                )
+            };
+            observe(&program, id, position, &state, &context, &mut actions, &mut debug_locations)
+                .map_err(at_unit)?;
             let live = analysis.after[&unit.id].iter().collect();
-            let preparation = prepare_unit(&state, unit, &live, &context)?;
+            let preparation = prepare_unit(&state, unit, &live, &context).map_err(at_unit)?;
             decisions.preparations.insert(
                 unit.id,
                 PreparationDecision {
@@ -307,7 +314,7 @@ fn allocate_inner(
                 },
             );
             preparation.commit(&mut state, &mut actions, &mut bindings, &mut slots);
-            let reads = context.semantic_storage_reads(&state, unit)?;
+            let reads = context.semantic_storage_reads(&state, unit).map_err(at_unit)?;
             if !reads.is_empty() {
                 semantic_storage_reads.insert(unit.id, reads);
             }
@@ -316,7 +323,7 @@ fn allocate_inner(
                 normal = false;
                 break;
             }
-            state.complete(unit)?;
+            state.complete(unit).map_err(at_unit)?;
         }
         if normal {
             observe(
@@ -338,7 +345,14 @@ fn allocate_inner(
                     }
                 }
                 let preparation =
-                    prepare_control(&state, *predicate, *edge, &live, &next_use, &context)?;
+                    prepare_control(&state, *predicate, *edge, &live, &next_use, &context)
+                        .map_err(|error| {
+                            error.context(alloc::format!(
+                                "control predicate {predicate} in b{} for e{}",
+                                id.0,
+                                edge.0
+                            ))
+                        })?;
                 decisions.controls.insert(
                     id,
                     (
@@ -502,7 +516,7 @@ fn observe(
         }
         let id = DebugLocationId(
             u32::try_from(records.len())
-                .map_err(|_| AllocationError::IdentifierExhausted("debug location"))?,
+                .map_err(|_| AllocationError::exhausted("debug location"))?,
         );
         records.insert(
             id,

@@ -10,6 +10,8 @@ use crate::masm::SourceSpan;
 /// Shared failure classes for planning and independent verification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DiagnosticCategory {
+    /// A compiler-created identity cannot be represented in its bounded namespace.
+    IdentifierExhausted,
     /// Selected semantics, source evidence, or expanded unit structure disagree.
     InvalidSelectedLowering,
     /// A required semantic lane has no usable representation.

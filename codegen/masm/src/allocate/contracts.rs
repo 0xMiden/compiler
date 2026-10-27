@@ -392,7 +392,7 @@ fn recoverable(
 ///
 /// Candidate scoring includes all forward repairs and the first unit's preparation,
 /// weighted by incoming edge count. Equal costs retain the earlier candidate. Failed
-/// private candidates are discarded; no viable contract produces `UnavailableValue`.
+/// private candidates are discarded. If none succeeds, retain the first failure and its context.
 pub(super) fn choose(
     program: &CheckedSelectedProgram,
     analysis: &AllocationAnalysis,
@@ -592,6 +592,7 @@ pub(super) fn choose(
     let successor = program.segments.iter().find(|s| s.id == segment).unwrap();
     type Winner = (usize, EntryContract, BTreeMap<EdgeId, Preparation>, &'static str);
     let mut best: Option<Winner> = None;
+    let mut first_failure = None;
     let mut costs = vec![];
     for (candidate, origin) in distinct {
         let trial = (|| {
@@ -605,27 +606,41 @@ pub(super) fn choose(
             if let Some(unit) = successor.units.first() {
                 let state = AllocationState::at_entry(&candidate, segment, context)?;
                 let live_after = analysis.after[&unit.id].iter().collect();
-                let first = prepare_unit(&state, unit, &live_after, context)?;
+                let first = prepare_unit(&state, unit, &live_after, context).map_err(|error| {
+                    error.at_step(
+                        unit.id,
+                        program.source_map.get(&unit.source).map(|source| &source.location),
+                    )
+                })?;
                 score = score
                     .saturating_add(incoming.len().saturating_mul(action_cost(&first.actions)));
             }
             Ok::<_, AllocationError>((score, repairs))
         })();
-        if let Ok((score, repairs)) = trial {
-            costs.push(ContractCost {
-                origin,
-                actions: score,
-            });
-            if best.as_ref().is_none_or(|(cost, ..)| score < *cost) {
-                best = Some((score, candidate, repairs, origin));
+        let (score, repairs) = match trial {
+            Ok(result) => result,
+            Err(error) => {
+                first_failure.get_or_insert_with(|| {
+                    error.context(alloc::format!("candidate {origin} for b{}", segment.0))
+                });
+                continue;
             }
+        };
+        costs.push(ContractCost {
+            origin,
+            actions: score,
+        });
+        if best.as_ref().is_none_or(|(cost, ..)| score < *cost) {
+            best = Some((score, candidate, repairs, origin));
         }
     }
     let (_, contract, repairs, origin) = best.ok_or_else(|| {
-        invariant(
-            DiagnosticCategory::UnavailableValue,
-            "no entry contract can recover all live atoms",
-        )
+        first_failure.unwrap_or_else(|| {
+            invariant(
+                DiagnosticCategory::UnavailableValue,
+                "no entry contract can recover all live atoms",
+            )
+        })
     })?;
     Ok(Choice {
         contract,

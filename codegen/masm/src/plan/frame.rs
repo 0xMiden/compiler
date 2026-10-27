@@ -165,6 +165,37 @@ pub(crate) struct FrameResources {
     pub padding: u64,
 }
 
+impl FrameResources {
+    /// Report the contributions accumulated by physical frame assignment before failure.
+    pub(crate) fn capacity_error(&self) -> PlanError {
+        PlanError::new(
+            DiagnosticCategory::FrameCapacityExceeded,
+            alloc::format!(
+                "frame exceeds {MAX_FRAME_ELEMENTS} elements: source={} scalar={} spanning={} \
+                 workspace={} padding={}",
+                self.source_locals,
+                self.scalar_colors,
+                self.spanning_scratch,
+                self.workspace,
+                self.padding
+            ),
+        )
+    }
+}
+
+impl SourceLocalLayout {
+    /// Selection knows only the source-owned prefix. Later compiler storage is not yet measured.
+    pub(crate) fn capacity_error(extent: u64) -> PlanError {
+        PlanError::new(
+            DiagnosticCategory::FrameCapacityExceeded,
+            alloc::format!(
+                "frame exceeds {MAX_FRAME_ELEMENTS} elements: source={extent}; compiler storage \
+                 not assigned"
+            ),
+        )
+    }
+}
+
 /// Shared frame range reserved for unit-local scratch, with element-based size and alignment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct FrameWorkspace {

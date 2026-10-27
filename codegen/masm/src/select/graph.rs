@@ -219,18 +219,21 @@ impl<'a, 'e> Selector<'a, 'e> {
         }
         this.program.structure = ControlTree::Sequence(flow.tree);
         let mut offsets = vec![];
-        let mut extent = 0u32;
+        let mut extent = 0u64;
         for local in function.locals().iter() {
             offsets.push(extent);
-            let width = u32::try_from(local.size_in_felts())
-                .map_err(|_| super::invalid("source local size exceeds address domain"))?;
-            extent = extent
-                .checked_add(width)
-                .ok_or_else(|| super::invalid("source local extent overflows"))?;
+            extent = extent.saturating_add(local.size_in_felts() as u64);
         }
-        if extent > MAX_FRAME_ELEMENTS {
-            return Err(super::invalid("source local frame exceeds target limit"));
+        if extent > u64::from(MAX_FRAME_ELEMENTS) {
+            let mut error = SourceLocalLayout::capacity_error(extent);
+            error
+                .message
+                .push_str(&alloc::format!(" [procedure {}]", function.name().as_str()));
+            return Err(error.into());
         }
+        // Capacity proves every offset representable before narrowing.
+        let offsets = offsets.into_iter().map(|offset| offset as u32).collect();
+        let extent = extent as u32;
         this.finish(SourceLocalLayout { offsets, extent })
     }
 

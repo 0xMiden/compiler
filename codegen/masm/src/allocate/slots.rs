@@ -386,18 +386,7 @@ impl Layout {
 
 /// Explain capacity failure with the resource contributions accumulated before failure.
 fn capacity(resources: &FrameResources) -> PlanError {
-    PlanError::new(
-        DiagnosticCategory::FrameCapacityExceeded,
-        alloc::format!(
-            "frame exceeds {MAX_FRAME_ELEMENTS} elements: source={} scalar={} spanning={} \
-             workspace={} padding={}",
-            resources.source_locals,
-            resources.scalar_colors,
-            resources.spanning_scratch,
-            resources.workspace,
-            resources.padding
-        ),
-    )
+    resources.capacity_error()
 }
 
 fn error(message: &'static str) -> PlanError {

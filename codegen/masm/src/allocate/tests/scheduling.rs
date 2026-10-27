@@ -664,8 +664,10 @@ fn raw_word_swaps_preserve_occurrences_and_reject_incomplete_ownership() {
     for (word, depth) in [(0, 40), (4, 40), (255, 40), (1, 7), (2, 11), (3, 15)] {
         let initial = state((0..depth).map(atom).collect(), vec![]);
         let mut trial = Trial::new(&initial, &context, SlotOwner::Unit(SelectedStepId(0)));
-        let crate::allocate::state::AllocationError::Invariant(error) =
-            shuffle(&mut trial, PlanAction::SwapWord { word }).unwrap_err()
+        let crate::allocate::state::AllocationError {
+            cause: crate::allocate::state::AllocationFailure::Invariant(error),
+            ..
+        } = shuffle(&mut trial, PlanAction::SwapWord { word }).unwrap_err()
         else {
             panic!("expected an invalid owned-window diagnostic")
         };
@@ -1219,7 +1221,8 @@ fn failed_candidates_leave_bindings_ids_slots_and_actions_private() {
     let mut exhausted = initial.clone();
     exhausted.next_occurrence = u32::MAX;
     let snapshot = exhausted.clone();
-    assert!(prepare_unit(&exhausted, &request, &live, &context).is_err());
+    let error = prepare_unit(&exhausted, &request, &live, &context).unwrap_err();
+    assert!(format!("{error:?}").contains("step=s0"), "{error:?}");
     assert_eq!(exhausted, snapshot);
 }
 

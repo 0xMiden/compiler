@@ -2232,3 +2232,79 @@ fn join_scoring_prices_the_authorized_first_unit_order() {
     assert_eq!(score(0), 2);
     assert_eq!(score(1), 0);
 }
+
+#[test]
+fn failed_join_candidates_retain_exhaustion_and_allow_viable_alternatives() {
+    use super::edges::state;
+    use crate::allocate::{
+        analysis::analyze,
+        contracts::{Incoming, choose},
+        state::AllocationContext,
+    };
+    let program = checked(&diamond_source());
+    let analysis = analyze(&program);
+    let context = AllocationContext::new(&program, &analysis);
+    let slots =
+        |ids: &[u32]| ids.iter().map(|id| (SpillSlotId::canonical(a(*id)), a(*id))).collect();
+    let mut left = state(vec![a(1)], slots(&[2, 3]));
+    let mut right = state(vec![a(2)], slots(&[1, 3]));
+    left.next_occurrence = u32::MAX;
+    right.next_occurrence = u32::MAX;
+    let before = (left.clone(), right.clone());
+    let failure = choose(
+        &program,
+        &analysis,
+        &context,
+        SegmentId(3),
+        &[
+            Incoming {
+                edge: &program.edges[2],
+                state: &left,
+            },
+            Incoming {
+                edge: &program.edges[3],
+                state: &right,
+            },
+        ],
+        None,
+    )
+    .err()
+    .unwrap();
+    assert!(matches!(
+        &failure.cause,
+        crate::allocate::state::AllocationFailure::IdentifierExhausted(
+            "stack occurrence namespace exhausted"
+        )
+    ));
+    let text = format!("{failure:?}");
+    assert!(!text.contains("step="), "an incoming edge is not the successor unit: {text}");
+    assert!(text.contains("exhausted"), "{text}");
+    assert!(text.contains("edge e2"), "{text}");
+    assert!(text.contains("candidate next-use"), "{text}");
+    assert_eq!((left, right), before);
+
+    let mut left = state(vec![], slots(&[1, 2, 3]));
+    left.next_occurrence = u32::MAX;
+    let right = state(vec![a(1), a(2), a(3)], vec![]);
+    let choice = choose(
+        &program,
+        &analysis,
+        &context,
+        SegmentId(3),
+        &[
+            Incoming {
+                edge: &program.edges[2],
+                state: &left,
+            },
+            Incoming {
+                edge: &program.edges[3],
+                state: &right,
+            },
+        ],
+        None,
+    )
+    .unwrap();
+    assert_eq!(choice.origin, "inherited-majority");
+    assert!(choice.contract.stack_top_first.is_empty());
+    assert_eq!(choice.contract.required_spill_slots.len(), 3);
+}

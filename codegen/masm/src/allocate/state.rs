@@ -20,24 +20,118 @@ use crate::{
     verify::CheckedSelectedProgram,
 };
 
-/// Allocation failures distinguish an invalid plan from exhausted symbolic identity space.
+/// Original failure, preserved while speculative callers add diagnostic context.
 #[derive(Debug)]
-pub(crate) enum AllocationError {
-    /// A selected or physical contract could not be established; retains its diagnostic category.
-    Invariant(PlanError),
-    /// A fresh occurrence or temporary slot would overflow its `u32` namespace.
+pub(crate) enum AllocationFailure {
+    Invariant(alloc::boxed::Box<PlanError>),
     IdentifierExhausted(&'static str),
+}
+
+/// An allocation failure with the boundary that exposed it, rather than a replacement cause.
+/// Failed trials stay private; this metadata is used only if no successful proposal exists.
+pub(crate) struct AllocationError {
+    pub cause: AllocationFailure,
+    boundary: Option<(SelectedStepId, SourceLocation)>,
+    context: alloc::vec::Vec<alloc::string::String>,
+}
+
+impl core::fmt::Debug for AllocationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{:?}", self.cause)?;
+        if let Some((step, _)) = &self.boundary {
+            write!(f, " step=s{}", step.0)?;
+        }
+        for context in &self.context {
+            write!(f, " [{context}]")?;
+        }
+        Ok(())
+    }
 }
 
 impl From<PlanError> for AllocationError {
     fn from(error: PlanError) -> Self {
-        Self::Invariant(error)
+        Self {
+            cause: AllocationFailure::Invariant(alloc::boxed::Box::new(error)),
+            boundary: None,
+            context: Vec::new(),
+        }
+    }
+}
+
+impl AllocationError {
+    /// Keep identity exhaustion distinct from unavailable values or invalid transfers.
+    pub(super) fn exhausted(namespace: &'static str) -> Self {
+        Self {
+            cause: AllocationFailure::IdentifierExhausted(namespace),
+            boundary: None,
+            context: Vec::new(),
+        }
+    }
+
+    /// Attach the innermost real unit boundary; outer callers may fill its missing location.
+    pub(super) fn at_step(
+        mut self,
+        step: SelectedStepId,
+        location: Option<&SourceLocation>,
+    ) -> Self {
+        match &mut self.boundary {
+            None => self.boundary = Some((step, location.cloned().unwrap_or_default())),
+            Some((inner, origin)) if *inner == step && *origin == SourceLocation::default() => {
+                if let Some(location) = location {
+                    *origin = location.clone();
+                }
+            }
+            _ => {}
+        }
+        self
+    }
+
+    /// Edges have no source span of their own. Retain their identity without inventing a unit.
+    pub(super) fn on_edge(self, edge: &TransferEdge) -> Self {
+        self.context(alloc::format!(
+            "edge e{} from b{} to {:?}",
+            edge.id.0,
+            edge.source.0,
+            edge.destination
+        ))
+    }
+
+    /// Add an outer planning operation while retaining the underlying failure and boundary.
+    pub(super) fn context(mut self, context: impl Into<alloc::string::String>) -> Self {
+        self.context.push(context.into());
+        self
+    }
+
+    /// Convert once at the diagnostic boundary. Procedure provenance is a fallback only.
+    pub(crate) fn into_plan_error(
+        self,
+        procedure: &str,
+        span: crate::masm::SourceSpan,
+    ) -> PlanError {
+        let mut error = match self.cause {
+            AllocationFailure::Invariant(error) => *error,
+            AllocationFailure::IdentifierExhausted(namespace) => PlanError::new(
+                DiagnosticCategory::IdentifierExhausted,
+                alloc::format!("allocation identity space exhausted: {namespace}"),
+            ),
+        };
+        if let Some((step, location)) = self.boundary {
+            error = error.at_step(step, Some(&location));
+        }
+        if error.origin == SourceLocation::default() {
+            error.origin.span = span;
+        }
+        for context in self.context {
+            error.message.push_str(&alloc::format!(" [{context}]"));
+        }
+        error.message.push_str(&alloc::format!(" [procedure {procedure}]"));
+        error
     }
 }
 
 /// Attach the failed physical or semantic contract to an allocator diagnostic.
 pub(super) fn invariant(category: DiagnosticCategory, message: &'static str) -> AllocationError {
-    AllocationError::Invariant(PlanError::new(category, message))
+    PlanError::new(category, message).into()
 }
 
 /// Known physical representations and semantic equalities at one point in a segment.
@@ -271,7 +365,7 @@ impl AllocationState {
         let next = self
             .next_occurrence
             .checked_add(1)
-            .ok_or(AllocationError::IdentifierExhausted("stack occurrence namespace exhausted"))?;
+            .ok_or(AllocationError::exhausted("stack occurrence namespace exhausted"))?;
         self.stack.push_front(Occurrence {
             id: OccurrenceId(self.next_occurrence),
             atom,
@@ -286,9 +380,9 @@ impl AllocationState {
     pub(super) fn fresh_slot(&mut self, owner: SlotOwner) -> Result<SpillSlotId, AllocationError> {
         let mut index = self.next_temporary.get(&owner).copied().unwrap_or(0);
         loop {
-            let next = index.checked_add(1).ok_or(AllocationError::IdentifierExhausted(
-                "spill temporary namespace exhausted",
-            ))?;
+            let next = index
+                .checked_add(1)
+                .ok_or(AllocationError::exhausted("spill temporary namespace exhausted"))?;
             let slot = SpillSlotId { owner, index };
             if !self.slot_requests.contains(&slot) && !self.slots.contains_key(&slot) {
                 self.next_temporary.insert(owner, next);

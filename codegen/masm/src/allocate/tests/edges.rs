@@ -447,8 +447,10 @@ fn failed_edge_preparation_is_atomic_after_an_endangered_source_snapshot() {
     };
     let target = contract(vec![atom(0), atom(2)], vec![(a, atom(1))]);
     let snapshot = initial.clone();
+    let error = repair_edge(&initial, &edge, &target, &context(&values)).unwrap_err();
+    assert!(format!("{error:?}").contains("edge e0"), "{error:?}");
     assert!(
-        matches!(repair_edge(&initial, &edge, &target, &context(&values)), Err(AllocationError::Invariant(error)) if error.category == DiagnosticCategory::UnavailableValue)
+        matches!(error.cause, crate::allocate::state::AllocationFailure::Invariant(error) if error.category == DiagnosticCategory::UnavailableValue)
     );
     assert_eq!(initial, snapshot);
 }
@@ -1030,7 +1032,7 @@ fn backedge_retains_current_invariants_but_discards_body_and_header_unit_reconst
     );
     for stale in [atom(2), atom(3)] {
         assert!(
-            matches!(prepare_unit(&transfer.state, &unit(vec![stale], vec![]), &BTreeSet::new(), &context), Err(AllocationError::Invariant(error)) if error.category == DiagnosticCategory::UnavailableValue)
+            matches!(prepare_unit(&transfer.state, &unit(vec![stale], vec![]), &BTreeSet::new(), &context), Err(AllocationError { cause: crate::allocate::state::AllocationFailure::Invariant(error), .. }) if error.category == DiagnosticCategory::UnavailableValue)
         );
     }
 }

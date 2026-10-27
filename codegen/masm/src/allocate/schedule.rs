@@ -75,6 +75,17 @@ pub(crate) fn prepare_unit(
     live_after: &BTreeSet<ValueId>,
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
+    prepare_unit_orders(state, unit, live_after, context)
+        .map_err(|error| error.at_step(unit.id, None))
+}
+
+/// Compare authorized orders without exposing failed speculative state.
+fn prepare_unit_orders(
+    state: &AllocationState,
+    unit: &SelectedLowering,
+    live_after: &BTreeSet<ValueId>,
+    context: &AllocationContext<'_>,
+) -> Result<Preparation, AllocationError> {
     let canonical = prepare_order(state, unit, live_after, context);
     let Some(symmetry) = context.input_symmetries.get(&unit.id) else {
         return canonical;

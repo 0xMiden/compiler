@@ -26,7 +26,7 @@ pub(crate) fn repair_edge(
     target: &EntryContract,
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
-    transfer(state, edge, target, context, true)
+    transfer(state, edge, target, context, true).map_err(|error| error.on_edge(edge))
 }
 
 /// Construct a transfer by draining and rebuilding, bypassing incremental optimization.
@@ -38,7 +38,7 @@ pub(super) fn normalize_edge(
     target: &EntryContract,
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
-    transfer(state, edge, target, context, false)
+    transfer(state, edge, target, context, false).map_err(|error| error.on_edge(edge))
 }
 
 /// Validate in the source namespace, move physical representations, then rename once.

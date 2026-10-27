@@ -427,7 +427,11 @@ fn capacity_checks_precede_narrowing_and_boundary_size_assembles() {
             },
         )
         .unwrap_err();
-        let crate::allocate::state::AllocationError::Invariant(error) = error else {
+        let crate::allocate::state::AllocationError {
+            cause: crate::allocate::state::AllocationFailure::Invariant(error),
+            ..
+        } = error
+        else {
             panic!("expected frame diagnostic")
         };
         assert_eq!(error.category, DiagnosticCategory::FrameCapacityExceeded);
@@ -494,7 +498,11 @@ fn overflow_in_spanning_or_workspace_is_reported_before_operand_narrowing() {
         ];
         let plan = linear(vec![unit]);
         let error = assign_frame(&plan, &SourceLocalLayout::default()).unwrap_err();
-        let crate::allocate::state::AllocationError::Invariant(error) = error else {
+        let crate::allocate::state::AllocationError {
+            cause: crate::allocate::state::AllocationFailure::Invariant(error),
+            ..
+        } = error
+        else {
             panic!("frame diagnostic")
         };
         assert_eq!(error.category, DiagnosticCategory::FrameCapacityExceeded);
@@ -695,7 +703,11 @@ fn semantic_reads_reject_undeclared_backing_slots() {
     let mut plan = spill_only_alias_plan(1);
     plan.semantic_storage_reads.insert(SelectedStepId(0), vec![slot(99)]);
     let error = assign_frame(&plan, &SourceLocalLayout::default()).unwrap_err();
-    let crate::allocate::state::AllocationError::Invariant(error) = error else {
+    let crate::allocate::state::AllocationError {
+        cause: crate::allocate::state::AllocationFailure::Invariant(error),
+        ..
+    } = error
+    else {
         panic!("frame diagnostic")
     };
     assert!(error.message.contains("undeclared scalar slot"));

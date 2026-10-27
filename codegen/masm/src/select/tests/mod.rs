@@ -521,3 +521,25 @@ fn generic_event_host(
     }
     (host, records)
 }
+
+#[test]
+fn oversized_source_frame_reports_known_contribution_and_procedure() {
+    let mut f = parse("builtin.function public extern(\"C\") @oversized() { builtin.ret; };");
+    f.function
+        .borrow_mut()
+        .alloc_local(midenc_hir::Type::from(midenc_hir::ArrayType::new(
+            midenc_hir::Type::Felt,
+            65536,
+        )));
+    let function = f.borrow();
+    let error = select_function(&function, &SelectEnv::default())
+        .err()
+        .unwrap()
+        .downcast::<PlanError>()
+        .unwrap();
+    assert_eq!(error.category, DiagnosticCategory::FrameCapacityExceeded);
+    assert!(error.message.contains("source=65536"), "{error}");
+    assert!(error.message.contains("compiler storage not assigned"), "{error}");
+    assert!(error.message.contains("oversized"), "{error}");
+    assert!(!error.origin.span.is_unknown());
+}

@@ -1890,8 +1890,9 @@ fn finish_checked(
     if let Some(started) = started {
         log::trace!(target: &trace_target, "physical-stage procedure={name} stage=allocation elapsed_ns={}", started.elapsed().as_nanos());
     }
-    let mut plan = allocation.map_err(allocation_error)?;
-    let frame = assign_frame(&plan, locals).map_err(allocation_error)?;
+    let mut plan = allocation.map_err(|error| allocation_error(error, &name, span))?;
+    let frame =
+        assign_frame(&plan, locals).map_err(|error| allocation_error(error, &name, span))?;
     resolve_frame_bindings(&mut plan, &frame)?;
     let mut env = ExpansionEnv::default();
     env.resolve_debug(&plan, &frame);
@@ -1899,13 +1900,13 @@ fn finish_checked(
     Ok(finalize(&plan, &frame, registry, &env, &name)?.into_masm_with_span(name, span)?)
 }
 
-fn allocation_error(error: crate::allocate::state::AllocationError) -> Report {
-    match error {
-        crate::allocate::state::AllocationError::Invariant(error) => error.into(),
-        crate::allocate::state::AllocationError::IdentifierExhausted(kind) => {
-            Report::msg(format!("allocation identity space exhausted: {kind}"))
-        }
-    }
+/// Keep the planning error bare so the session can render its source labels.
+pub(super) fn allocation_error(
+    error: crate::allocate::state::AllocationError,
+    name: &masm::ProcedureName,
+    span: SourceSpan,
+) -> Report {
+    error.into_plan_error(name.as_str(), span).into()
 }
 
 #[cfg(test)]

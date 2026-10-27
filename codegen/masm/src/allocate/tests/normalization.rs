@@ -515,7 +515,7 @@ fn failed_preparation_is_atomic() {
         &context(&values),
     );
     assert!(
-        matches!(result, Err(AllocationError::Invariant(error)) if error.category == DiagnosticCategory::UnavailableValue)
+        matches!(result, Err(AllocationError { cause: crate::allocate::state::AllocationFailure::Invariant(error), .. }) if error.category == DiagnosticCategory::UnavailableValue)
     );
     assert_eq!(initial, snapshot);
     let request = unit(vec![atom(0)], vec![]);
@@ -580,7 +580,10 @@ fn identifier_failure_discards_partially_built_actions_slots_and_bindings() {
             &BTreeSet::new(),
             &context(&values)
         ),
-        Err(AllocationError::IdentifierExhausted(_))
+        Err(AllocationError {
+            cause: crate::allocate::state::AllocationFailure::IdentifierExhausted(_),
+            ..
+        })
     ));
     assert_eq!(initial, snapshot);
     initial.next_temporary.clear();
@@ -593,7 +596,10 @@ fn identifier_failure_discards_partially_built_actions_slots_and_bindings() {
             &BTreeSet::new(),
             &context(&values)
         ),
-        Err(AllocationError::IdentifierExhausted(_))
+        Err(AllocationError {
+            cause: crate::allocate::state::AllocationFailure::IdentifierExhausted(_),
+            ..
+        })
     ));
     assert_eq!(initial, snapshot);
 }

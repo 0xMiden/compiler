@@ -139,4 +139,76 @@ mod diagnostic_tests {
         assert!(rendered.contains("unrelated failure"), "{rendered}");
         assert!(!rendered.contains("source location unavailable"), "{rendered}");
     }
+    #[test]
+    fn allocation_reporting_preserves_precise_source_and_uses_procedure_fallback() {
+        use alloc::sync::Arc;
+
+        use midenc_session::diagnostics::{
+            DefaultSourceManager, DiagnosticsHandler, NullEmitter, SourceLanguage, SourceManager,
+        };
+
+        use crate::{
+            allocate::state::{AllocationError, AllocationFailure},
+            plan::*,
+        };
+        let sources = Arc::new(DefaultSourceManager::default());
+        let source = sources.load(
+            SourceLanguage::Other("test"),
+            Uri::new("allocation.hir"),
+            "procedure_body\nselected_operation\n".into(),
+        );
+        let procedure_span = crate::masm::SourceSpan::new(source.id(), 0..14);
+        let unit_span = crate::masm::SourceSpan::new(source.id(), 15..33);
+        let diagnostics =
+            DiagnosticsHandler::new(Default::default(), sources, Arc::new(NullEmitter::default()));
+        let name = crate::masm::ProcedureName::new("allocator_fixture").unwrap();
+        for precise in [false, true] {
+            let mut error =
+                PlanError::new(DiagnosticCategory::UnavailableValue, "unrecoverable operand");
+            if precise {
+                error.origin.span = unit_span;
+                error.step = Some(SelectedStepId(7));
+                error.expected = Some(Atom::new(ValueId(3), 0));
+            }
+            let report = component::allocation_error(error.into(), &name, procedure_span);
+            let error = report.downcast_ref::<PlanError>().unwrap();
+            assert_eq!(error.origin.span, if precise { unit_span } else { procedure_span });
+            let rendered =
+                format!("{}", PrintDiagnostic::new(report_planning_failure(report, &diagnostics)));
+            for expected in [
+                "allocation.hir",
+                "procedure allocator_fixture",
+                "unrecoverable operand",
+                if precise {
+                    "selected_operation"
+                } else {
+                    "procedure_body"
+                },
+            ] {
+                assert!(rendered.contains(expected), "missing {expected}: {rendered}");
+            }
+            if precise {
+                assert!(
+                    rendered.contains("step=s7") && rendered.contains("expected=v3.0"),
+                    "{rendered}"
+                );
+            }
+        }
+        let mut error: AllocationError =
+            PlanError::new(DiagnosticCategory::UnavailableValue, "unused").into();
+        error.cause = AllocationFailure::IdentifierExhausted("stack occurrences");
+        let report = component::allocation_error(error, &name, procedure_span);
+        assert_eq!(
+            report.downcast_ref::<PlanError>().unwrap().category,
+            DiagnosticCategory::IdentifierExhausted
+        );
+        let rendered =
+            format!("{}", PrintDiagnostic::new(report_planning_failure(report, &diagnostics)));
+        assert!(
+            rendered.contains("allocation.hir")
+                && rendered.contains("stack occurrences")
+                && rendered.contains("allocator_fixture"),
+            "{rendered}"
+        );
+    }
 }
