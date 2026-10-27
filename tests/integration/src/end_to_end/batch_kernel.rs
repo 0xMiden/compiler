@@ -19,7 +19,7 @@ use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{
-    CompilerTest,
+    CompilerTest, CompilerTestBuilder,
     testing::{executor_with_std, stripped_mast_size_str},
 };
 
@@ -314,6 +314,17 @@ fn many_notes_batch() -> Vec<MockTransaction> {
         .collect()
 }
 
+/// The valid scenarios as `(name, transactions)`, richest last.
+fn valid_scenarios() -> Vec<(&'static str, Vec<MockTransaction>)> {
+    vec![
+        ("two transactions", two_tx_batch()),
+        ("partial erasure", erasure_batch(true)),
+        ("all inputs erased", erasure_batch(false)),
+        ("no notes", vec![transaction(1)]),
+        ("eight transactions, 64 notes", many_notes_batch()),
+    ]
+}
+
 /// Serializes a strictly key-sorted global note list after inserting a phantom entry.
 fn with_extra_note(blob: &[Felt], key: Word) -> Vec<Felt> {
     let mut entries: Vec<Vec<Felt>> =
@@ -403,13 +414,7 @@ fn batch_kernel() {
         writeln!(metrics, "{name}: {cycles}").unwrap();
     };
 
-    for (name, transactions) in [
-        ("two transactions", two_tx_batch()),
-        ("partial erasure", erasure_batch(true)),
-        ("all inputs erased", erasure_batch(false)),
-        ("no notes", vec![transaction(1)]),
-        ("eight transactions, 64 notes", many_notes_batch()),
-    ] {
+    for (name, transactions) in valid_scenarios() {
         check(name, &transactions, build_advice_inputs(&transactions), true);
     }
 
@@ -495,42 +500,42 @@ fn batch_kernel() {
     check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
 
     expect![[r#"
-        MAST bytes: 119181
+        MAST bytes: 108147
         VM cycles:
-        two transactions: 34635
-        partial erasure: 29715
-        all inputs erased: 23743
-        no notes: 12474
-        eight transactions, 64 notes: 326274
+        two transactions: 28312
+        partial erasure: 24484
+        all inputs erased: 19411
+        no notes: 10232
+        eight transactions, 64 notes: 269148
         tampered batch: 1125
-        tampered header: 2379
-        tampered input preimage: 15807
-        tampered output preimage: 18520
+        tampered header: 2464
+        tampered input preimage: 14957
+        tampered output preimage: 17086
         empty batch: 342
         too many transactions: 325
         unaligned transactions: 301
-        short header: 1928
-        long header: 1928
-        too many input notes: 15369
-        too many output notes: 18084
-        unaligned input preimage: 15345
-        unaligned output preimage: 18045
-        missing input list: 15907
-        duplicated input list: 7138
-        descending input list: 6947
-        phantom input list: 31227
-        oversized input list: 4925
-        unaligned input list: 4901
-        missing output list: 28010
-        duplicated output list: 9309
-        descending output list: 9118
-        phantom output list: 30801
-        oversized output list: 7099
-        unaligned output list: 7075
-        input note id mismatch: 23249
-        phantom erasure: 25635
-        consume before create: 16441
-        same transaction erasure: 14752
+        short header: 1984
+        long header: 1984
+        too many input notes: 14531
+        too many output notes: 16635
+        unaligned input preimage: 14507
+        unaligned output preimage: 16619
+        missing input list: 14993
+        duplicated input list: 6370
+        descending input list: 6179
+        phantom input list: 27834
+        oversized input list: 4117
+        unaligned input list: 4093
+        missing output list: 25045
+        duplicated output list: 8574
+        descending output list: 8383
+        phantom output list: 27327
+        oversized output list: 6325
+        unaligned output list: 6301
+        input note id mismatch: 20926
+        phantom erasure: 22565
+        consume before create: 14547
+        same transaction erasure: 13298
     "#]]
     .assert_eq(&metrics);
 }
@@ -541,4 +546,103 @@ fn read_word(trace: &miden_debug::ExecutionTrace, byte_addr: u32) -> Word {
         .read_from_rust_memory(byte_addr)
         .unwrap_or_else(|| panic!("failed to read output word at {byte_addr:#x}"));
     Word::from([felts[0].0, felts[1].0, felts[2].0, felts[3].0])
+}
+
+/// Cycle profiler for one valid scenario (default: the richest). A tool for compiler optimization
+/// work, not a regression test; run it with
+/// `cargo make test-rust -- --run-ignored only --no-capture batch_kernel_profile`. Select the
+/// scenario with `BATCH_KERNEL_PROFILE_SCENARIO=<name>`; set
+/// `CARGO_PROFILE_PROFILING_DEBUG=line-tables-only` to resolve Rust source lines (this perturbs
+/// the generated code slightly).
+///
+/// Builds with the fixture's `profiling` profile (release code plus the package debug-info
+/// section, which the `release` profile omits) and writes to `target/batch_kernel_profile/`:
+/// - `folded.txt`: flamegraph folded stacks (`outer;inner <cycles>`),
+/// - `procedures.txt`: self cycles per innermost procedure,
+/// - `locations.txt`: self cycles per innermost resolved source location,
+/// - `ops.txt`: the executed VM operations in order, one `<op>\t<location>` per line, for
+///   pattern counting; a control-flow cycle (block entry/exit) is logged as `<control-flow>`.
+#[test]
+#[ignore = "profiling tool, run on demand"]
+fn batch_kernel_profile() {
+    use std::{collections::BTreeMap, fmt::Write as _};
+
+    let mut scenarios = valid_scenarios();
+    let (name, transactions) = match std::env::var("BATCH_KERNEL_PROFILE_SCENARIO") {
+        Ok(wanted) => scenarios
+            .into_iter()
+            .find(|(name, _)| *name == wanted)
+            .unwrap_or_else(|| panic!("unknown scenario {wanted:?}")),
+        Err(_) => scenarios.pop().unwrap(),
+    };
+
+    // `--profile` and the harness's default `--release` exclude each other.
+    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+        "../fixtures/batch-kernel",
+        WasmTranslationConfig::default(),
+        ["--entrypoint", "batch_kernel::entrypoint", "--profile", "profiling"].map(String::from),
+    );
+    builder.with_release(false);
+    let mut test = builder.build();
+    let package = test.compile_package();
+    let source_manager = test.session.source_manager.clone();
+    let mut exec = executor_with_std(build_args(word(101, 102, 103, 104), batch_id(&transactions)));
+    exec.with_advice_inputs(build_advice_inputs(&transactions));
+    let mut executor = exec.into_debug(package, source_manager.clone());
+
+    let mut folded: BTreeMap<String, usize> = BTreeMap::new();
+    let mut procedures: BTreeMap<String, usize> = BTreeMap::new();
+    let mut locations: BTreeMap<String, usize> = BTreeMap::new();
+    let mut ops = String::new();
+    let mut total = 0;
+    while !executor.stopped {
+        let before = executor.cycle;
+        executor.step().unwrap_or_else(|err| panic!("{name}: {err}"));
+        let cycles = executor.cycle.saturating_sub(before);
+        if cycles == 0 {
+            continue;
+        }
+        total += cycles;
+        let frames = executor.callstack.frames();
+        let names: Vec<String> = frames
+            .iter()
+            .map(|frame| frame.procedure("").map_or_else(|| "?".into(), |p| p.to_string()))
+            .collect();
+        *folded.entry(names.join(";")).or_default() += cycles;
+        *procedures.entry(names.last().cloned().unwrap_or_default()).or_default() += cycles;
+        let location = frames
+            .last()
+            .and_then(|frame| frame.last_resolved(source_manager.as_ref()))
+            .map_or_else(|| "<unresolved>".to_string(), |l| l.to_string());
+        // `current_op` is the operation this step executed; the frame's `recent()` history
+        // skips no-ops and does not advance on control-flow steps, so it would repeat the
+        // previous op for those cycles. A step without an operation is a control-flow cycle
+        // (block entry/exit), logged as such so the dump still accounts for every cycle.
+        let op = executor
+            .current_op
+            .map_or_else(|| "<control-flow>".to_string(), |op| op.to_string());
+        writeln!(ops, "{op}\t{location}").unwrap();
+        *locations.entry(location).or_default() += cycles;
+    }
+
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/batch_kernel_profile");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut text = String::new();
+    for (stack, cycles) in &folded {
+        writeln!(text, "{stack} {cycles}").unwrap();
+    }
+    std::fs::write(dir.join("folded.txt"), text).unwrap();
+    std::fs::write(dir.join("ops.txt"), ops).unwrap();
+    for (file, counts) in [("procedures.txt", procedures), ("locations.txt", locations)] {
+        let mut rows: Vec<_> = counts.into_iter().collect();
+        rows.sort_by_key(|(_, cycles)| std::cmp::Reverse(*cycles));
+        let mut text = format!("{name}: {total} cycles\n");
+        for (key, cycles) in rows {
+            let share = cycles as f64 * 100.0 / total as f64;
+            writeln!(text, "{cycles:>8} {share:5.1}% {key}").unwrap();
+        }
+        std::fs::write(dir.join(file), text).unwrap();
+    }
+    eprintln!("{name}: {total} cycles, profile written to {}", dir.display());
 }

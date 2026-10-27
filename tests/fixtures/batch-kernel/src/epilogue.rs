@@ -9,9 +9,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, felt, hash_elements};
 
-use crate::memory::{
-    BatchMemory, INPUT_FLAGS_STRIDE, NOTE_ENTRY_FELT_LEN, OUTPUT_FLAGS_STRIDE, erasure_erased,
-};
+use crate::memory::{BatchMemory, NOTE_ENTRY_FELT_LEN, erasure_erased};
 
 // ASSERTIONS
 // =================================================================================================
@@ -24,7 +22,7 @@ use crate::memory::{
 /// is folded into the single pass in [`compute_input_notes_commitment`].
 #[inline(always)]
 fn assert_all_output_notes_created(memory: &BatchMemory) {
-    for flags in memory.output_note_flags().chunks_exact(OUTPUT_FLAGS_STRIDE) {
+    for flags in &memory.output_flags {
         assert!(
             flags[1] != felt!(0),
             "an output-note list entry was not created by any transaction"
@@ -52,7 +50,7 @@ fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
     let num_notes = memory.num_input_notes();
     let mut num_erased = 0;
 
-    for flags in memory.input_note_flags().chunks_exact(INPUT_FLAGS_STRIDE) {
+    for flags in &memory.input_flags {
         // Binding has already checked erasure ordering for every consumed entry.
         assert!(
             flags[1] != felt!(0),
@@ -78,10 +76,8 @@ fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
     // Some entries were erased: collect the surviving entries and hash those.
     let mut elements: Vec<Felt> =
         Vec::with_capacity((num_notes - num_erased) * NOTE_ENTRY_FELT_LEN);
-    for (entry, flags) in memory
-        .input_notes
-        .chunks_exact(NOTE_ENTRY_FELT_LEN)
-        .zip(memory.input_note_flags().chunks_exact(INPUT_FLAGS_STRIDE))
+    for (entry, flags) in
+        memory.input_notes.chunks_exact(NOTE_ENTRY_FELT_LEN).zip(&memory.input_flags)
     {
         if flags[0] != erasure_erased() {
             elements.extend_from_slice(entry);
