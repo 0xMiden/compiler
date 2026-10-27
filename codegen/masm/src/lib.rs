@@ -18,7 +18,9 @@
 extern crate alloc;
 
 mod allocate;
+mod arithmetic;
 mod artifact;
+mod cost;
 mod data_segments;
 mod emit;
 mod emitter;
@@ -55,6 +57,7 @@ use midenc_hir::{
 
 pub(crate) use self::lower::HirSelection;
 pub use self::{
+    arithmetic::OptimizeMasmArithmetic,
     artifact::{MasmComponent, Rodata},
     events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
     legalization::{

@@ -26,6 +26,7 @@ miden-core = { workspace = true, features = ["testing"] }
 miden-mast-package.workspace = true
 miden-processor.workspace = true
 miden-debug = { workspace = true, features = ["proptest", "std"] }
+midenc-codegen-masm.workspace = true
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true

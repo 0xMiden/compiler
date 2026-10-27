@@ -1,3 +1,4 @@
+mod arithmetic;
 mod control_flow;
 mod felt;
 mod int128;

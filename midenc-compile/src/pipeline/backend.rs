@@ -19,7 +19,9 @@
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
-use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
+use midenc_codegen_masm::{
+    CheckMasmLegality, LegalizeForMasm, MasmComponent, OptimizeMasmArithmetic, ToMasmComponent,
+};
 use midenc_dialect_hir::transforms::Local2Reg;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
@@ -290,6 +292,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+            func_pm.add_pass(Box::new(OptimizeMasmArithmetic::default()));
         }
         // Function passes for component-level functions, up to the last canonicalization
         {
@@ -303,6 +306,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+            func_pm.add_pass(Box::new(OptimizeMasmArithmetic::default()));
         }
         // Representation legalization precedes final optional operand sinking
         component_pm.add_pass(Box::new(LegalizeForMasm));
@@ -338,10 +342,15 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
     };
     if has_component {
         // The component's siblings: modules and functions of the world itself
+        pm.nest::<builtin::Module>()
+            .add_pass(Box::new(OptimizeMasmArithmetic::default()));
         pm.nest::<builtin::Module>().add_pass(Box::new(LegalizeForMasm));
+        pm.nest::<builtin::Function>()
+            .add_pass(Box::new(OptimizeMasmArithmetic::default()));
         pm.nest::<builtin::Function>().add_pass(Box::new(LegalizeForMasm));
     } else {
         // A world without a component
+        pm.add_pass(Box::new(OptimizeMasmArithmetic::default()));
         pm.add_pass(Box::new(LegalizeForMasm));
     }
 

@@ -1,0 +1,102 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic))' | filecheck %s
+
+builtin.module public @arithmetic {
+    // CHECK-LABEL: @wrapping_product
+    // CHECK: %[[LHS:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[RHS:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[PRODUCT:\d+]] = arith.mul %[[LHS]], %[[RHS]] {{.*}}wrapping
+    // CHECK-NEXT: %[[RESULT:\d+]] = hir.bitcast %[[PRODUCT]] {{.*}}i32
+    // CHECK-NEXT: di.debug_value %[[RESULT]] {{.*}}name = "product"
+    // CHECK-NEXT: builtin.ret %[[RESULT]]
+    builtin.function public extern("C") @wrapping_product(%0: i32, %1: i32) -> i32 {
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "product", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i32);
+        builtin.ret %2 : (i32);
+    };
+
+    // CHECK-LABEL: @inline_product
+    // CHECK: hir.bitcast {{.*}}di.inline_call_chain{{.*}}name = "helper"
+    // CHECK-NEXT: hir.bitcast {{.*}}di.inline_call_chain{{.*}}name = "helper"
+    // CHECK-NEXT: arith.mul {{.*}}di.inline_call_chain{{.*}}name = "helper"
+    // CHECK-NEXT: hir.bitcast {{.*}}di.inline_call_chain{{.*}}name = "helper"
+    builtin.function public extern("C") @inline_product(%0: i32, %1: i32) -> i32 {
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<wrapping> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "helper", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> };
+        builtin.ret %2 : (i32);
+    };
+
+    // CHECK-LABEL: @zero
+    // CHECK: hir.bitcast
+    // CHECK: arith.mul {{.*}}wrapping
+    // CHECK-NEXT: hir.bitcast
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @zero(%0: i32) -> i32 {
+        %1 = arith.constant 0 : i32;
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %2 : (i32);
+    };
+
+    // CHECK-LABEL: @one
+    // CHECK: hir.bitcast
+    // CHECK: arith.mul {{.*}}wrapping
+    // CHECK-NEXT: hir.bitcast
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @one(%0: i32) -> i32 {
+        %1 = arith.constant 1 : i32;
+        %2 = arith.mul %1, %0 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %2 : (i32);
+    };
+
+    // CHECK-LABEL: @checked
+    // CHECK-NOT: hir.bitcast
+    // CHECK: arith.mul {{.*}}checked
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @checked(%0: i32, %1: i32) -> i32 {
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+        builtin.ret %2 : (i32);
+    };
+
+    // CHECK-LABEL: @unchecked
+    // CHECK-NOT: hir.bitcast
+    // CHECK: arith.mul {{.*}}unchecked
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @unchecked(%0: i32, %1: i32) -> i32 {
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %2 : (i32);
+    };
+
+    // CHECK-LABEL: @unsigned
+    // CHECK-NOT: hir.bitcast
+    // CHECK: arith.mul {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @unsigned(%0: u32, %1: u32) -> u32 {
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %2 : (u32);
+    };
+
+    // CHECK-LABEL: @wide
+    // CHECK-NOT: hir.bitcast
+    // CHECK: arith.mul {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @wide(%0: i64, %1: i64) -> i64 {
+        %2 = arith.mul %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %2 : (i64);
+    };
+
+    // CHECK-LABEL: @doubling
+    // CHECK-NOT: arith.mul
+    // CHECK: arith.add
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @doubling(%0: i32) -> i32 {
+        %1 = arith.add %0, %0 <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %1 : (i32);
+    };
+
+    // CHECK-LABEL: @overflow_flag
+    // CHECK-NOT: hir.bitcast
+    // CHECK: arith.mul_overflowing
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @overflow_flag(%0: i32, %1: i32) -> i32 {
+        %2, %3 = arith.mul_overflowing %0, %1;
+        builtin.ret %3 : (i32);
+    };
+};
