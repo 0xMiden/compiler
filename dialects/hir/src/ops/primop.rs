@@ -120,6 +120,19 @@ impl InferTypeOpInterface for MemSize {
     }
 }
 
+/// Fill a packed range with `count` copies of `value`, stepping by its size in bytes.
+///
+/// In the element address space the starting byte position is `4 * addr`; the stride
+/// remains bytes. Thus four `u8` values fill one element, unlike four typed stores to
+/// consecutive element addresses, which update one low byte in each of four elements.
+/// The MASM backend supports nonempty one-lane values of at most four bytes and its
+/// supported wider integer scalars; this does not imply arbitrary aggregate support.
+///
+/// Validate the complete range before writing, including the base when `count` is zero.
+/// The exclusive endpoint must be at most `0xffff_fffc` for byte pointers or `2^34` for
+/// element pointers. The byte limit excludes fills touching the last four bytes;
+/// ordinary stores and byte copies do not share that restriction. Range failure writes
+/// nothing, but other runtime store failures need not roll back earlier writes.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,

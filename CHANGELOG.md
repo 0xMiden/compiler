@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Remove unused HIR `Operation::reachability`/`reachability_cached` methods and their
+  `Reachability`/`ReachabilityCache` exports after removal of their spill-transform consumer.
+
 - Wasm explicit and implicit returns preserve every declared result, including mixed-width
   tuples, instead of rejecting or dropping results after the first.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
