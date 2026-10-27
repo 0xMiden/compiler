@@ -297,7 +297,7 @@ fn swapp_note_package_size() {
     let packages = compile_swapp_packages();
     // Pin executable MAST size independently of debug metadata, including generated call setup
     // and stack scheduling.
-    expect!["45658"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["44257"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -357,7 +357,7 @@ fn swapp_note_full_fill_transfers_assets() {
         "full fill must create exactly the P2ID routing note"
     );
     // Pin the generated note execution cost, including component initialization and calls.
-    expect!["13423"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["12852"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -448,7 +448,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         "partial fill must create the P2ID routing note and the remainder note"
     );
     // Pin the generated note execution cost, including component initialization and calls.
-    expect!["18731"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["17901"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -533,7 +533,7 @@ fn swapp_note_creator_reclaims_offered_asset() {
         "reclaiming the swap note must not create any output notes"
     );
     // Pin the generated note execution cost, including component initialization and calls.
-    expect!["5618"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["5275"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);

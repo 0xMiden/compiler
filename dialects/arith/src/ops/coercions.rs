@@ -1,4 +1,4 @@
-use alloc::{format, string::ToString};
+use alloc::{format, rc::Rc, string::ToString};
 
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
@@ -11,9 +11,12 @@ use midenc_hir::{
 
 use crate::*;
 
-/// Coercions produce a new attribute: operand attributes may be shared by other uses, and the
+/// Folds a unary op of an integer-like constant `operand` to the attribute `coerce` maps its value
+/// to.
+///
+/// The fold produces a new attribute: operand attributes may be shared by other uses, and the
 /// result's inferred attribute type must reflect the coerced value.
-fn fold_integer_coercion(
+pub(super) fn fold_integer_coercion(
     op: &Operation,
     operand: &Option<AttributeRef>,
     results: &mut SmallVec<[OpFoldResult; 1]>,
@@ -55,6 +58,15 @@ impl InferTypeOpInterface for Trunc {
         let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
+    }
+}
+
+impl Canonicalizable for Trunc {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        rewrites.push(crate::canonicalization::SimplifyTruncToBool::new(context));
     }
 }
 

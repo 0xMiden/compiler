@@ -71,7 +71,7 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     let executed_tx =
         block_on(mock_tx.execute()).expect("authorized client should be able to create a note");
     // Pin authentication cost for the authorized note-creation transaction.
-    expect!["75143"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
+    expect!["74990"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 

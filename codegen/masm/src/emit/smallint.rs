@@ -295,7 +295,7 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// The VM traps if the operands are not valid u32; they are not checked to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_mod_uint(&mut self, _n: u32, span: SourceSpan) {
         self.unchecked_mod_u32(span);
@@ -304,6 +304,8 @@ impl OpEmitter<'_> {
     /// Pops a u32 value off the stack, `a`, and performs `a % <imm>`.
     ///
     /// This function will panic if the divisor is zero.
+    ///
+    /// The VM traps if the operand is not a valid u32; it is not checked to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_mod_imm_uint(&mut self, imm: u32, _n: u32, span: SourceSpan) {
         self.unchecked_mod_imm_u32(imm, span);
@@ -329,7 +331,7 @@ impl OpEmitter<'_> {
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// The VM traps if the operands are not valid u32; they are not checked to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_divmod_uint(&mut self, _n: u32, span: SourceSpan) {
         self.unchecked_divmod_u32(span);
@@ -337,7 +339,9 @@ impl OpEmitter<'_> {
 
     /// Pops a u32 value off the stack, `a`, and pushes `a / <imm>`, then `a % <imm>` on the stack.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// This function will panic if the divisor is zero.
+    ///
+    /// The VM traps if the operand is not a valid u32; it is not checked to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_divmod_imm_uint(&mut self, imm: u32, _n: u32, span: SourceSpan) {
         self.unchecked_divmod_imm_u32(imm, span)
