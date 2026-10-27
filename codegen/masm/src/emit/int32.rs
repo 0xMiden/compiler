@@ -763,9 +763,10 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a / b`.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
+    /// always a valid u32, so no assertion is emitted.
     pub fn checked_div_u32(&mut self, span: SourceSpan) {
-        self.emit_all([masm::Instruction::U32Div, masm::Instruction::U32Assert], span);
+        self.emit(masm::Instruction::U32Div, span);
     }
 
     /// Pops two i32 values off the stack, `b` and `a`, and performs `a / b`.
@@ -779,13 +780,11 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// This operation is checked, so if the operand or result are not valid u32, execution traps.
+    /// This operation is checked: the VM traps if the operand is not a valid u32, and the result is
+    /// always a valid u32, so no assertion is emitted.
     pub fn checked_div_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
-        self.emit_all(
-            [masm::Instruction::U32DivImm(imm.into()), masm::Instruction::U32Assert],
-            span,
-        );
+        self.emit(masm::Instruction::U32DivImm(imm.into()), span);
     }
 
     /// Pops a i32 value off the stack, `a`, and performs `a / <imm>`.
@@ -829,7 +828,8 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a / b`.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// Emits the same instruction as [Self::checked_div_u32]: the VM traps if the operands are not
+    /// valid u32, and the result is always a valid u32.
     pub fn unchecked_div_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Div, span);
     }
@@ -837,6 +837,9 @@ impl OpEmitter<'_> {
     /// Pops a u32 value off the stack, `a`, and performs `a / <imm>`.
     ///
     /// This function will panic if the divisor is zero.
+    ///
+    /// Emits the same instruction as [Self::checked_div_imm_u32]: the VM traps if the operand is
+    /// not a valid u32, and the result is always a valid u32.
     pub fn unchecked_div_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32DivImm(imm.into()), span);
@@ -844,27 +847,27 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
+    /// always a valid u32, so no assertion is emitted.
     pub fn checked_mod_u32(&mut self, span: SourceSpan) {
-        self.emit_all([masm::Instruction::U32Mod, masm::Instruction::U32Assert], span);
+        self.emit(masm::Instruction::U32Mod, span);
     }
 
     /// Pops a u32 value off the stack, `a`, and performs `a % <imm>`.
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// This operation is checked, so if the operand or result are not valid u32, execution traps.
+    /// This operation is checked: the VM traps if the operand is not a valid u32, and the result is
+    /// always a valid u32, so no assertion is emitted.
     pub fn checked_mod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
-        self.emit_all(
-            [masm::Instruction::U32ModImm(imm.into()), masm::Instruction::U32Assert],
-            span,
-        );
+        self.emit(masm::Instruction::U32ModImm(imm.into()), span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// Emits the same instruction as [Self::checked_mod_u32]: the VM traps if the operands are not
+    /// valid u32, and the result is always a valid u32.
     pub fn unchecked_mod_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Mod, span);
     }
@@ -872,6 +875,9 @@ impl OpEmitter<'_> {
     /// Pops a u32 value off the stack, `a`, and performs `a % <imm>`.
     ///
     /// This function will panic if the divisor is zero.
+    ///
+    /// Emits the same instruction as [Self::checked_mod_imm_u32]: the VM traps if the operand is
+    /// not a valid u32, and the result is always a valid u32.
     pub fn unchecked_mod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32ModImm(imm.into()), span);
@@ -880,33 +886,36 @@ impl OpEmitter<'_> {
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
+    /// always a valid u32, so no assertion is emitted.
     pub fn checked_divmod_u32(&mut self, span: SourceSpan) {
-        self.emit_all([masm::Instruction::U32DivMod, masm::Instruction::U32Assert], span);
+        self.emit(masm::Instruction::U32DivMod, span);
     }
 
     /// Pops a u32 value off the stack, `a`, and pushes `a / <imm>`, then `a % <imm>` on the stack.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
+    /// always a valid u32, so no assertion is emitted.
     pub fn checked_divmod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
-        self.emit_all(
-            [masm::Instruction::U32DivModImm(imm.into()), masm::Instruction::U32Assert],
-            span,
-        );
+        self.emit(masm::Instruction::U32DivModImm(imm.into()), span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// Emits the same instruction as [Self::checked_divmod_u32]: the VM traps if the operands are
+    /// not valid u32, and the results are always valid u32.
     pub fn unchecked_divmod_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32DivMod, span);
     }
 
     /// Pops a u32 value off the stack, `a`, and pushes `a / <imm>`, then `a % <imm>` on the stack.
     ///
-    /// This operation is unchecked, so the result is not guaranteed to be a valid u32
+    /// This function will panic if the divisor is zero.
+    ///
+    /// Emits the same instruction as [Self::checked_divmod_imm_u32]: the VM traps if the operand
+    /// is not a valid u32, and the results are always valid u32.
     pub fn unchecked_divmod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32DivModImm(imm.into()), span);
