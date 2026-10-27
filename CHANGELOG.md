@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- [BREAKING] Stop emitting debugger frame-start/frame-end events around calls, initialization, and test
+  harnesses. Stack reconstruction requires a metadata-aware debugger. Remove the corresponding
+  compiler event variants and constants; printing and user events remain unchanged.
+- Prepare debug-info generation and inspection for VM 0.36, including package-private visibility
+  and compact inline-call ranges.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips

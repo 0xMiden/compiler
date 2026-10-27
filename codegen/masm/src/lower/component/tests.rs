@@ -371,6 +371,23 @@ fn lower_component(context: &Rc<Context>, text: &str) -> Result<MasmComponent, R
     component.borrow().to_masm_component(analysis_manager)
 }
 
+#[test]
+fn internal_hir_functions_remain_package_private_in_masm() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_world(
+        &context,
+        COMPONENT_LESS_WORLD_WITH_EFFECTIVELY_PUBLIC_NESTED_MODULES,
+    )
+    .unwrap();
+    let function = lowered
+        .modules
+        .iter()
+        .flat_map(|module| module.procedures())
+        .find(|procedure| procedure.name().as_str() == "callee")
+        .unwrap();
+    assert_eq!(function.visibility(), masm::Visibility::Internal);
+}
+
 /// Lower a component through the MASM legalization boundary used by the compiler pipeline.
 fn legalize_and_lower_component(
     context: &Rc<Context>,
@@ -497,6 +514,27 @@ fn context_with_entrypoint_and_test_harness(entrypoint: &str) -> Rc<Context> {
         Session::new(InputFile::empty(), alloc::boxed::Box::new(options), None, source_manager)
             .expect("should build a session");
     Rc::new(Context::new(Rc::new(session)))
+}
+
+#[test]
+fn executable_wrappers_and_test_harness_do_not_emit_frame_events() {
+    for context in [
+        context_with_entrypoint("\"hir_ns:test@1.0.0\"::main"),
+        context_with_entrypoint_and_test_harness("\"hir_ns:test@1.0.0\"::main"),
+    ] {
+        let lowered = lower_component(&context, COMPONENT).unwrap();
+        let target = midenc_session::miden_project::Target::executable(
+            "no-frame-events",
+            Uri::new("no-frame-events.hir"),
+        );
+        let sources = lowered.source_inputs(&target, context.session()).unwrap();
+        let assembly = sources.root.to_string();
+        assert!(assembly.contains("exec."), "{assembly}");
+        for name in ["readonly::miden_debug::frame_start", "readonly::miden_debug::frame_end"] {
+            let event = miden_core::events::EventId::from_name(name).as_u64().to_string();
+            assert!(!assembly.contains(&event), "{name} remains in {assembly}");
+        }
+    }
 }
 
 /// Everything a caller can observe about a lowered component, as one comparable value.
@@ -2418,7 +2456,7 @@ fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
 
     let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
     assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
-    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+    assert!(!exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
 }
 
 const COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT: &str = r#"
@@ -2474,7 +2512,7 @@ fn component_less_world_procedure_roots_use_effective_module_visibility() {
     .expect("component-less world modules form the public artifact interface");
     let exports = assembled_library_exports(&context, &lowered, "only");
     assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
-    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+    assert!(!exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
 }
 
 const COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE: &str = r#"
