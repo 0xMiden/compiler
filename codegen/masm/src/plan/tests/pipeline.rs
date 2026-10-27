@@ -705,6 +705,15 @@ fn real_memmove_observes_each_requested_preparation_tier() -> Result<(), Report>
         )
         .unwrap();
         assert_eq!(preparation.tier, tier);
+        let decision =
+            PreparationDecision::new(tier, preparation.victims.clone(), &preparation.actions);
+        assert_eq!(decision.metrics.actions, preparation.actions.len());
+        if tier == SchedulingTier::Normalization {
+            assert!(decision.metrics.actions > 0);
+            assert!(decision.metrics.stores > 0);
+        }
+        plan.decisions.preparations.insert(SelectedStepId(0), decision);
+        assert!(alloc::format!("{plan}").contains(&alloc::format!("tier={tier:?}")));
         prelude.extend(preparation.actions);
         prelude.push(PlanAction::RunLowering {
             step: SelectedStepId(0),
@@ -731,9 +740,31 @@ fn physical_plan_trace_reports_actual_preparation_and_frame() {
     let (plan, frame, _) = ready_root(&root_source(5, 2));
     let rendered = alloc::format!("{plan}");
     assert!(rendered.contains("tier="), "{rendered}");
+    assert!(rendered.contains("actions="), "{rendered}");
+    assert!(rendered.contains("cost="), "{rendered}");
     assert!(rendered.contains("contract=root"), "{rendered}");
     assert!(rendered.contains("operand-traffic"), "{rendered}");
-    assert!(rendered.contains("edge-traffic"), "{rendered}");
+    assert!(rendered.contains("edge-traffic actions="), "{rendered}");
+    for decision in plan.decisions.preparations.values() {
+        assert!(rendered.contains(&decision.metrics.to_string()), "{rendered}");
+    }
+    let (structured, ..) = structured_ready(&AllocationOptions::default());
+    let control_trace = alloc::format!("{structured}");
+    assert!(control_trace.contains("control-preparation"), "{control_trace}");
+    assert!(!control_trace.contains("edge-preparation"), "{control_trace}");
+    for (segment, (start, edge, decision)) in &structured.decisions.controls {
+        assert_eq!(
+            decision.metrics,
+            crate::plan::actions::ActionMetrics::of(&structured.segment_actions[segment][*start..])
+        );
+        assert!(
+            control_trace
+                .lines()
+                .any(|line| line.contains(&alloc::format!("control-preparation e{} ", edge.0))
+                    && line.ends_with(&decision.metrics.to_string())),
+            "{control_trace}"
+        );
+    }
     assert!(alloc::format!("{}", crate::plan::FrameTrace(&frame)).contains("frame"));
 }
 

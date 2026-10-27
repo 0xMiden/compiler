@@ -183,6 +183,22 @@ pub(crate) struct VictimDecision {
 pub(crate) struct PreparationDecision {
     pub tier: crate::allocate::schedule::SchedulingTier,
     pub victims: Vec<VictimDecision>,
+    pub metrics: super::actions::ActionMetrics,
+}
+
+impl PreparationDecision {
+    /// Capture the committed preparation itself, excluding entry cleanup and debug anchors.
+    pub(crate) fn new(
+        tier: crate::allocate::schedule::SchedulingTier,
+        victims: Vec<VictimDecision>,
+        actions: &[super::actions::PlanAction],
+    ) -> Self {
+        Self {
+            tier,
+            victims,
+            metrics: super::actions::ActionMetrics::of(actions),
+        }
+    }
 }
 
 /// One viable candidate's existing action-cost estimate, labeled at candidate construction.
@@ -239,6 +255,26 @@ pub(crate) struct PhysicalPlanTrace<'a> {
 
 impl fmt::Display for PhysicalPlanTrace<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        use midenc_hir::Symbol;
+        let identity = match &self.plan.selected.origin {
+            super::ProcedureOrigin::Hir(operation) => {
+                let operation = operation.borrow();
+                let function = operation
+                    .downcast_ref::<midenc_hir::dialects::builtin::Function>()
+                    .expect("checked HIR procedure origin");
+                format!("hir:{}", function.path())
+            }
+            super::ProcedureOrigin::Generated {
+                definition,
+                parameters,
+            } => format!("generated:{}:{parameters:?}", definition.0),
+        };
+        // Hexadecimal UTF-8 is unambiguous even for names containing control characters.
+        write!(f, "physical-plan identity-utf8=")?;
+        for byte in identity.as_bytes() {
+            write!(f, "{byte:02x}")?;
+        }
+        writeln!(f)?;
         writeln!(f, "{}", self.plan)?;
         writeln!(f, "{}", FrameTrace(self.frame))?;
         for (slot, offset) in self.frame.spills() {
@@ -247,7 +283,7 @@ impl fmt::Display for PhysicalPlanTrace<'_> {
         for (object, allocation) in self.frame.scratch() {
             writeln!(f, "  object {object:?} {allocation:?}")?;
         }
-        Ok(())
+        writeln!(f, "physical-plan-end")
     }
 }
 

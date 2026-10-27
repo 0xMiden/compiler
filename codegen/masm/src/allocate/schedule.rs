@@ -24,9 +24,14 @@ use crate::{
     plan::{actions::PlanAction, *},
 };
 
-/// Strategy that produced a preparation, in the order tried by the scheduler.
+/// Classification of a preparation. Stack through Normalization are scheduling tiers;
+/// aliases and transfers describe separate operations, not fallback attempts.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum SchedulingTier {
+    /// Publish complete semantic aliases without moving their physical representations.
+    Aliases,
+    /// Establish an edge contract, using incremental repair or its constructive fallback.
+    Transfer,
     /// Use the current owned occurrences, with optional grouped movement or duplication.
     Stack,
     /// Load or reconstruct missing inputs before trying stack movement.
@@ -141,7 +146,7 @@ fn prepare_order(
             ));
         }
         normalize::bind_inputs(&mut base, unit, &needs.needed)?;
-        return Ok(Preparation::finish(base));
+        return Ok(Preparation::finish(base, SchedulingTier::Aliases));
     }
     let original = prepare_stack(state, unit, live_after, context, &needs)?;
     let original_cost = action_cost(&original.actions);
@@ -183,29 +188,20 @@ fn prepare_stack(
     // A buried stored source can require a drain before it can be bound. A failed private
     // setup must not prevent that full construction from running on the original state.
     if normalize::bind_inputs(&mut base, unit, &needs.needed).is_ok() {
-        for tier in [SchedulingTier::Stack, SchedulingTier::Loads, SchedulingTier::Selective] {
+        let tiers = optimized_tiers().filter(|_tier| {
             #[cfg(test)]
-            if context.options.force_tier.is_some_and(|forced| forced != tier) {
-                continue;
+            {
+                context.options.force_tier.is_none_or(|forced| forced == *_tier)
             }
-            let proposal = match tier {
-                SchedulingTier::Stack => {
-                    stack_candidate(base.clone(), unit, needs).map(|p| p.map(|t| (t, Vec::new())))
-                }
-                SchedulingTier::Loads => {
-                    load_candidates(&base, unit, needs).map(|p| p.map(|t| (t, Vec::new())))
-                }
-                SchedulingTier::Selective => {
-                    selective(base.clone(), unit, needs, context.next_use.after.get(&unit.id))
-                }
-                SchedulingTier::Normalization => unreachable!(),
-            };
-            if let Ok(Some((trial, victims))) = proposal {
-                let mut preparation = Preparation::finish(trial);
-                preparation.tier = tier;
-                preparation.victims = victims;
-                return Ok(preparation);
+            #[cfg(not(test))]
+            {
+                true
             }
+        });
+        if let Some(preparation) =
+            optimized(&base, unit, needs, context.next_use.after.get(&unit.id), tiers)
+        {
+            return Ok(preparation);
         }
     }
     normalize::prepare_unit(state, unit, live_after, context)
@@ -240,28 +236,46 @@ pub(super) fn prepare_control(
     };
     let needs = normalize::requirements(&request, live_after, context)?;
     let base = Trial::new(state, context, SlotOwner::Edge(edge));
-    for tier in [SchedulingTier::Stack, SchedulingTier::Loads, SchedulingTier::Selective] {
-        let candidate = match tier {
-            SchedulingTier::Stack => {
-                stack_candidate(base.clone(), &request, &needs).map(|p| p.map(|t| (t, Vec::new())))
-            }
-            SchedulingTier::Loads => {
-                load_candidates(&base, &request, &needs).map(|p| p.map(|t| (t, Vec::new())))
-            }
-            SchedulingTier::Selective => selective(base.clone(), &request, &needs, Some(next_use)),
-            SchedulingTier::Normalization => unreachable!(),
-        };
-        if let Ok(Some((trial, victims))) = candidate {
-            let mut result = Preparation::finish(trial);
-            result.tier = tier;
-            result.victims = victims;
-            return Ok(result);
-        }
+    if let Some(preparation) = optimized(&base, &request, &needs, Some(next_use), optimized_tiers())
+    {
+        return Ok(preparation);
     }
     let mut trial = base;
     trial.drain(&needs.needed)?;
     trial.load(predicate)?;
-    Ok(Preparation::finish(trial))
+    Ok(Preparation::finish(trial, SchedulingTier::Normalization))
+}
+
+/// The optimized cascade is shared; callers retain their demand and fallback policies.
+fn optimized_tiers() -> impl Iterator<Item = SchedulingTier> {
+    [SchedulingTier::Stack, SchedulingTier::Loads, SchedulingTier::Selective].into_iter()
+}
+
+fn optimized(
+    base: &Trial<'_>,
+    unit: &SelectedLowering,
+    needs: &UnitRequirements,
+    next_use: Option<&UseDistances>,
+    tiers: impl Iterator<Item = SchedulingTier>,
+) -> Option<Preparation> {
+    for tier in tiers {
+        let candidate = match tier {
+            SchedulingTier::Stack => {
+                stack_candidate(base.clone(), unit, needs).map(|p| p.map(|t| (t, Vec::new())))
+            }
+            SchedulingTier::Loads => {
+                load_candidates(base, unit, needs).map(|p| p.map(|t| (t, Vec::new())))
+            }
+            SchedulingTier::Selective => selective(base.clone(), unit, needs, next_use),
+            _ => unreachable!("only optimized scheduling tiers are attempted"),
+        };
+        if let Ok(Some((trial, victims))) = candidate {
+            let mut preparation = Preparation::finish(trial, tier);
+            preparation.victims = victims;
+            return Some(preparation);
+        }
+    }
+    None
 }
 
 /// Compare lane identities under this trial's available reconstructions and aliases.
@@ -750,7 +764,7 @@ pub(super) fn cost(trial: &Trial<'_>) -> usize {
 /// frame-pointer address, loads the frame pointer, and adds the displacement.
 /// Stack instructions use the pinned assembler's costs. Packing noops and control-flow
 /// overhead remain outside this local ranking heuristic.
-pub(super) fn action_cost(actions: &[PlanAction]) -> usize {
+pub(crate) fn action_cost(actions: &[PlanAction]) -> usize {
     actions
         .iter()
         .map(|action| match action {

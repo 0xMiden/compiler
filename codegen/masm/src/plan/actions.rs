@@ -61,6 +61,43 @@ impl fmt::Display for PlanAction {
     }
 }
 
+/// Static cost of an allocation action slice, excluding executable lowering bodies.
+/// Expanded cost follows the scheduler's estimate; it is not an execution-frequency metric.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ActionMetrics {
+    pub actions: usize,
+    pub cost: usize,
+    pub loads: usize,
+    pub stores: usize,
+}
+
+impl ActionMetrics {
+    pub(crate) fn of(actions: &[PlanAction]) -> Self {
+        let (loads, stores) = traffic(actions);
+        let glue = actions.iter().filter(|action| {
+            !matches!(action, PlanAction::RunLowering { .. } | PlanAction::DebugLocation(_))
+        });
+        Self {
+            actions: glue.clone().count(),
+            cost: glue
+                .map(|action| crate::allocate::schedule::action_cost(core::slice::from_ref(action)))
+                .sum(),
+            loads,
+            stores,
+        }
+    }
+}
+
+impl fmt::Display for ActionMetrics {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "actions={} cost={} loads={} stores={}",
+            self.actions, self.cost, self.loads, self.stores
+        )
+    }
+}
+
 /// Proposed physical implementation of a source-checked selected procedure.
 /// Allocation can choose actions and contracts but cannot modify the sealed semantic program;
 /// independent verification must discharge those choices before serialization.
@@ -116,12 +153,25 @@ impl fmt::Display for ProcedurePlan {
                 }
             }
             for unit in &segment.units {
-                writeln!(f, "  unit s{} kind={} source={}", unit.id.0, unit.kind.0, unit.source.0)?;
+                let label = if self.decisions.preparations.contains_key(&unit.id) {
+                    "unit"
+                } else {
+                    "unplanned-unit"
+                };
+                writeln!(
+                    f,
+                    "  {label} s{} kind={} source={}",
+                    unit.id.0, unit.kind.0, unit.source.0
+                )?;
                 if let Some(reads) = self.semantic_storage_reads.get(&unit.id) {
                     writeln!(f, "    semantic-storage-reads={reads:?}")?;
                 }
                 if let Some(decision) = self.decisions.preparations.get(&unit.id) {
-                    writeln!(f, "    tier={:?} victims={:?}", decision.tier, decision.victims)?;
+                    writeln!(
+                        f,
+                        "    tier={:?} victims={:?} {}",
+                        decision.tier, decision.victims, decision.metrics
+                    )?;
                 }
                 if let Some(source) = self.selected.source_map.get(&unit.source) {
                     writeln!(
@@ -142,12 +192,10 @@ impl fmt::Display for ProcedurePlan {
                 let (loads, stores) = traffic(&actions[..start]);
                 writeln!(f, "  operand-traffic loads={loads} stores={stores}")?;
                 if let Some((_, edge, decision)) = control {
-                    let (loads, stores) = traffic(&actions[start..]);
                     writeln!(
                         f,
-                        "  edge-preparation e{} tier={:?} victims={:?} loads={loads} \
-                         stores={stores}",
-                        edge.0, decision.tier, decision.victims
+                        "  control-preparation e{} tier={:?} victims={:?} {}",
+                        edge.0, decision.tier, decision.victims, decision.metrics
                     )?;
                 }
                 for action in actions {
@@ -156,8 +204,7 @@ impl fmt::Display for ProcedurePlan {
             }
         }
         for (edge, actions) in &self.edge_actions {
-            let (loads, stores) = traffic(actions);
-            writeln!(f, "edge e{} edge-traffic loads={loads} stores={stores}", edge.0)?;
+            writeln!(f, "edge e{} edge-traffic {}", edge.0, ActionMetrics::of(actions))?;
             for action in actions {
                 writeln!(f, "  {action}")?;
             }

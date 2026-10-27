@@ -37,7 +37,7 @@ pub(crate) fn prepare_unit(
     for atom in unit.stack_inputs.iter().rev() {
         trial.load(*atom)?;
     }
-    Ok(Preparation::finish(trial))
+    Ok(Preparation::finish(trial, super::schedule::SchedulingTier::Normalization))
 }
 
 /// Raw-lane demand separating entry availability from preservation through consumption.

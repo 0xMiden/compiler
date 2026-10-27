@@ -452,6 +452,8 @@ Dead-occurrence cleanup is a bounded preparation candidate for the next non-alia
 
 Run the same scheduling tiers from that cleaned state and compare the complete expanded preparation estimates, including every cleanup drop. Choose cleanup only when it is no more expensive, preferring it on ties; retain the original on failure. Do not credit possible future drops: a trap may prevent them from executing. Zero-cost preparations and alias-only publication remain unchanged. This bounds immediate estimated preparation cost, not total VM cycles or MAST bytes, which also depend on later choices and block packing. The recorded actions remain the sole physical authority; final edge cleanup is unchanged.
 
+Preparation diagnostics record the actual selected construction. `Stack`, `Loads`, `Selective`, and `Normalization` identify the four scheduling tiers. `Aliases` identifies publication with unchanged physical state, and edge `Transfer` is reported separately; neither may inherit a default normalization label. Each committed unit or control preparation records its allocation-action count, expanded cost estimate, spill loads, and spill stores. Edge transfers have their own totals. These observations do not grant verification authority, change scheduling decisions, or imply runtime execution frequency.
+
 The old `Move`/`Copy` distinction becomes a scheduling choice derived from recoverability. A live-after input need not be duplicated if consuming it leaves a valid spill slot. Multiple uses in one input tuple require distinct physical occurrences, even when they denote one atom.
 
 Allocation chooses operand sources, preservation, loads, and evictions. The existing bounded shuffle solver remains an optimization for resident copies and permutations, with widths and duplicate handling checked against raw lanes. It does not choose spill slots or perform eviction. Its `NoSolution` selects another construction, not a diagnostic or an immediate full drain. It cannot rename different atoms as equivalent to manufacture a solution.
@@ -953,6 +955,8 @@ limit  = Byte: 0xffff_fffc
          Element: 2^34
 require start <= limit && length <= limit - start
 ```
+
+For sub-element values, this is a packed fill, not a loop of element-addressed typed stores. For example, filling four `u8` values at element address `E` fills the four bytes of cell `E`; four `Store` operations at element addresses `E` through `E + 3` update the low byte of four different cells. Byte-space `MemSet` rejects any fill touching the last four bytes because of its exclusive endpoint `0xffff_fffc`; `Store` and `MemCpy` do not inherit that restriction. These are existing operation-specific contracts, not a uniform pointer-stepping rule.
 
 Evaluate these bounds without narrowing or arithmetic overflow, before any write and even when count is zero. The limit is an exclusive endpoint; the native one-past endpoint need not be materialized as an address. Range failures leave memory unchanged. Other store failures, such as a later invalid partial-cell byte view, may follow earlier completed writes; the unit does not promise transactional memory effects.
 

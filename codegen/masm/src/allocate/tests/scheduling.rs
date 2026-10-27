@@ -1348,6 +1348,7 @@ fn alias_publication_preserves_buried_spilled_and_reconstructed_sources() {
                 &context,
             )
             .unwrap();
+            assert_eq!(preparation.tier, SchedulingTier::Aliases);
             assert!(preparation.actions.is_empty());
             assert_eq!(preparation.state, initial);
             assert!(preparation.bindings[&request.id].stored_inputs.is_empty());

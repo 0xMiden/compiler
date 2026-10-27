@@ -134,16 +134,8 @@ fn transfer(
         };
         let mut established = false;
         for actual in &state.scratch {
-            if actual.object != fact.object || actual.offset != fact.offset {
-                continue;
-            }
-            established = match (content, actual.content) {
-                (ContentRequirement::Initialized, _) => true,
-                (ContentRequirement::Atom(a), ContentRequirement::Atom(b)) => {
-                    context.same(state, StoredValue::Atom(a), StoredValue::Atom(b))?
-                }
-                (a, b) => a == b,
-            };
+            established =
+                context.scratch_matches(state, ScratchCellFact { content, ..*fact }, *actual)?;
             if established {
                 break;
             }
@@ -160,16 +152,7 @@ fn transfer(
         required.pointer = values.get(&fact.pointer).copied().unwrap_or(fact.pointer);
         let mut established = false;
         for actual in &state.addresses {
-            if actual.object == required.object
-                && actual.offset == required.offset
-                && actual.accessible == required.accessible
-            {
-                established |= context.same(
-                    state,
-                    StoredValue::Atom(Atom::new(actual.pointer, 0)),
-                    StoredValue::Atom(Atom::new(required.pointer, 0)),
-                )?;
-            }
+            established |= context.address_matches(state, *actual, required)?;
         }
         if !established {
             return Err(invariant(
@@ -237,7 +220,7 @@ fn transfer(
             .available_values
             .extend(context.reconstructions_at_entry(destination)?);
     }
-    Ok(Preparation::finish(trial))
+    Ok(Preparation::finish(trial, super::schedule::SchedulingTier::Transfer))
 }
 
 /// Write mandatory slots, retain distinct useful occurrences, and fill only missing lanes.

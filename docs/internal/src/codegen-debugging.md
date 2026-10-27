@@ -28,12 +28,12 @@ The [plan printer](../../../codegen/masm/src/plan/actions.rs) reports:
 | `segment bN`, `entry` | Segment identity and required top-first stack; the tail describes the suffix contract. |
 | `require` | Spill-slot contents required on entry. |
 | `contract`, `costs` | Selected contract origin and viable candidate scores. These are heuristic costs, not whole-program cycle counts. |
-| `unit sN`, `kind`, `source`, `origin` | Selected unit, registered lowering kind, source identity, source span and inline ancestry. |
+| `unit sN`, `kind`, `source`, `origin` | Selected unit, registered lowering kind, source identity, source span and inline ancestry. `unplanned-unit` denotes a selected unit without an allocation decision, such as an unreachable tail. |
 | `stack`, `stored`, `outputs` | The unit's required inputs and published outputs, **not** a snapshot of the current stack. |
-| `tier`, `victims` | Chosen preparation tier and evictions, including reasons and next-use distances. |
+| `tier`, `victims`, `actions`, `cost`, `loads`, `stores` | Preparation class, evictions, action count, expanded instruction-cost estimate, and spill traffic. `Aliases` publishes identities without scheduling; it is not normalization. |
 | `semantic-storage-reads` | Backing cells needed by the unit's semantic inputs; metadata for storage liveness, not emitted loads or verifier authority. |
 | `operand-traffic`, `edge-traffic` | Lane loads/stores for operand preparation versus control-flow repair. |
-| `edge-preparation` | Control-predicate preparation: edge identity, tier, victims and load/store counts. |
+| `control-preparation` | Control-predicate preparation: edge identity, tier, victims and action/cost/traffic counts. |
 | `dup`, `store`, `swap`, `run`, etc. | Ordered allocator actions; `run sN` expands the selected lowering unit. |
 
 `entry` and `require` use `v3.0` for lane zero of semantic value 3. Unit input/output
@@ -79,6 +79,39 @@ hir-opt repro.hir --verify \
 
 Keep the original pipeline in a regression test if pass interactions are necessary to reproduce
 the failure. A reduced test is useful evidence, but does not replace the production reproducer.
+
+## Measure preparation choices in real workloads
+
+Capture complete successful output, then summarize it:
+
+```sh
+MIDENC_TRACE='codegen:^$=trace' MIDENC_TRACE_STYLE=never \
+  cargo make test-rust -p midenc-integration-tests \
+  -E 'test(batch_kernel)' --test-threads 1 --success-output immediate \
+  > batch.trace 2>&1
+python3 tools/allocator-histogram.py batch.trace > batch-histogram.json
+```
+
+The delimited `physical-plan` records identify authored procedures by full HIR path and generated
+procedures by registered definition and parameters. The header encodes that identity as hexadecimal
+UTF-8 so unusual symbol characters cannot break record boundaries; the tool decodes it for readers.
+Unit preparation, control-predicate preparation, and edge transfer have separate totals. `cost` is
+the scheduler's expanded instruction estimate for allocation actions, not the cost of the lowering
+body or the number of times a procedure executes. Zero-action preparations are counted explicitly.
+
+The output includes raw compilation encounters and distinct complete planning captures per test.
+Identical captures within a test are counted once in `distinct`; different variants of the same
+identity remain separate. Capture hashes identify planning observations, not equivalent native
+bodies. Tests with no captures may reuse cached packages, as SWAPP does; they do not establish
+that the allocator performed no work. These static histograms cannot attribute execution cycles
+without a separate runtime profile. Incomplete captures and malformed preparation records are errors.
+
+Allocator failures retain the underlying category and the real unit or edge that failed. A precise
+unit span takes precedence over a procedure-level fallback; an edge identity does not imply a
+successor unit's source location. If every entry-contract candidate fails, the error retains the
+first candidate's actual cause. Identity exhaustion is distinct from an unavailable value. Early
+source-frame errors report the source contribution and say that compiler storage has not yet been
+assigned; final frame errors report the measured contribution breakdown.
 
 ## Inspect backend stages in focused tests
 

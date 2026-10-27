@@ -203,16 +203,14 @@ fn common_addresses(
                 let required = source(entry.edge, Atom::new(*pointer, 0));
                 let mut found = false;
                 for actual in &entry.state.addresses {
-                    if actual.object == target.object
-                        && actual.offset == target.offset
-                        && actual.accessible == target.accessible
-                    {
-                        found |= context.same(
-                            entry.state,
-                            StoredValue::Atom(required),
-                            StoredValue::Atom(Atom::new(actual.pointer, 0)),
-                        )?;
-                    }
+                    found |= context.address_matches(
+                        entry.state,
+                        AddressFact {
+                            pointer: required.value,
+                            ..target
+                        },
+                        *actual,
+                    )?;
                 }
                 common &= found;
             }
@@ -236,22 +234,21 @@ fn scratch(
             let required = content(entry.edge, fact.content);
             let mut found = false;
             for actual in &entry.state.scratch {
-                if actual.object != fact.object || actual.offset != fact.offset {
-                    continue;
-                }
-                found |= match (required, actual.content) {
-                    (ContentRequirement::Initialized, _) => true,
-                    (ContentRequirement::Atom(a), ContentRequirement::Atom(b)) => {
-                        context.same(entry.state, StoredValue::Atom(a), StoredValue::Atom(b))?
-                    }
-                    (a, b) => a == b,
-                };
+                found |= context.scratch_matches(
+                    entry.state,
+                    ScratchCellFact {
+                        content: required,
+                        ..*fact
+                    },
+                    *actual,
+                )?;
             }
             if !found {
                 return Err(invariant(
                     DiagnosticCategory::InvalidEdgeTransfer,
                     "incoming edge lacks required scratch contents",
-                ));
+                )
+                .on_edge(entry.edge));
             }
         }
     }

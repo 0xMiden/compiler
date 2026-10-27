@@ -600,6 +600,44 @@ impl<'a> AllocationContext<'a> {
         })
     }
 
+    /// Test one demanded scratch cell against one established cell in the current alias scope.
+    /// Initialized contents satisfy only the untyped initialization requirement; exact content
+    /// identities must agree. Callers retain their own traversal and failure policy.
+    pub(super) fn scratch_matches(
+        &self,
+        state: &AllocationState,
+        required: ScratchCellFact,
+        actual: ScratchCellFact,
+    ) -> Result<bool, AllocationError> {
+        if required.object != actual.object || required.offset != actual.offset {
+            return Ok(false);
+        }
+        match (required.content, actual.content) {
+            (ContentRequirement::Initialized, _) => Ok(true),
+            (ContentRequirement::Atom(a), ContentRequirement::Atom(b)) => {
+                self.same(state, StoredValue::Atom(a), StoredValue::Atom(b))
+            }
+            (a, b) => Ok(a == b),
+        }
+    }
+
+    /// Exact addresses agree only in object, offset, access domain and current pointer identity.
+    pub(super) fn address_matches(
+        &self,
+        state: &AllocationState,
+        a: AddressFact,
+        b: AddressFact,
+    ) -> Result<bool, AllocationError> {
+        if a.object != b.object || a.offset != b.offset || a.accessible != b.accessible {
+            return Ok(false);
+        }
+        self.same(
+            state,
+            StoredValue::Atom(Atom::new(a.pointer, 0)),
+            StoredValue::Atom(Atom::new(b.pointer, 0)),
+        )
+    }
+
     /// Freeze backing cells required by complete semantic inputs at a prepared boundary.
     /// Literals and equal resident occurrences require no storage read. Ordered slots
     /// select one existing representation deterministically, without pinning spare copies.
@@ -678,11 +716,11 @@ pub(crate) struct Preparation {
 }
 
 impl Preparation {
-    /// Seal a private trial; optimized callers may replace the default normalization tier.
-    pub(super) fn finish(trial: Trial<'_>) -> Self {
+    /// Seal a private trial with the strategy that actually produced its actions.
+    pub(super) fn finish(trial: Trial<'_>, tier: SchedulingTier) -> Self {
         let slot_requests = trial.state.slot_requests.clone();
         Self {
-            tier: SchedulingTier::Normalization,
+            tier,
             victims: Vec::new(),
             actions: trial.actions,
             state: trial.state,

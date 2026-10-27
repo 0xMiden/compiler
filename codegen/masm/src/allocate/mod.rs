@@ -308,10 +308,11 @@ fn allocate_inner(
             let preparation = prepare_unit(&state, unit, &live, &context).map_err(at_unit)?;
             decisions.preparations.insert(
                 unit.id,
-                PreparationDecision {
-                    tier: preparation.tier,
-                    victims: preparation.victims.clone(),
-                },
+                PreparationDecision::new(
+                    preparation.tier,
+                    preparation.victims.clone(),
+                    &preparation.actions,
+                ),
             );
             preparation.commit(&mut state, &mut actions, &mut bindings, &mut slots);
             let reads = context.semantic_storage_reads(&state, unit).map_err(at_unit)?;
@@ -358,10 +359,11 @@ fn allocate_inner(
                     (
                         actions.len(),
                         *edge,
-                        PreparationDecision {
-                            tier: preparation.tier,
-                            victims: preparation.victims.clone(),
-                        },
+                        PreparationDecision::new(
+                            preparation.tier,
+                            preparation.victims.clone(),
+                            &preparation.actions,
+                        ),
                     ),
                 );
                 preparation.commit(&mut state, &mut actions, &mut bindings, &mut slots);
