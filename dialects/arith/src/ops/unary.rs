@@ -1,10 +1,14 @@
+use alloc::rc::Rc;
+
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     effects::MemoryEffectOpInterface,
+    matchers::Matcher,
     traits::*,
     *,
 };
 
+use super::coercions::fold_integer_coercion;
 use crate::*;
 
 macro_rules! infer_return_ty_for_unary_op {
@@ -117,7 +121,7 @@ infer_return_ty_for_unary_op!(Pow2);
 #[operation (
         dialect = ArithDialect,
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
-        implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+        implements(InferTypeOpInterface, MemoryEffectOpInterface, Foldable, OpPrinter)
 
     )]
 pub struct Not {
@@ -128,6 +132,40 @@ pub struct Not {
 }
 
 infer_return_ty_for_unary_op!(Not);
+
+impl Foldable for Not {
+    /// Folds a constant operand, and `not (not x)` to `x`.
+    fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        let operand = self.operand().as_value_ref();
+        if let Some(inner) = operand.borrow().get_defining_op()
+            && let Some(inner) = inner.borrow().downcast_ref::<Not>()
+        {
+            results.push(OpFoldResult::Value(inner.operand().as_value_ref()));
+            return FoldResult::Ok(());
+        }
+        let operand = matchers::foldable_operand().matches(&self.operand().as_operand_ref());
+        self.fold_with(&[operand], results)
+    }
+
+    fn fold_with(
+        &self,
+        operands: &[Option<AttributeRef>],
+        results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        fold_integer_coercion(self.as_operation(), &operands[0], results, |value| {
+            value.as_bool().map(|value| Immediate::I1(!value))
+        })
+    }
+}
+
+impl Canonicalizable for Not {
+    fn get_canonicalization_patterns(
+        rewrites: &mut patterns::RewritePatternSet,
+        context: Rc<Context>,
+    ) {
+        rewrites.push(crate::canonicalization::SimplifyNotCompare::new(context));
+    }
+}
 
 /// Bitwise NOT
 #[derive(EffectOpInterface, OpPrinter, OpParser)]

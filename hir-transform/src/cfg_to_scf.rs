@@ -160,13 +160,12 @@ pub trait CFGToSCFInterface {
     /// iteration values. `loop_body` is the body of the loop.
     ///
     /// Implementations must create a suitable terminator op at the end of the last block in
-    /// `loop_body` which continues the loop if `condition` is 1, and exits the loop if 0.
+    /// `loop_body` which continues the loop if `condition` is true, and exits the loop if false.
     ///
     /// `loop_values_next_iter` are the values that have to be passed as the iteration values for
     /// the next iteration if continuing, or the result of the loop if exiting.
     ///
-    /// `condition` is guaranteed to be of the same type as values returned by
-    /// `get_cfg_switch_value` with either 0 or 1 as value.
+    /// `condition` is an `i1`, the type of the values returned by `get_cfg_bool_value`.
     ///
     /// `loop_values_init` are the values used to initialize the iteration values of the loop.
     ///
@@ -180,6 +179,18 @@ pub trait CFGToSCFInterface {
         loop_values_next_iter: ValueRange<'_, 2>,
         loop_body: RegionRef,
     ) -> Result<OperationRef, Report>;
+
+    /// Creates a constant boolean operation with a result representing `value`, suitable as the
+    /// condition of `create_conditional_branch` and `create_structured_do_while_loop_op`.
+    ///
+    /// The result must be an `i1`: the transformation itself creates `i1` block arguments to carry
+    /// these values.
+    fn get_cfg_bool_value(
+        &self,
+        span: SourceSpan,
+        builder: &mut OpBuilder,
+        value: bool,
+    ) -> ValueRef;
 
     /// Creates a constant operation with a result representing `value` that is suitable as flag
     /// for `create_cfg_switch_op`.
@@ -252,7 +263,12 @@ pub trait CFGToSCFInterface {
         self.create_cfg_switch_op(span, builder, dummy_flag, &[], &[], &[], destination, arguments)
     }
 
-    /// Helper function to create a conditional branch using [Self::create_cfg_switch_op].
+    /// Creates a two-way conditional branch terminator at the current insertion point of
+    /// `builder`, branching on `condition`, an `i1` like the values returned by
+    /// [Self::get_cfg_bool_value].
+    ///
+    /// Control transfers to `true_dest` with `true_args` if `condition` is true, and to
+    /// `false_dest` with `false_args` otherwise.
     #[allow(clippy::too_many_arguments)]
     fn create_conditional_branch(
         &self,
@@ -263,18 +279,7 @@ pub trait CFGToSCFInterface {
         true_args: ValueRange<'_, 2>,
         false_dest: BlockRef,
         false_args: ValueRange<'_, 2>,
-    ) -> Result<(), Report> {
-        self.create_cfg_switch_op(
-            span,
-            builder,
-            condition,
-            &[0],
-            &[false_dest],
-            &[false_args],
-            true_dest,
-            true_args,
-        )
-    }
+    ) -> Result<(), Report>;
 }
 
 /// This function transforms all unstructured control flow operations within `region`, to equivalent

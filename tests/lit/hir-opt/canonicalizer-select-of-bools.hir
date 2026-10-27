@@ -1,0 +1,54 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=simplify-select-of-bools}))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=simplify-select-of-bools}))' | hir-opt --verify - | filecheck %s
+
+// Coverage for the `cf.select` simplifications: the `simplify-select-of-bools` pattern and the
+// folds of selects whose arms cannot differ. The canonicalizer is restricted to that single
+// pattern (the greedy driver still folds and erases trivially dead operations). The second RUN
+// line re-parses and verifies the rewritten IR, so every printed form must be valid input.
+builtin.module private @select_of_bools {
+    // `select(c, true, false)` is `c`.
+    // CHECK: @select_true_false(%[[C:\d+]]: i1)
+    // CHECK-NEXT: builtin.ret %[[C]] : (i1);
+    builtin.function public extern("C") @select_true_false(%0: i1) -> i1 {
+        %1 = arith.constant 1 : i1;
+        %2 = arith.constant 0 : i1;
+        %3 = cf.select %0, %1, %2;
+        builtin.ret %3 : (i1);
+    };
+
+    // `select(c, false, true)` is `not c`.
+    // CHECK: @select_false_true(%[[C:\d+]]: i1)
+    // CHECK-NEXT: %[[N:\d+]] = arith.not %[[C]];
+    // CHECK-NEXT: builtin.ret %[[N]] : (i1);
+    builtin.function public extern("C") @select_false_true(%0: i1) -> i1 {
+        %1 = arith.constant 1 : i1;
+        %2 = arith.constant 0 : i1;
+        %3 = cf.select %0, %2, %1;
+        builtin.ret %3 : (i1);
+    };
+
+    // A select with a poison arm folds to the other arm, and a select of the same value twice
+    // folds to that value.
+    // CHECK: @degenerate_arms(%[[C:\d+]]: i1, %[[A:\d+]]: u32)
+    // CHECK-NEXT: builtin.ret %[[A]], %[[A]], %[[A]] : (u32, u32, u32);
+    builtin.function public extern("C") @degenerate_arms(%0: i1, %1: u32) -> (u32, u32, u32) {
+        %2 = ub.poison <{ value = #ub.poison<u32> }>;
+        %3 = cf.select %0, %1, %2;
+        %4 = cf.select %0, %2, %1;
+        %5 = cf.select %0, %1, %1;
+        builtin.ret %3, %4, %5 : (u32, u32, u32);
+    };
+
+    // A select between other constants is left alone.
+    // CHECK: @other_constants(%[[C:\d+]]: i1)
+    // CHECK-NEXT: %[[ONE:\d+]] = arith.constant 1 : u32;
+    // CHECK-NEXT: %[[TWO:\d+]] = arith.constant 2 : u32;
+    // CHECK-NEXT: %[[S:\d+]] = cf.select %[[C]], %[[ONE]], %[[TWO]];
+    // CHECK-NEXT: builtin.ret %[[S]] : (u32);
+    builtin.function public extern("C") @other_constants(%0: i1) -> u32 {
+        %1 = arith.constant 1 : u32;
+        %2 = arith.constant 2 : u32;
+        %3 = cf.select %0, %1, %2;
+        builtin.ret %3 : (u32);
+    };
+};

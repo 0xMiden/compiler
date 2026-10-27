@@ -1,5 +1,6 @@
 use alloc::{rc::Rc, vec::Vec};
 
+use midenc_dialect_ub::PoisonAttr;
 use midenc_hir::{
     attributes::IntegerLikeAttr,
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
@@ -252,9 +253,55 @@ impl InferTypeOpInterface for Select {
     }
 }
 
+impl Canonicalizable for Select {
+    fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
+        rewrites.push(crate::canonicalization::SimplifySelectOfBools::new(context));
+    }
+}
+
+impl Select {
+    /// Folds a select whose arms cannot differ: both arms are the same value, or one arm is
+    /// poison, in which case choosing the other arm is a valid refinement.
+    fn fold_degenerate_arms(
+        &self,
+        first: &Option<AttributeRef>,
+        second: &Option<AttributeRef>,
+        results: &mut SmallVec<[OpFoldResult; 1]>,
+    ) -> FoldResult {
+        let is_poison = |attr: &Option<AttributeRef>| {
+            attr.as_ref()
+                .is_some_and(|attr| attr.borrow().as_attr().downcast_ref::<PoisonAttr>().is_some())
+        };
+        let first_value = self.first().as_value_ref();
+        let second_value = self.second().as_value_ref();
+        if first_value == second_value || is_poison(second) {
+            results.push(
+                (*first)
+                    .map(OpFoldResult::Attribute)
+                    .unwrap_or(OpFoldResult::Value(first_value)),
+            );
+            return FoldResult::Ok(());
+        }
+        if is_poison(first) {
+            results.push(
+                (*second)
+                    .map(OpFoldResult::Attribute)
+                    .unwrap_or(OpFoldResult::Value(second_value)),
+            );
+            return FoldResult::Ok(());
+        }
+        FoldResult::Failed
+    }
+}
+
 impl Foldable for Select {
     #[inline]
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
+        let first = matchers::foldable_operand().matches(&self.first().as_operand_ref());
+        let second = matchers::foldable_operand().matches(&self.second().as_operand_ref());
+        if self.fold_degenerate_arms(&first, &second, results).is_ok() {
+            return FoldResult::Ok(());
+        }
         if let Some(value) =
             matchers::foldable_operand_of::<BoolAttr>().matches(&self.cond().as_operand_ref())
         {
@@ -286,6 +333,9 @@ impl Foldable for Select {
         operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
+        if self.fold_degenerate_arms(&operands[1], &operands[2], results).is_ok() {
+            return FoldResult::Ok(());
+        }
         if let Some(cond) = operands[0]
             .as_ref()
             .and_then(|o| o.borrow().value().downcast_ref::<bool>().copied())

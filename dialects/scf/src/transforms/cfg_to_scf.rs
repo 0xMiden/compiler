@@ -5,7 +5,7 @@ use midenc_dialect_cf::{self as cf, ControlFlowOpBuilder};
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
     Builder, EntityMut, Forward, Op, Operation, OperationName, OperationRef, RawWalk, Report,
-    SmallVec, Spanned, Type, ValueRange, ValueRef, WalkResult,
+    SmallVec, Spanned, ValueRange, ValueRef, WalkResult,
     diagnostics::Severity,
     dialects::builtin,
     dominance::DominanceInfo,
@@ -274,10 +274,7 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
 
         builder.set_insertion_point_to_end(op.before().body().back().as_pointer().unwrap());
 
-        // `get_cfg_switch_value` returns a u32. We therefore need to truncate the condition to i1
-        // first. It is guaranteed to be either 0 or 1 already.
-        let cond = builder.trunc(condition, Type::I1, span)?;
-        builder.condition(cond, loop_values_next_iter, span)?;
+        builder.condition(condition, loop_values_next_iter, span)?;
 
         let yielded = op
             .after()
@@ -292,6 +289,16 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         builder.r#yield(yielded, span)?;
 
         Ok(operation)
+    }
+
+    /// Creates an `arith.constant` with an i1 attribute of the given value.
+    fn get_cfg_bool_value(
+        &self,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        value: bool,
+    ) -> midenc_hir::ValueRef {
+        builder.i1(value, span)
     }
 
     /// Creates an `arith.constant` with an i32 attribute of the given value.
@@ -339,6 +346,21 @@ impl CFGToSCFInterface for ControlFlowToSCFTransformation {
         arguments: ValueRange<'_, 2>,
     ) -> Result<(), Report> {
         builder.br(destination, arguments, span)?;
+        Ok(())
+    }
+
+    /// Branches on the `i1` produced by [Self::get_cfg_bool_value] with `cf.cond_br`.
+    fn create_conditional_branch(
+        &self,
+        span: midenc_hir::SourceSpan,
+        builder: &mut midenc_hir::OpBuilder,
+        condition: midenc_hir::ValueRef,
+        true_dest: midenc_hir::BlockRef,
+        true_args: ValueRange<'_, 2>,
+        false_dest: midenc_hir::BlockRef,
+        false_args: ValueRange<'_, 2>,
+    ) -> Result<(), Report> {
+        builder.cond_br(condition, true_dest, true_args, false_dest, false_args, span)?;
         Ok(())
     }
 
