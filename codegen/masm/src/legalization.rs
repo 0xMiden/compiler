@@ -217,7 +217,7 @@ pub(crate) fn validate_procedure_root(
             )
             .with_help(
                 "declare the callee internal or public and ensure any intervening module is \
-                 public, or materialize the root within its defining module",
+                 internal or public, or materialize the root within its defining module",
             )
             .into_report());
     }
@@ -247,8 +247,8 @@ pub(crate) fn validate_procedure_root(
                 "this module is private outside its parent and sibling modules",
             )
             .with_help(
-                "declare the intervening module public, or materialize the root within its parent \
-                 or a sibling module",
+                "declare the intervening module internal or public, or materialize the root \
+                 within its parent or a sibling module",
             )
             .into_report());
     }
@@ -288,7 +288,7 @@ pub(crate) fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
 ///
 /// A private MASM submodule is visible to its parent and every descendant of that parent.
 /// Consequently, the first callee branch below the owners' common ancestor may remain private;
-/// every deeper callee-only module must be public.
+/// every deeper callee-only module must be internal or public.
 fn first_inaccessible_callee_module(
     caller_owner: OperationRef,
     callee_owner: OperationRef,
@@ -318,7 +318,7 @@ fn first_inaccessible_callee_module(
         let owner_op = owner.borrow();
         let module = owner_op.downcast_ref::<builtin::Module>()?;
         let private_in_masm = !modules_form_the_artifact_interface(*owner)
-            && *module.get_visibility() != Visibility::Public;
+            && *module.get_visibility() == Visibility::Private;
         (private_in_masm && index != 0).then_some(*owner)
     })
 }

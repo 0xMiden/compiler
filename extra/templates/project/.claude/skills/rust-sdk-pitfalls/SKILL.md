@@ -5,11 +5,10 @@ description: Critical pitfalls and safety rules for Miden Rust SDK development. 
 
 # Miden SDK Pitfalls
 
-Verified against project-template's current v16 line: contract SDK `miden` and
-`miden-sdk-build-script-support` `0.15` (`0.15.0-rc.2`) on `nightly-2026-09-01`,
-`cargo-miden` `0.10.0` through midenup / cargo-miden, `Cargo.lock` resolving
-protocol/standards/testing `0.16.0-rc.6`, `miden-client` `0.16.0-rc.2`, and VM/package crates
-`0.29.4`.
+The project-template uses guest SDK `miden` and `miden-sdk-build-script-support` `0.15.0`
+on `nightly-2026-09-01`, compiler / `cargo-miden` `0.11.0` in the current checkout, protocol/standards/testing
+`0.18.0`, and VM/package crates in the `0.36` series. The client crates use the released
+`0.18.0` versions from crates.io; `Cargo.lock` records the resolved versions.
 
 ## P1: Felt Arithmetic is Modular (SECURITY CRITICAL)
 
@@ -281,11 +280,11 @@ requires a `miden-project.toml` next to the crate's `Cargo.toml`: storage slot n
 `[lib].namespace`. ``
 
 **Caveat (toolchain-version dependent)**: this naming is a property of the Rust SDK contract macros
-in the `miden-base-macros` crate, which ships at `0.15.0-rc.2` alongside `miden`, `miden-base`,
+in the `miden-base-macros` crate, which ships at `0.15.0` alongside `miden`, `miden-base`,
 `miden-base-sys`, `miden-stdlib-sys` and `miden-sdk-alloc`. The separate compiler / `midenc` /
-`cargo-miden` workspace is `0.10.0`. Neither is the protocol/network version: protocol,
-`miden-standards` and `miden-testing` resolve to `0.16.0-rc.6`, `miden-client` resolves to
-`0.16.0-rc.2`, and the VM/package crates resolve to `0.29.4`. See P20 for the full version matrix.
+`cargo-miden` workspace is `0.11.0` in the current checkout. Neither is the protocol/network version: protocol,
+`miden-standards`, `miden-testing`, and the client crates use `0.18.0`, and the VM/package crates use
+the `0.36` series. See P20 for the full version matrix.
 Verify slot names against your installed toolchain rather than assuming a protocol version implies a
 macro behavior.
 
@@ -316,8 +315,8 @@ use alloc::vec::Vec;
 
 **Toolchain**: current project-template contract crates use `nightly-2026-09-01` with target
 `wasm32-wasip2`; the published SDK and `cargo-miden` line require Rust 1.99. Local contract
-`Cargo.toml` files use `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.15.0-rc.2" }`,
-and matching `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`.
+`Cargo.toml` files use `edition = "2021"`, `crate-type = ["cdylib"]`, `miden = { version = "0.15.0" }`,
+and matching `miden-sdk-build-script-support = { version = "0.15.0" }`.
 
 ## P7: Rust SDK `Asset` Is Two Words (ID + Value)
 
@@ -696,22 +695,22 @@ Sources: `protocol:v0.16.0-rc.6:crates/miden-protocol/src/transaction/tx_summary
 
 **Severity**: High - mixing lower bounds, resolved lockfile versions, and build tools creates false migrations
 
-The current project-template uses release-candidate contract SDK and host crates. Copy the local manifests and lockfile before changing versions:
+The project-template uses the released guest SDK, protocol, and client crates. Copy the local manifests and lockfile before changing versions:
 
 ```toml
 # contracts/<name>/Cargo.toml
-miden = { version = "0.15.0-rc.2" }
-miden-sdk-build-script-support = { version = "0.15.0-rc.2" }
+miden = { version = "0.15.0" }
+miden-sdk-build-script-support = { version = "0.15.0" }
 
 # integration/Cargo.toml
-miden-client = { version = "0.17.0", features = ["tonic"] }
-miden-client-sqlite-store = { version = "0.17.0", package = "miden-client-sqlite-store" }
-miden-standards = { version = "0.17.0", features = ["testing"] }
-miden-testing = "0.16.0-rc.4"
-miden-mast-package = { version = "0.29", default-features = false }
+miden-client = { version = "0.18.0", features = ["tonic"] }
+miden-client-sqlite-store = "0.18.0"
+miden-standards = { version = "0.18.0", features = ["testing"] }
+miden-testing = "0.18.0"
+miden-mast-package = { version = "0.36.3", default-features = false }
 ```
 
-`Cargo.lock` currently resolves `miden-client` / `miden-client-sqlite-store` to `0.16.0-rc.2`, protocol/standards/testing to `0.16.0-rc.6`, and VM/package crates such as `miden-mast-package` to `0.29.4`. Treat the manifest requirements as lower bounds and the lockfile as the exact local graph.
+`Cargo.lock` records the resolved crate versions and registry checksums. Keep client `0.18.0` aligned with protocol `0.18.0` and VM/package crates in the `0.36` series; a client from the previous protocol line uses incompatible types.
 
 **MSRV split**: use the highest applicable toolchain. The published SDK and `cargo-miden` line require Rust 1.99, and this project pins `nightly-2026-09-01` with target `wasm32-wasip2` for contract builds.
 
@@ -761,7 +760,7 @@ authoritative: a `wit` override is rejected when the package embeds WIT, and is 
 for packages without embedded WIT.
 
 For plain Cargo checks, builds, and IDE analysis with source dependencies, the **consuming crate**
-must have `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }` under `[build-dependencies]` and
+must have `miden-sdk-build-script-support = { version = "0.15.0" }` under `[build-dependencies]` and
 call `miden_sdk_build_script_support::prepare_package_cache()` from its own `build.rs`. This
 prepares `MIDENC_PACKAGE_CACHE` for that crate's macro expansion; the dependency crate's hook
 does not configure its consumers. `cargo miden build`, a direct `.masp` dependency, or an already

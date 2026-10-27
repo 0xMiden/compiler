@@ -5,11 +5,9 @@ description: Guide to testing Miden smart contracts with MockChain. Covers test 
 
 # Miden Testing Patterns (MockChain)
 
-These patterns target this repository's current v16 host line. `integration/Cargo.toml` lower-bounds
-`miden-client` / `miden-client-sqlite-store` at `0.16.0-rc.1`, `miden-standards` / `miden-testing` at
-`0.16.0-rc.4`, and `miden-mast-package` at `0.29`; `Cargo.lock` currently resolves client/sqlite to
-`0.16.0-rc.2`, protocol/standards/testing to `0.16.0-rc.6`, and package crates such as
-`miden-mast-package` to `0.29.4`.
+These patterns target protocol/standards/testing `0.18.0` and VM/package crates in the `0.36` series.
+`integration/Cargo.toml` uses the released `miden-client` and `miden-client-sqlite-store`
+`0.18.0` crates from crates.io. `Cargo.lock` records the resolved crate versions.
 
 `MockChain` and its builders live in `miden-testing`. This project depends on `miden-testing`
 directly; other repos may alternatively use the `miden_client::testing` re-export behind the client's
@@ -405,15 +403,15 @@ The faucet must be set up first (see Step 3) and the sender wallet must hold suf
 ## Key Dependencies
 
 ```toml
-miden-client = { version = "0.17.0", features = ["tonic"] }
-miden-client-sqlite-store = { version = "0.17.0", package = "miden-client-sqlite-store" }
-miden-standards = { version = "0.17.0", features = ["testing"] }
-miden-testing = "0.16.0-rc.4"
-miden-mast-package = { version = "0.29", default-features = false }
+miden-client = { version = "0.18.0", features = ["tonic"] }
+miden-client-sqlite-store = "0.18.0"
+miden-standards = { version = "0.18.0", features = ["testing"] }
+miden-testing = "0.18.0"
+miden-mast-package = { version = "0.36.3", default-features = false }
 ```
 
-The contracts a test builds depend on the guest SDK `miden = { version = "0.15.0-rc.2" }` and matching
-`miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`, built on `nightly-2026-09-01` with target
+The contracts a test builds depend on the guest SDK `miden = { version = "0.15.0" }` and matching
+`miden-sdk-build-script-support = { version = "0.15.0" }`, built on `nightly-2026-09-01` with target
 `wasm32-wasip2`. See Step 4 for why `cargo-miden` must not be a library dependency of the test crate;
 `build_project_in_dir(...)` invokes midenup / `CARGO_MIDEN` / `cargo miden` out of process.
 

@@ -785,6 +785,10 @@ fn world_alias_calls_and_procedure_roots_use_emitted_module() {
                 r#"
 builtin.world {{
     builtin.function_alias {visibility} @alias -> ::@lib::@body;
+    builtin.function public extern("C") @entry() -> (felt, felt, felt, felt) {{
+        %r0, %r1, %r2, %r3 = hir.exec ::@lib::@caller() : extern("C") () -> (felt, felt, felt, felt);
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    }};
     builtin.module public @lib {{
         builtin.function public extern("C") @body() {{ builtin.ret; }};
         builtin.function public extern("C") @caller() -> (felt, felt, felt, felt) {{
@@ -798,7 +802,12 @@ builtin.world {{
 "#,
             );
             let lowered = lower_world(parse_world(&context, &source)).unwrap();
-            assemble_library(&context, &lowered, namespace);
+            let package = assemble_library(&context, &lowered, namespace);
+            let alias_path = format!("::{namespace}::alias");
+            assert_eq!(
+                package.get_procedure_root_by_path(alias_path.as_str()).is_some(),
+                visibility == "public",
+            );
         }
     }
 }
@@ -934,6 +943,32 @@ builtin.component private @"hir_ns:test@1.0.0" {
 }
 
 #[test]
+fn package_internal_functions_and_aliases_do_not_become_exports() {
+    let context = Rc::new(Context::default());
+    let lowered = lower_component(
+        &context,
+        r#"
+builtin.component private @hir_ns::@test {
+    builtin.module public @api {
+        builtin.function internal extern("C") @helper() { builtin.ret; };
+        builtin.function_alias internal @forward -> @helper;
+        builtin.function public extern("C") @entry() -> (felt, felt, felt, felt) {
+            hir.exec @forward() : extern("C") () -> ();
+            %r0, %r1, %r2, %r3 = hir.procedure_root @forward;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        };
+    };
+};
+"#,
+    )
+    .expect("package-internal functions and aliases must remain callable");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
+    assert_eq!(exports.len(), 1, "only the public entry should be exported: {exports:?}");
+    assert!(exports[0].ends_with("::api::entry"), "unexpected package surface: {exports:?}");
+}
+
+#[test]
 fn local_aliases_preserve_names_and_flatten_private_chains() {
     let context = Rc::new(Context::default());
     let lowered = lower_component(
@@ -971,7 +1006,7 @@ builtin.component private @"hir_ns:test@1.0.0" {
 
     let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
     assert!(exports.iter().any(|path| path.ends_with("::exported")), "{exports:?}");
-    assert!(exports.iter().any(|path| path.ends_with("::internal_alias")), "{exports:?}");
+    assert!(!exports.iter().any(|path| path.ends_with("::internal_alias")), "{exports:?}");
     assert!(!exports.iter().any(|path| path.ends_with("::forward")), "{exports:?}");
     assert!(exports.iter().any(|path| path.ends_with("::body")), "{exports:?}");
 }
@@ -2340,6 +2375,18 @@ fn procedure_root_rejects_an_internal_callee_beneath_a_private_nested_module() {
 }
 
 #[test]
+fn package_internal_nested_modules_allow_cross_module_procedure_roots() {
+    let context = Rc::new(Context::default());
+    let source = COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET
+        .replace("builtin.module private @hidden", "builtin.module internal @hidden");
+    let lowered = legalize_and_lower_component(&context, &source)
+        .expect("a package-internal nested module must be reachable from another module");
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("::root"), "unexpected package surface: {exports:?}");
+}
+
+#[test]
 fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
     let context = Rc::new(Context::default());
     let op = parse(&context, COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET);
@@ -2354,8 +2401,8 @@ fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
         .expect("a synthetic wrapper exposes its nested module path");
 
     let exports = assembled_library_exports(&context, &lowered, "hir_ns::test");
-    assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
-    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
 }
 
 const COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT: &str = r#"
@@ -2410,8 +2457,8 @@ fn component_less_world_procedure_roots_use_effective_module_visibility() {
     )
     .expect("component-less world modules form the public artifact interface");
     let exports = assembled_library_exports(&context, &lowered, "only");
-    assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
-    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
 }
 
 const COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE: &str = r#"

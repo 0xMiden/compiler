@@ -426,7 +426,7 @@ fn live_table_entry_cannot_hide_depth_sensitive_helper() {
 }
 
 #[test]
-fn live_table_entry_cannot_hide_kernel_convention() {
+fn live_table_entry_convention_follows_kernel_export_visibility() {
     for visibility in ["public", "internal", "private"] {
         let f = parse_module_function(
             &include_str!("fixtures/indirect-table.hir")
@@ -444,7 +444,7 @@ fn live_table_entry_cannot_hide_kernel_convention() {
             ..Default::default()
         };
         let result = select_function(&f.borrow(), &env);
-        if visibility == "private" {
+        if visibility != "public" {
             assert_eq!(result.unwrap().abi.convention(), CallingConvention::Kernel);
             let (plan, frame, body) = ready(&f, &env);
             verify::verify(&plan, &frame, body).unwrap();

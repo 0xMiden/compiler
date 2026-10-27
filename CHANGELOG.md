@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Support Miden VM 0.36 debug-info v4 and package-internal MASM visibility.
+  Verbose objtool debug dumps now show inline-call operation ranges for every source occurrence.
+
 - Remove unused HIR `Operation::reachability`/`reachability_cached` methods and their
   `Reachability`/`ReachabilityCache` exports after removal of their spill-transform consumer.
 

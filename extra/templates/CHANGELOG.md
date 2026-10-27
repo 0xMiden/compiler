@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Templates
+
+- Move the project scaffold to toolchain, protocol, and released client crates `0.18.0`,
+  with VM `0.36.3`. Existing projects must update their integration dependencies and toolchain
+  channel together and regenerate their lockfile.
+
 ## [0.33.0]
 
 ### Templates

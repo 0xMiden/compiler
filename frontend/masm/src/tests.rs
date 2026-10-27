@@ -77,6 +77,33 @@ end
 }
 
 #[test]
+fn preserves_package_internal_procedure_visibility() -> Result<()> {
+    use midenc_hir::{Symbol, Visibility};
+
+    let output = disassemble_source(
+        r#"
+pub(package) proc helper(value: felt) -> felt
+    nop
+end
+
+pub proc entry(value: felt) -> felt
+    exec.helper
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        Rc::new(Context::default()),
+    )?;
+
+    assert_eq!(
+        find_function(output.module, "helper").borrow().visibility(),
+        Visibility::Internal
+    );
+    assert_eq!(find_function(output.module, "entry").borrow().visibility(), Visibility::Public);
+    Ok(())
+}
+
+#[test]
 fn rejects_missing_signature_in_phase_one() {
     let context = Rc::new(Context::default());
     let result = disassemble_source(

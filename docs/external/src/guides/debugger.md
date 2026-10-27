@@ -11,10 +11,10 @@ terminal UI, a command-line REPL, and non-interactive command scripts.
 ## Getting started
 
 Install a debugger version compatible with the compiler's package and VM dependencies. This
-checkout pins `miden-debug` 0.10.3 in `Cargo.lock`:
+checkout pins `miden-debug` 0.19.0 in `Cargo.lock`:
 
 ```shell
-cargo install miden-debug --version 0.10.3 --locked
+cargo install miden-debug --version 0.19.0 --locked
 ```
 
 The default features include the TUI and REPL. When using another compiler release, use its

@@ -1302,12 +1302,7 @@ impl MasmComponentBuilder<'_> {
         let visibility = if is_artifact_interface {
             masm::Visibility::Public
         } else {
-            match *module.get_visibility() {
-                midenc_hir::Visibility::Public => masm::Visibility::Public,
-                midenc_hir::Visibility::Internal | midenc_hir::Visibility::Private => {
-                    masm::Visibility::Private
-                }
-            }
+            lower_visibility(*module.get_visibility())
         };
         let module_index = if let Some(rest) = module_path.strip_prefix(&self.component.root) {
             self.define_module_tree(rest, Some(0), visibility)?
@@ -1561,6 +1556,16 @@ fn resolve_alias_import_target(alias: &builtin::FunctionAlias) -> Result<SymbolR
     }
 }
 
+fn lower_visibility(visibility: midenc_hir::Visibility) -> masm::Visibility {
+    use midenc_hir::Visibility;
+
+    match visibility {
+        Visibility::Public => masm::Visibility::Public,
+        Visibility::Internal => masm::Visibility::Internal,
+        Visibility::Private => masm::Visibility::Private,
+    }
+}
+
 fn lower_function_alias(
     alias: &builtin::FunctionAlias,
     owners: &EmissionOwners,
@@ -1581,12 +1586,7 @@ fn lower_function_alias(
                 .into_boxed_path(),
         )
     };
-    let visibility = match alias.visibility() {
-        midenc_hir::Visibility::Private => masm::Visibility::Private,
-        midenc_hir::Visibility::Public | midenc_hir::Visibility::Internal => {
-            masm::Visibility::Public
-        }
-    };
+    let visibility = lower_visibility(alias.visibility());
     let span = alias.span();
     let source_name = masm::Ident::from_raw_parts(Span::new(span, target.name().as_str().into()));
     let local_name = masm::Ident::from_raw_parts(Span::new(span, alias.name().as_str().into()));
@@ -1721,8 +1721,6 @@ impl MasmFunctionBuilder {
     /// `MasmModuleBuilder::define_function` for one in a module or an interface — which is why the
     /// check below lives here rather than at any one of them.
     pub fn new(function: &builtin::Function) -> Result<Self, Report> {
-        use midenc_hir::{Symbol, Visibility};
-
         if function.is_declaration() {
             return Err(function_without_a_body(function));
         }
@@ -1732,12 +1730,7 @@ impl MasmFunctionBuilder {
             name.span,
             name.as_ref().into(),
         )));
-        let visibility = match function.visibility() {
-            Visibility::Public => masm::Visibility::Public,
-            // TODO(pauls): Support internal visibility in MASM
-            Visibility::Internal => masm::Visibility::Public,
-            Visibility::Private => masm::Visibility::Private,
-        };
+        let visibility = lower_visibility(function.visibility());
         let signature =
             semantic_debug_signature(function).unwrap_or_else(|| lowered_signature(function));
 
