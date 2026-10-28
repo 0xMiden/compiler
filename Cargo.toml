@@ -35,13 +35,14 @@ members = [
     "sdk/base-sys",
     "sdk/bindgen",
     "sdk/build-script-support",
-    "sdk/note-bindings",
-    "sdk/note-bindings/macros",
-    "sdk/note-codec",
-    "sdk/note-codec/macros",
-    "sdk/note-codec/wit-crate",
+    "sdk/bindings",
+    "sdk/bindings/macros",
+    "sdk/codec",
+    "sdk/codec/macros",
+    "sdk/codec/wit-crate",
     "sdk/note-schema",
-    "sdk/note-schema/codegen",
+    "sdk/schema",
+    "sdk/schema/codegen",
     "sdk/intrinsics-sys",
     "sdk/package-interface",
     "sdk/sdk",
@@ -217,13 +218,14 @@ miden-sdk-build-script-support = { version = "0.15.0", path = "sdk/build-script-
 miden-intrinsics-sys = { version = "0.15.0", path = "sdk/intrinsics-sys" }
 miden-base-sys = { version = "0.15.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.15.0", path = "sdk/field-repr/repr" }
-miden-note-bindings-macros = { version = "0.15.0", path = "sdk/note-bindings/macros" }
-miden-note-codec-macros = { version = "0.15.0", path = "sdk/note-codec/macros" }
-miden-note-codec-wit = { version = "0.15.0", path = "sdk/note-codec/wit-crate" }
+miden-bindings-macros = { version = "0.15.0", path = "sdk/bindings/macros" }
+miden-codec-macros = { version = "0.15.0", path = "sdk/codec/macros" }
+miden-codec-wit = { version = "0.15.0", path = "sdk/codec/wit-crate" }
 # Without default features: the compiler uses the schema model only, and must not link the
 # protocol crate through it. The SDK crates enable `protocol` where they depend on it.
 miden-note-schema = { version = "0.15.0", path = "sdk/note-schema", default-features = false }
-miden-note-schema-codegen = { version = "0.15.0", path = "sdk/note-schema/codegen" }
+miden-schema = { version = "0.15.0", path = "sdk/schema", default-features = false }
+miden-schema-codegen = { version = "0.15.0", path = "sdk/schema/codegen" }
 miden-stdlib-sys = { version = "0.15.0", path = "sdk/stdlib-sys" }
 miden-tx-script-args = { version = "0.15.0", path = "sdk/tx-script-args" }
 

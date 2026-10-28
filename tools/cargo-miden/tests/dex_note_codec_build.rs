@@ -5,7 +5,7 @@ use std::env;
 use cargo_miden::run;
 use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
-    package_note_codec_section_id, package_note_storage_schema_section_id,
+    package_codec_section_id, package_note_storage_schema_section_id,
 };
 use midenc_integration_test_support::{
     example_build_lock, wasm_target_is_installed, workspace_root,
@@ -46,7 +46,7 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         .expect("cargo miden build for dex-note failed")
         .expect("expected BuildCommandOutput")
         .unwrap_build_output();
-    let codec_work_dir = workspace.join("examples/dex-note-codec/target/midenc.note-codec");
+    let codec_work_dir = workspace.join("examples/dex-note-codec/target/midenc.codec");
     assert!(
         codec_work_dir.join("package-cache").is_dir(),
         "the codec package cache is outside the codec crate"
@@ -65,17 +65,17 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         "dex-note package has no note storage schema section"
     );
 
-    let codec_id = package_note_codec_section_id();
+    let codec_id = package_codec_section_id();
     let codec = package
         .sections
         .iter()
         .find(|section| section.id == codec_id)
         .expect("dex-note package has no note codec section");
-    assert_note_codec_component(codec.data.as_ref());
+    assert_codec_component(codec.data.as_ref());
 }
 
 /// Verifies the sandbox and versioned interface exported by a note codec component.
-fn assert_note_codec_component(component: &[u8]) {
+fn assert_codec_component(component: &[u8]) {
     let DecodedWasm::Component(resolve, world_id) =
         wit_component::decode(component).expect("note codec section is not valid component bytes")
     else {
@@ -100,11 +100,11 @@ fn assert_note_codec_component(component: &[u8]) {
             let package = &resolve.packages[package_id].name;
             (interface.name.as_deref() == Some("codec")
                 && package.namespace == "miden"
-                && package.name == "note-codec"
+                && package.name == "codec"
                 && package.version.as_ref().is_some_and(|version| version.to_string() == "1.0.0"))
             .then_some(interface)
         })
-        .expect("component does not export `miden:note-codec/codec@1.0.0`");
+        .expect("component does not export `miden:codec/codec@1.0.0`");
     assert_eq!(
         interface.functions.keys().map(String::as_str).collect::<Vec<_>>(),
         ["supported-types", "parse", "display", "validate"]

@@ -22,7 +22,7 @@ use miden_mast_package::Package;
 use midenc_codegen_masm::{MasmComponent, intrinsics};
 use midenc_session::{Session, diagnostics::Report};
 
-use crate::cargo::NOTE_CODEC_TABLE_NAME;
+use crate::cargo::CODEC_TABLE_NAME;
 
 /// Apply the session's link inputs to `assembler` before a project is assembled with it.
 pub(crate) fn prepare_assembler(
@@ -66,7 +66,7 @@ pub(crate) fn prepare_assembler(
 /// Attaches frontend metadata, advice-map data, and target-specific sections after assembly.
 ///
 /// The author codec is attached only when the note is the root target of the build, as
-/// [`attaches_note_codec`] decides. Every other section is attached for every role.
+/// [`attaches_codec`] decides. Every other section is attached for every role.
 pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
@@ -78,9 +78,9 @@ pub(crate) fn post_process_package(
     use miden_mast_package::{Section, SectionId};
     use midenc_session::miden_project::TargetType;
 
-    let has_note_codec = crate::cargo::has_project_note_codec(context.package.metadata());
-    validate_note_codec_declaration(
-        has_note_codec,
+    let has_codec = crate::cargo::has_project_codec(context.package.metadata());
+    validate_codec_declaration(
+        has_codec,
         package_has_note_target(&context.package),
         context.target.ty,
         sections.note_storage_schema.is_some(),
@@ -107,9 +107,9 @@ pub(crate) fn post_process_package(
             .push(Section::new(SectionId::KERNEL, kernel_package.to_bytes()));
     }
 
-    if attaches_note_codec(has_note_codec, context.target.ty, role) {
+    if attaches_codec(has_codec, context.target.ty, role) {
         // Run after schema and kernel attachment. The codec stages this package state and hashes it.
-        attach_note_codec(package, context)?;
+        attach_codec(package, context)?;
     }
 
     Ok(())
@@ -124,19 +124,19 @@ pub(crate) fn post_process_package(
 /// assembly would otherwise run a nested cargo build. A consumer that needs the codec loads the
 /// note's own package. This is also the behavior of the package post-processor that will take
 /// over the codec build, because a post-processor never runs on a dependency.
-fn attaches_note_codec(
-    has_note_codec: bool,
+fn attaches_codec(
+    has_codec: bool,
     target_type: midenc_session::miden_project::TargetType,
     role: crate::pipeline::observer::TargetRole,
 ) -> bool {
     use midenc_session::miden_project::TargetType;
 
-    has_note_codec && target_type == TargetType::Note && role.is_root()
+    has_codec && target_type == TargetType::Note && role.is_root()
 }
 
 /// Validates the target and schema required by an author codec declaration.
-fn validate_note_codec_declaration(
-    has_note_codec: bool,
+fn validate_codec_declaration(
+    has_codec: bool,
     package_has_note_target: bool,
     target_type: midenc_session::miden_project::TargetType,
     has_note_storage_schema: bool,
@@ -144,16 +144,16 @@ fn validate_note_codec_declaration(
 ) -> Result<(), Report> {
     use midenc_session::miden_project::TargetType;
 
-    if has_note_codec && !package_has_note_target {
+    if has_codec && !package_has_note_target {
         return Err(Report::msg(format!(
-            "`[package.metadata.{NOTE_CODEC_TABLE_NAME}]` requires a note target, but the package \
-             that contains target '{target_name}' defines no note target"
+            "`[package.metadata.{CODEC_TABLE_NAME}]` requires a note target, but the package that \
+             contains target '{target_name}' defines no note target"
         )));
     }
-    if has_note_codec && target_type == TargetType::Note && !has_note_storage_schema {
+    if has_codec && target_type == TargetType::Note && !has_note_storage_schema {
         return Err(Report::msg(format!(
-            "note target '{target_name}' declares `[package.metadata.{NOTE_CODEC_TABLE_NAME}]` \
-             but emitted no note storage schema; add one named-field `#[note]` struct"
+            "note target '{target_name}' declares `[package.metadata.{CODEC_TABLE_NAME}]` but \
+             emitted no note storage schema; add one named-field `#[note]` struct"
         )));
     }
     Ok(())
@@ -172,12 +172,9 @@ fn package_has_note_target(package: &midenc_session::miden_project::Package) -> 
             .any(|target| target.inner().ty == TargetType::Note)
 }
 
-/// Builds and attaches the note codec declared by the current project package.
-fn attach_note_codec(
-    package: &mut Package,
-    context: &TargetAssemblyContext<'_>,
-) -> Result<(), Report> {
-    let Some(component) = crate::cargo::build_project_note_codec(
+/// Builds and attaches the codec declared by the current project package.
+fn attach_codec(package: &mut Package, context: &TargetAssemblyContext<'_>) -> Result<(), Report> {
+    let Some(component) = crate::cargo::build_project_codec(
         context.package.as_ref(),
         context.manifest_path,
         context.project_root.as_ref(),
@@ -187,8 +184,8 @@ fn attach_note_codec(
         return Ok(());
     };
 
-    let section_id = midenc_frontend_wasm_metadata::package_note_codec_section_id();
-    set_unique_section(package, section_id, component, "note codec")
+    let section_id = midenc_frontend_wasm_metadata::package_codec_section_id();
+    set_unique_section(package, section_id, component, "codec")
 }
 
 /// Attach the note storage schema to the assembled package.
@@ -387,7 +384,7 @@ mod tests {
     #[test]
     fn attach_accepts_a_schema_that_consumers_can_read() {
         let mut package = some_package();
-        let schema = b"package test:note-schema@1.0.0;
+        let schema = b"package test:note-schema;
 
 interface note-storage {
     record note {
@@ -419,39 +416,37 @@ interface note-storage {
 
     #[test]
     fn codec_metadata_skips_non_note_target_when_package_has_note_target() {
-        validate_note_codec_declaration(true, true, TargetType::Library, false, "library").unwrap();
+        validate_codec_declaration(true, true, TargetType::Library, false, "library").unwrap();
     }
 
     #[test]
     fn codec_metadata_requires_a_note_target_in_the_package() {
-        let error =
-            validate_note_codec_declaration(true, false, TargetType::Library, false, "library")
-                .unwrap_err()
-                .to_string();
+        let error = validate_codec_declaration(true, false, TargetType::Library, false, "library")
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("defines no note target"));
     }
 
     #[test]
     fn codec_metadata_requires_a_schema_on_the_note_target() {
         let missing_schema =
-            validate_note_codec_declaration(true, true, TargetType::Note, false, "schema-less")
+            validate_codec_declaration(true, true, TargetType::Note, false, "schema-less")
                 .unwrap_err()
                 .to_string();
         assert!(missing_schema.contains("emitted no note storage schema"));
 
-        validate_note_codec_declaration(true, true, TargetType::Note, true, "note").unwrap();
-        validate_note_codec_declaration(false, false, TargetType::Library, false, "library")
-            .unwrap();
+        validate_codec_declaration(true, true, TargetType::Note, true, "note").unwrap();
+        validate_codec_declaration(false, false, TargetType::Library, false, "library").unwrap();
     }
 
     #[test]
     fn codec_attaches_only_to_a_root_note_that_declares_one() {
         use crate::pipeline::observer::TargetRole;
 
-        assert!(attaches_note_codec(true, TargetType::Note, TargetRole::Root));
-        assert!(!attaches_note_codec(true, TargetType::Note, TargetRole::Dependency));
-        assert!(!attaches_note_codec(true, TargetType::Note, TargetRole::RequiredLibrary));
-        assert!(!attaches_note_codec(true, TargetType::Library, TargetRole::Root));
-        assert!(!attaches_note_codec(false, TargetType::Note, TargetRole::Root));
+        assert!(attaches_codec(true, TargetType::Note, TargetRole::Root));
+        assert!(!attaches_codec(true, TargetType::Note, TargetRole::Dependency));
+        assert!(!attaches_codec(true, TargetType::Note, TargetRole::RequiredLibrary));
+        assert!(!attaches_codec(true, TargetType::Library, TargetRole::Root));
+        assert!(!attaches_codec(false, TargetType::Note, TargetRole::Root));
     }
 }

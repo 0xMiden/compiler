@@ -222,27 +222,31 @@ name = "miden-note-schema"
 unit = "sdk"
 
 [[packages]]
-name = "miden-note-schema-codegen"
+name = "miden-schema"
 unit = "sdk"
 
 [[packages]]
-name = "miden-note-bindings"
+name = "miden-schema-codegen"
 unit = "sdk"
 
 [[packages]]
-name = "miden-note-bindings-macros"
+name = "miden-bindings"
 unit = "sdk"
 
 [[packages]]
-name = "miden-note-codec"
+name = "miden-bindings-macros"
 unit = "sdk"
 
 [[packages]]
-name = "miden-note-codec-macros"
+name = "miden-codec"
 unit = "sdk"
 
 [[packages]]
-name = "miden-note-codec-wit"
+name = "miden-codec-macros"
+unit = "sdk"
+
+[[packages]]
+name = "miden-codec-wit"
 unit = "sdk"
 
 [[packages]]

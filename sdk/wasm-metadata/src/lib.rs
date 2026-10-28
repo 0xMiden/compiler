@@ -90,15 +90,15 @@ pub fn package_note_storage_schema_section_id() -> miden_mast_package::SectionId
         .expect("the note storage schema section id must be a valid custom section id")
 }
 
-/// Name of the Miden package section that stores a note codec.
-pub const PACKAGE_NOTE_CODEC_SECTION_ID: &str = "note_codec";
+/// Name of the Miden package section that stores an author codec component.
+pub const PACKAGE_CODEC_SECTION_ID: &str = "codec";
 
-/// Returns the Miden package section id that stores a note codec.
+/// Returns the Miden package section id that stores an author codec component.
 ///
 /// One accessor keeps every producer and consumer on the same section contract.
-pub fn package_note_codec_section_id() -> miden_mast_package::SectionId {
-    miden_mast_package::SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID)
-        .expect("the note codec section id must be a valid custom section id")
+pub fn package_codec_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_CODEC_SECTION_ID)
+        .expect("the codec section id must be a valid custom section id")
 }
 
 /// Pads metadata bytes with NUL bytes to the 16-byte link-section alignment.

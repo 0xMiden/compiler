@@ -17,28 +17,17 @@ edition.workspace = true
 default = ["protocol"]
 # Values of protocol types: `NoteStorage`, its builder and decoder, and the standard codecs.
 # The schema model and the codec-component validation do not need it.
-protocol = ["dep:miden-protocol"]
-codec-component = ["protocol", "dep:wasmtime"]
+protocol = ["miden-schema/protocol", "dep:miden-protocol"]
+codec-component = ["protocol", "miden-schema/codec-component"]
 
 [lib]
 doctest = false
 
 [dependencies]
-miden-field.workspace = true
-miden-field-repr.workspace = true
 miden-mast-package = { workspace = true, features = ["std"] }
 miden-protocol = { workspace = true, features = ["std"], optional = true }
+miden-schema.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
-toml.workspace = true
-wasmparser.workspace = true
-# This reader accepts package-supplied WIT. Version 0.258 bounds recursive syntax parsing
-# before the schema model's own depth checks can run.
-wit-parser.workspace = true
-wasmtime = { workspace = true, optional = true }
 
 [dev-dependencies]
-miden-core.workspace = true
-miden-note-codec-wit.workspace = true
 midenc-integration-test-support.workspace = true
-tempfile.workspace = true
-wat.workspace = true

@@ -246,6 +246,62 @@ The bindings generator moved to wit-bindgen 0.62 (wit-parser and wit-component 0
 understands the attribute; crates that depend on `wit-bindgen` directly should move to the same
 version.
 
+### The schema, codec and bindings crates drop "note" from their names
+
+The schema, codec and bindings machinery is no longer note-specific. Its kind-agnostic core moved
+to the new `miden-schema` crate; `miden-note-schema` stays as the note layer and re-exports it, so
+host code that imports from `miden_note_schema` keeps compiling. The other crates are renamed:
+
+| Before | After |
+| --- | --- |
+| `miden-note-codec` | `miden-codec` |
+| `miden-note-codec-macros` | `miden-codec-macros` |
+| `miden-note-codec-wit` | `miden-codec-wit` |
+| `miden-note-bindings` | `miden-bindings` |
+| `miden-note-bindings-macros` | `miden-bindings-macros` |
+| `miden-note-schema-codegen` | `miden-schema-codegen` |
+| `#[note_codec]` | `#[codec]` |
+| `NOTE_CODEC_WIT` | `CODEC_WIT` |
+| `[package.metadata.midenc.note-codec]` | `[package.metadata.midenc.codec]` |
+| interface `miden:note-codec/codec@1.0.0` | interface `miden:codec/codec@1.0.0` (world `codec-component`) |
+| package section `note_codec` | package section `codec` |
+| `NOTE_CODEC_WASM_FEATURES`, `NOTE_CODEC_GUEST_RUSTFLAGS`, `MAX_NOTE_CODEC_COMPONENT_BYTES` | `CODEC_WASM_FEATURES`, `CODEC_GUEST_RUSTFLAGS`, `MAX_CODEC_COMPONENT_BYTES` |
+| `validate_note_codec_component`, `validate_note_codec_structure` | `validate_codec_component`, `validate_codec_structure` |
+| `NotePackageResolver`, `NotePackageArtifact` | `miden_schema::{PackageResolver, PackageArtifact}` |
+
+```rust
+// Before
+miden_note_codec::from_project!("../my-note");
+#[miden_note_codec::note_codec]
+impl miden_note_codec::AuthorTypeCodec for Ratio { /* ... */ }
+miden_note_codec::export_codecs!();
+
+// After
+miden_codec::from_project!("../my-note");
+#[miden_codec::codec]
+impl miden_codec::AuthorTypeCodec for Ratio { /* ... */ }
+miden_codec::export_codecs!();
+```
+
+`NoteStorageSchema::from_package`, `builder().set(..).build()` and `decode` are unchanged.
+`CodecRegistry::load_from_package` now takes the schema the codec belongs to:
+
+```rust
+// Before
+let codecs = CodecRegistry::load_from_package(&package)?;
+
+// After
+let schema = NoteStorageSchema::from_package(&package)?;
+let codecs = CodecRegistry::load_from_package(&package, schema.schema())?;
+```
+
+The schema package that `#[note]` emits is no longer versioned: `miden:p2id-schema@0.1.0` is now
+`miden:p2id-schema`, and the custom type names it defines change with it
+(`miden:dex-note-schema/note-storage@0.1.0.limit-price` becomes
+`miden:dex-note-schema/note-storage.limit-price`). A schema reader rejects a versioned schema
+package, so rebuild note packages, and the codec and bindings crates generated from them, with
+this release.
+
 ## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)

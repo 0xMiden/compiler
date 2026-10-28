@@ -8,4 +8,4 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-miden-note-codec = { path = "../../sdk/note-codec" }
+miden-codec = { path = "../../sdk/codec" }

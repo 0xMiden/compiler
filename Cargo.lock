@@ -3182,6 +3182,7 @@ name = "miden-base"
 version = "0.15.0"
 dependencies = [
  "miden-base-sys",
+ "miden-field-repr",
  "miden-stdlib-sys",
 ]
 
@@ -3225,6 +3226,38 @@ dependencies = [
  "miden-stdlib-sys",
  "midenc-integration-test-support",
  "midenc-package-interface",
+]
+
+[[package]]
+name = "miden-bindings"
+version = "0.15.0"
+dependencies = [
+ "miden-bindings-macros",
+ "miden-field",
+ "miden-field-repr",
+ "miden-mast-package",
+ "miden-note-schema",
+ "miden-protocol",
+ "miden-schema",
+ "midenc-frontend-wasm-metadata",
+ "midenc-integration-test-support",
+ "tempfile",
+]
+
+[[package]]
+name = "miden-bindings-macros"
+version = "0.15.0"
+dependencies = [
+ "miden-note-schema",
+ "miden-schema",
+ "miden-schema-codegen",
+ "midenc-expect-test",
+ "midenc-frontend-wasm-metadata",
+ "prettyplease 0.2.37",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -3279,6 +3312,43 @@ dependencies = [
  "tracing",
  "uuid",
 ]
+
+[[package]]
+name = "miden-codec"
+version = "0.15.0"
+dependencies = [
+ "miden-codec-macros",
+ "miden-codec-wit",
+ "miden-field",
+ "miden-field-repr",
+ "miden-protocol",
+ "miden-schema",
+ "midenc-frontend-wasm-metadata",
+ "tempfile",
+ "wit-bindgen 0.62.0",
+ "wit-component",
+ "wit-parser 0.259.0",
+]
+
+[[package]]
+name = "miden-codec-macros"
+version = "0.15.0"
+dependencies = [
+ "miden-codec-wit",
+ "miden-note-schema",
+ "miden-schema",
+ "miden-schema-codegen",
+ "midenc-frontend-wasm-metadata",
+ "prettyplease 0.2.37",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "miden-codec-wit"
+version = "0.15.0"
 
 [[package]]
 name = "miden-constraint-compiler"
@@ -3638,101 +3708,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-note-bindings"
-version = "0.15.0"
-dependencies = [
- "miden-field",
- "miden-field-repr",
- "miden-mast-package",
- "miden-note-bindings-macros",
- "miden-note-schema",
- "miden-protocol",
- "midenc-frontend-wasm-metadata",
- "midenc-integration-test-support",
- "tempfile",
-]
-
-[[package]]
-name = "miden-note-bindings-macros"
-version = "0.15.0"
-dependencies = [
- "miden-note-schema",
- "miden-note-schema-codegen",
- "midenc-expect-test",
- "midenc-frontend-wasm-metadata",
- "prettyplease 0.2.37",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "miden-note-codec"
-version = "0.15.0"
-dependencies = [
- "miden-field",
- "miden-field-repr",
- "miden-note-codec-macros",
- "miden-note-codec-wit",
- "miden-note-schema",
- "miden-protocol",
- "midenc-frontend-wasm-metadata",
- "tempfile",
- "wit-bindgen 0.62.0",
- "wit-component",
- "wit-parser 0.259.0",
-]
-
-[[package]]
-name = "miden-note-codec-macros"
-version = "0.15.0"
-dependencies = [
- "miden-note-codec-wit",
- "miden-note-schema",
- "miden-note-schema-codegen",
- "midenc-frontend-wasm-metadata",
- "prettyplease 0.2.37",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "miden-note-codec-wit"
-version = "0.15.0"
-
-[[package]]
 name = "miden-note-schema"
 version = "0.15.0"
 dependencies = [
- "miden-core",
- "miden-field",
- "miden-field-repr",
  "miden-mast-package",
- "miden-note-codec-wit",
  "miden-protocol",
+ "miden-schema",
  "midenc-frontend-wasm-metadata",
  "midenc-integration-test-support",
- "tempfile",
- "toml 1.1.4+spec-1.1.0",
- "wasmparser 0.259.0",
- "wasmtime",
- "wat",
- "wit-parser 0.259.0",
-]
-
-[[package]]
-name = "miden-note-schema-codegen"
-version = "0.15.0"
-dependencies = [
- "heck",
- "miden-note-schema",
- "prettyplease 0.2.37",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]
@@ -3981,6 +3964,39 @@ checksum = "c13695bf99aabaa21d6572b807c66bb26251aa3d9b75e828b3c99b97a3b1ce7e"
 dependencies = [
  "hashbrown 0.17.1",
  "rustc-hash",
+]
+
+[[package]]
+name = "miden-schema"
+version = "0.15.0"
+dependencies = [
+ "miden-codec-wit",
+ "miden-core",
+ "miden-field",
+ "miden-field-repr",
+ "miden-mast-package",
+ "miden-protocol",
+ "midenc-frontend-wasm-metadata",
+ "midenc-integration-test-support",
+ "tempfile",
+ "toml 1.1.4+spec-1.1.0",
+ "wasmparser 0.259.0",
+ "wasmtime",
+ "wat",
+ "wit-parser 0.259.0",
+]
+
+[[package]]
+name = "miden-schema-codegen"
+version = "0.15.0"
+dependencies = [
+ "heck",
+ "miden-note-schema",
+ "miden-schema",
+ "prettyplease 0.2.37",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -4287,10 +4303,11 @@ dependencies = [
  "log",
  "miden-assembly",
  "miden-assembly-syntax",
+ "miden-codec-wit",
  "miden-mast-package",
- "miden-note-codec-wit",
  "miden-note-schema",
  "miden-package-registry",
+ "miden-schema",
  "miden-thiserror",
  "midenc-codegen-masm",
  "midenc-dialect-arith",
