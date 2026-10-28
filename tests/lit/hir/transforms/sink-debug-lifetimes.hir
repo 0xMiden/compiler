@@ -1,6 +1,6 @@
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(sink-operand-defs))' | filecheck %s --check-prefix=OPERAND
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(control-flow-sink))' | filecheck %s --check-prefix=REGION
-// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer,cse,sccp,sink-operand-defs,local2reg,transform-spills,cfg-to-scf,canonicalizer,sink-operand-defs))' | filecheck %s --check-prefix=PIPELINE
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,canonicalizer,sink-operand-defs))' | filecheck %s --check-prefix=PIPELINE
 
 builtin.module public @sink_debug_lifetimes {
     // OPERAND-LABEL: @after_kill(

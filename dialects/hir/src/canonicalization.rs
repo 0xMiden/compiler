@@ -78,7 +78,11 @@ impl RewritePattern for RemoveRepeatedAssertz {
             return Ok(false);
         };
 
-        rewriter.replace_op_with_values(operation, &[Some(earlier_result)]);
+        rewriter.replace_op_with_values_and_debug(
+            operation,
+            &[Some(earlier_result)],
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
         Ok(true)
     }
 }

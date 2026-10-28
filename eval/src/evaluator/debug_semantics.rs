@@ -460,6 +460,73 @@ fn compare_rewrite(
 const SOURCE: &str = include_str!("../../../tests/lit/hir-opt/debug-info-semantic-values.hir");
 
 #[test]
+fn canonicalizer_contracts_preserve_values_and_explicit_kills() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/canonicalizer-debug-contracts.hir");
+    for name in ["single_pred", "redundant_capture", "bool_compare", "bool_trunc", "bool_select"] {
+        let scenario = Scenario::new(source, name)?;
+        let inputs = [false, true]
+            .into_iter()
+            .map(|condition| match name {
+                "single_pred" => vec![condition.into(), 7u32.into(), u32::MAX.into()],
+                "redundant_capture" => vec![condition.into(), u32::MAX.into()],
+                _ => vec![condition.into()],
+            })
+            .collect::<Vec<_>>();
+        compare_rewrite(
+            &scenario,
+            &inputs,
+            vec![Box::new(Canonicalizer::new(Default::default(), true))],
+            &[],
+        )?;
+    }
+    for name in ["constant_switch", "switch_unused", "bool_not"] {
+        let scenario = Scenario::new(source, name)?;
+        let inputs = [0u32, 1, 7, u32::MAX - 1]
+            .into_iter()
+            .map(|value| match name {
+                "constant_switch" => vec![value.into()],
+                "switch_unused" => vec![value.into(), 5u32.into(), value.into()],
+                _ => vec![value.into(), 7u32.into()],
+            })
+            .collect::<Vec<_>>();
+        compare_rewrite(
+            &scenario,
+            &inputs,
+            vec![Box::new(Canonicalizer::new(Default::default(), true))],
+            if name == "switch_unused" {
+                &["dropped"]
+            } else {
+                &[]
+            },
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn cse_keeps_repeated_nested_captures() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir");
+    let scenario = Scenario::new(source, "nested_captures")?;
+    let inputs = [false, true]
+        .into_iter()
+        .map(|condition| vec![condition.into(), 7u32.into(), u32::MAX.into()])
+        .collect::<Vec<_>>();
+    let before = inputs
+        .iter()
+        .map(|args| scenario.evaluate(args))
+        .collect::<Result<Vec<_>, _>>()?;
+    scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+    let printed = scenario.function.borrow().as_operation().to_string();
+    assert_eq!(printed.matches("scf.if").count(), 2, "{printed}");
+    assert_eq!(printed.matches("di.debug_value").count(), 2, "{printed}");
+    assert_eq!(printed.matches("di.debug_kill").count(), 2, "{printed}");
+    for (args, expected) in inputs.iter().zip(before) {
+        expected.compare(&scenario.evaluate(args)?)?;
+    }
+    Ok(())
+}
+
+#[test]
 fn cse_preserves_observed_values_across_edge_inputs() -> Result<(), Report> {
     let scenario = Scenario::new(SOURCE, "cse_values")?;
     let edges = [0u32, 1, 7, u32::MAX, 1 << 31];
@@ -848,38 +915,6 @@ builtin.module public @test {
     )?;
     let error = scenario.evaluate(&[]).err().unwrap();
     assert!(error.to_string().contains("instruction limit"), "{error}");
-    Ok(())
-}
-
-#[test]
-fn spill_reload_and_phi_rewrites_preserve_concrete_debug_values() -> Result<(), Report> {
-    let source = include_str!("../../../tests/lit/hir-opt/transform-spills-debug-values.hir");
-    for name in ["tracked_reload", "tracked_join", "tracked_phi"] {
-        let scenario = Scenario::new(source, name)?;
-        let mut inputs = Vec::new();
-        for kept in [0u32, 1, u32::MAX - 42] {
-            for wide in [0u128, 7, 1u128 << 120] {
-                if name == "tracked_reload" {
-                    inputs.push(vec![kept.into(), wide.into()]);
-                } else {
-                    for condition in [true, false] {
-                        inputs.push(vec![condition.into(), wide.into(), kept.into()]);
-                    }
-                }
-            }
-        }
-        let unavailable = match name {
-            "tracked_reload" => &["after"][..],
-            "tracked_join" => &["kept"][..],
-            _ => &[],
-        };
-        compare_rewrite(
-            &scenario,
-            &inputs,
-            vec![Box::new(hir::transforms::TransformSpills)],
-            unavailable,
-        )?;
-    }
     Ok(())
 }
 

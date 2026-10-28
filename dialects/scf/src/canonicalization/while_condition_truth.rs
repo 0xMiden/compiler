@@ -100,7 +100,11 @@ impl RewritePattern for WhileConditionTruth {
         for (forwarded, after_arg) in forwarded.into_iter().zip(after_args) {
             if forwarded == condition && after_arg.borrow().has_real_uses() {
                 let constant = *constant_true.get_or_insert_with(|| rewriter.i1(true, span));
-                rewriter.replace_all_uses_of_value_with(after_arg, constant);
+                rewriter.replace_value_with_debug(
+                    after_arg,
+                    constant,
+                    midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+                );
                 replaced = true;
             }
         }

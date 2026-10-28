@@ -7,7 +7,7 @@ use cranelift_entity::EntityRef;
 use gimli::{self, AttributeValue, read::Operation};
 use log::debug;
 use midenc_hir::{
-    FxHashMap, SourceSpan,
+    FxHashMap, FxHashSet, SourceSpan,
     dialects::debuginfo::attributes::{
         CompileUnit, Expression, ExpressionOp, FrameBase, Subprogram, Variable,
     },
@@ -264,6 +264,20 @@ fn build_local_debug_info(
     }
     let has_dwarf_locals = dwarf_locals.is_some_and(|locals| !locals.is_empty())
         || scheduled_vars.is_some_and(|locals| !locals.is_empty());
+    let mut scheduled_names = FxHashSet::default();
+    let mut scheduled_slots = FxHashSet::default();
+    for variable in scheduled_vars.into_iter().flatten() {
+        if let Some(name) = variable.name {
+            scheduled_names.insert(name);
+        }
+        for location in &variable.locations {
+            for operation in &location.storage.operations {
+                if let ExpressionOp::LocalSlot(index) = operation {
+                    scheduled_slots.insert(*index);
+                }
+            }
+        }
+    }
 
     for (param_idx, wasm_ty) in wasm_signature.params().iter().enumerate() {
         let index_u32 = param_idx as u32;
@@ -271,6 +285,11 @@ fn build_local_debug_info(
         let mut name_symbol = module
             .local_name(func_index, index_u32)
             .unwrap_or_else(|| Symbol::intern(format!("arg{param_idx}")));
+        if dwarf_entry.is_none()
+            && (scheduled_slots.contains(&index_u32) || scheduled_names.contains(&name_symbol))
+        {
+            continue;
+        }
         if let Some(info) = dwarf_entry
             && let Some(symbol) = info.name
         {
@@ -314,6 +333,13 @@ fn build_local_debug_info(
             let index_u32 = next_local_index as u32;
             let dwarf_entry = dwarf_locals.and_then(|map| map.get(&index_u32));
             let local_name = module.local_name(func_index, index_u32);
+            if dwarf_entry.is_none()
+                && (scheduled_slots.contains(&index_u32)
+                    || local_name.is_some_and(|name| scheduled_names.contains(&name)))
+            {
+                next_local_index += 1;
+                continue;
+            }
             if has_dwarf_locals && dwarf_entry.is_none() && local_name.is_none() {
                 next_local_index += 1;
                 continue;
@@ -1508,6 +1534,19 @@ mod tests {
             let module = wasmprinter::print_bytes(&wasm).unwrap();
             std::fs::write(path, format!("{header}{}\n", module.trim_end())).unwrap();
         }
+        for (name, pointer) in
+            [("named-local-scoped-value", false), ("named-local-scoped-pointer", true)]
+        {
+            let wasm = scoped_named_local_fixture(pointer);
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/lit/debug")
+                .join(format!("{name}.wat"));
+            let fixture = std::fs::read_to_string(&path).unwrap();
+            let header =
+                fixture.split_once("(module").map_or(fixture.as_str(), |(header, _)| header);
+            let module = wasmprinter::print_bytes(&wasm).unwrap();
+            std::fs::write(path, format!("{header}{}\n", module.trim_end())).unwrap();
+        }
     }
 
     #[test]
@@ -1560,6 +1599,140 @@ mod tests {
                 declaration.locations[0].storage.operations,
                 [ExpressionOp::LocalSlot(1), ExpressionOp::StackValue]
             );
+        }
+    }
+
+    fn scoped_named_local_fixture(pointer: bool) -> Vec<u8> {
+        let mut wasm = wat::parse_str(
+            "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) (local \
+             $shadowed i32) i32.const 7 local.set $shadowed local.get 0 local.tee $shadowed drop \
+             nop i32.const 9 local.set $shadowed local.get $shadowed))",
+        )
+        .unwrap();
+        let parsed = parse_module(&wasm);
+        let body = parsed.function_body_inputs.values().next().unwrap();
+        let function_start = parsed.wasm_file.dwarf_offset(body.body_offset);
+        let mut reader = body.body.get_operators_reader().unwrap();
+        let mut start = None;
+        let mut end = None;
+        while !reader.eof() {
+            let (operator, offset) = reader.read_with_offset().unwrap();
+            match operator {
+                wasmparser::Operator::LocalGet { local_index: 0 } => {
+                    start = Some(parsed.wasm_file.dwarf_offset(offset));
+                }
+                wasmparser::Operator::Nop => {
+                    end = Some(parsed.wasm_file.dwarf_offset(offset));
+                }
+                _ => {}
+            }
+        }
+        let function_end = parsed.wasm_file.dwarf_offset(reader.original_position() as u64);
+        let mut dwarf = dwarf_write::DwarfUnit::new(gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 4,
+            address_size: 4,
+        });
+        let function = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
+        dwarf
+            .unit
+            .get_mut(function)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"entrypoint".to_vec()));
+        dwarf.unit.get_mut(function).set(
+            gimli::DW_AT_low_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(function_start)),
+        );
+        dwarf.unit.get_mut(function).set(
+            gimli::DW_AT_high_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(function_end)),
+        );
+        let scope = dwarf.unit.add(function, gimli::DW_TAG_lexical_block);
+        dwarf.unit.get_mut(scope).set(
+            gimli::DW_AT_low_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(start.unwrap())),
+        );
+        dwarf.unit.get_mut(scope).set(
+            gimli::DW_AT_high_pc,
+            dwarf_write::AttributeValue::Address(dwarf_write::Address::Constant(end.unwrap())),
+        );
+        let variable = dwarf.unit.add(scope, gimli::DW_TAG_variable);
+        dwarf
+            .unit
+            .get_mut(variable)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"shadowed".to_vec()));
+        let mut expression = vec![gimli::DW_OP_WASM_location.0, 0, 1];
+        if !pointer {
+            expression.push(gimli::DW_OP_stack_value.0);
+        }
+        dwarf.unit.get_mut(variable).set(
+            gimli::DW_AT_location,
+            dwarf_write::AttributeValue::Exprloc(dwarf_write::Expression::raw(expression)),
+        );
+        append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+        wasm
+    }
+
+    #[test]
+    fn named_local_fallback_cannot_override_scoped_dwarf() {
+        use alloc::{boxed::Box, sync::Arc};
+
+        use midenc_hir::{
+            Op,
+            dialects::debuginfo::{DebugDeclare, DebugKill, DebugValue},
+        };
+        use midenc_session::{
+            DebugInfo, InputFile, Options, Session, diagnostics::DefaultSourceManager,
+        };
+
+        for pointer in [false, true] {
+            let wasm = scoped_named_local_fixture(pointer);
+            let options = Box::new(Options::default())
+                .with_output_types(Default::default(), None)
+                .with_debug_info(DebugInfo::Full);
+            let session = Session::new(
+                InputFile::empty(),
+                options,
+                None,
+                Arc::new(DefaultSourceManager::default()),
+            )
+            .unwrap();
+            let context = Rc::new(midenc_hir::Context::new(Rc::new(session)));
+            let output =
+                crate::translate(&wasm, &crate::WasmTranslationConfig::default(), context.clone())
+                    .unwrap();
+            let mut declarations = 0;
+            let mut kills = 0;
+            output.component.borrow().as_operation().prewalk_all(
+                |operation: &midenc_hir::Operation| {
+                    if let Some(value) = operation.downcast_ref::<DebugValue>() {
+                        assert_ne!(value.variable().as_value().name, Symbol::intern("shadowed"));
+                    }
+                    if let Some(declare) = operation.downcast_ref::<DebugDeclare>()
+                        && declare.variable().as_value().name == Symbol::intern("shadowed")
+                    {
+                        assert_eq!(kills, 0, "scoped declaration was resurrected");
+                        assert_eq!(
+                            declare.expression().as_value().operations,
+                            [
+                                ExpressionOp::LocalSlot(1),
+                                if pointer {
+                                    ExpressionOp::Deref
+                                } else {
+                                    ExpressionOp::StackValue
+                                }
+                            ]
+                        );
+                        declarations += 1;
+                    }
+                    if let Some(kill) = operation.downcast_ref::<DebugKill>()
+                        && kill.variable().as_value().name == Symbol::intern("shadowed")
+                    {
+                        kills += 1;
+                    }
+                },
+            );
+            assert!(declarations > 0);
+            assert!(kills > 0);
         }
     }
 

@@ -100,7 +100,15 @@ impl RewritePattern for FoldRedundantYields {
 
         let all_results_are_redundant = redundant_yield_vals.len() == op.num_results();
 
-        if all_results_are_redundant && op.is_memory_effect_free() {
+        let mut has_captures = false;
+        op_ref.raw_prewalk_all::<Forward, _>(|nested: OperationRef| {
+            let nested = nested.borrow();
+            has_captures |= nested.is::<midenc_hir::dialects::debuginfo::DebugValue>()
+                || nested.is::<midenc_hir::dialects::debuginfo::DebugDeclare>()
+                || nested.is::<midenc_hir::dialects::debuginfo::DebugKill>();
+        });
+
+        if all_results_are_redundant && op.is_memory_effect_free() && !has_captures {
             // The entire operation is actually redundant; just remove it.  Make sure the yield
             // vals are sorted first.
             let mut sorted_vals = redundant_yield_vals.into_vec();
@@ -112,14 +120,26 @@ impl RewritePattern for FoldRedundantYields {
 
             // Replace the operation.
             drop(op);
-            rewriter.replace_op_with_values(op_ref, &some_vals);
+            rewriter.replace_op_with_values_and_debug(
+                op_ref,
+                &some_vals,
+                midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+            );
         } else {
+            let _debug_update = midenc_hir::dialects::debuginfo::DebugInfoMutation::new(
+                op_ref,
+                midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+            );
             // Replace all uses of the redundant results.
             for (redundant_opand_pos, redundant_yield_val) in redundant_yield_vals {
                 let result_val_ref =
                     op.results().index(redundant_opand_pos).borrow().as_value_ref();
                 if result_val_ref.borrow().is_used() {
-                    rewriter.replace_all_uses_of_value_with(result_val_ref, redundant_yield_val);
+                    rewriter.replace_value_with_debug(
+                        result_val_ref,
+                        redundant_yield_val,
+                        midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+                    );
                 }
             }
 

@@ -1,0 +1,142 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=fold-redundant-yields}))' | filecheck %s --check-prefix=REDUNDANT
+
+builtin.module public @canonicalizer_debug_contracts {
+    // CHECK-LABEL: @switch_unused
+    // CHECK: scf.index_switch
+    // CHECK: di.debug_value {{.*}}name = "case_value"
+    // CHECK: di.debug_kill {{.*}}name = "dropped"
+    // CHECK-NOT: di.debug_value {{.*}}name = "dropped"
+    // CHECK: builtin.ret
+    builtin.function public extern("C") @switch_unused(%selector: u32, %left: u32, %right: u32) -> u32 {
+        %used, %unused = scf.index_switch %selector
+        case 1 {
+            di.debug_value %left <{ variable = #di.variable<{ name = "case_value", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            %next = arith.incr %left;
+            scf.yield %next, %left : (u32, u32);
+        }
+        default {
+            %next = arith.incr %right;
+            scf.yield %next, %right : (u32, u32);
+        } : (u32, u32);
+        di.debug_value %unused <{ variable = #di.variable<{ name = "dropped", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %used : (u32);
+    };
+
+    // CHECK-LABEL: @single_pred
+    // CHECK: di.debug_value %[[LEFT:\d+]] {{.*}}name = "branch"
+    // CHECK-NEXT: builtin.ret %[[LEFT]]
+    // CHECK: di.debug_value %[[RIGHT:\d+]] {{.*}}name = "branch"
+    // CHECK-NEXT: builtin.ret %[[RIGHT]]
+    builtin.function public extern("C") @single_pred(%condition: i1, %left: u32, %right: u32) -> u32 {
+        cf.cond_br %condition ^left(%left : u32), ^right(%right : u32) : (i1);
+    ^left(%value: u32):
+        di.debug_value %value <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %value : (u32);
+    ^right(%other: u32):
+        di.debug_value %other <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %other : (u32);
+    };
+
+    // CHECK-LABEL: @constant_switch
+    // CHECK-NOT: scf.index_switch
+    // CHECK: di.debug_value {{.*}}name = "taken"
+    // CHECK-NOT: name = "untaken"
+    // CHECK: di.debug_value {{.*}}name = "result"
+    // CHECK: builtin.ret
+    builtin.function public extern("C") @constant_switch(%value: u32) -> u32 {
+        %selector = arith.constant 1 : u32;
+        %result = scf.index_switch %selector
+        case 1 {
+            di.debug_value %value <{ variable = #di.variable<{ name = "taken", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            %next = arith.incr %value;
+            scf.yield %next : (u32);
+        }
+        default {
+            di.debug_value %value <{ variable = #di.variable<{ name = "untaken", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            di.debug_kill <{ variable = #di.variable<{ name = "untaken", file = "test.rs", line = 2 }> }>;
+            scf.yield %value : (u32);
+        } : (u32);
+        di.debug_value %result <{ variable = #di.variable<{ name = "result", file = "test.rs", line = 3 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %result : (u32);
+    };
+
+    // CHECK-LABEL: @redundant_capture
+    // CHECK: scf.if
+    // CHECK: di.debug_value {{.*}}name = "branch"
+    // CHECK: } else {
+    // CHECK: di.debug_value {{.*}}name = "branch"
+    // CHECK: builtin.ret
+    // REDUNDANT-LABEL: @redundant_capture
+    // REDUNDANT: scf.if
+    // REDUNDANT: di.debug_value {{.*}}name = "branch"
+    // REDUNDANT: } else {
+    // REDUNDANT: di.debug_value {{.*}}name = "branch"
+    // REDUNDANT: builtin.ret
+    builtin.function public extern("C") @redundant_capture(%condition: i1, %value: u32) -> u32 {
+        %result = scf.if %condition then {
+            di.debug_value %value <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %value : (u32);
+        } else {
+            di.debug_value %value <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %value : (u32);
+        } : (i1) -> u32;
+        builtin.ret %result : (u32);
+    };
+
+    // CHECK: @bool_compare(%[[COND:\d+]]: i1)
+    // CHECK-NEXT: di.debug_value %[[COND]] {{.*}}name = "flag"
+    // CHECK-NEXT: builtin.ret %[[COND]]
+    builtin.function public extern("C") @bool_compare(%condition: i1) -> i1 {
+        %wide = arith.zext %condition <{ ty = #builtin.type<u32> }>;
+        %one = arith.constant 1 : u32;
+        %result = arith.eq %wide, %one;
+        di.debug_value %result <{ variable = #di.variable<{ name = "flag", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i1);
+        builtin.ret %result : (i1);
+    };
+
+    // CHECK-LABEL: @bool_not
+    // CHECK: %[[CMP:\d+]] = arith.neq
+    // CHECK-NEXT: di.debug_value %[[CMP]] {{.*}}name = "flag"
+    // CHECK-NEXT: builtin.ret %[[CMP]]
+    builtin.function public extern("C") @bool_not(%left: u32, %right: u32) -> i1 {
+        %equal = arith.eq %left, %right;
+        %result = arith.not %equal;
+        di.debug_value %result <{ variable = #di.variable<{ name = "flag", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i1);
+        builtin.ret %result : (i1);
+    };
+
+    // CHECK: @bool_trunc(%[[COND:\d+]]: i1)
+    // CHECK-NEXT: di.debug_value %[[COND]] {{.*}}name = "flag"
+    // CHECK-NEXT: builtin.ret %[[COND]]
+    builtin.function public extern("C") @bool_trunc(%condition: i1) -> i1 {
+        %wide = arith.zext %condition <{ ty = #builtin.type<u32> }>;
+        %result = arith.trunc %wide <{ ty = #builtin.type<i1> }>;
+        di.debug_value %result <{ variable = #di.variable<{ name = "flag", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i1);
+        builtin.ret %result : (i1);
+    };
+
+    // CHECK-LABEL: @bool_select
+    // CHECK: %[[NOT:\d+]] = arith.not
+    // CHECK-NEXT: di.debug_value %[[NOT]] {{.*}}name = "flag"
+    // CHECK-NEXT: builtin.ret %[[NOT]]
+    builtin.function public extern("C") @bool_select(%condition: i1) -> i1 {
+        %true = arith.constant 1 : i1;
+        %false = arith.constant 0 : i1;
+        %result = cf.select %condition, %false, %true;
+        di.debug_value %result <{ variable = #di.variable<{ name = "flag", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i1);
+        builtin.ret %result : (i1);
+    };
+
+    // CHECK-LABEL: @repeated_assert
+    // CHECK: %[[ASSERTED:\d+]] = hir.assertz
+    // CHECK-NOT: hir.assertz
+    // CHECK: di.debug_value %[[ASSERTED]] {{.*}}name = "zero"
+    // CHECK-NEXT: builtin.ret %[[ASSERTED]]
+    builtin.function public extern("C") @repeated_assert(%value: u32) -> u32 {
+        %first = hir.assertz %value <{ code = #builtin.u32<0>, message = "" }>;
+        %second = hir.assertz %value <{ code = #builtin.u32<0>, message = "" }>;
+        di.debug_value %second <{ variable = #di.variable<{ name = "zero", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %second : (u32);
+    };
+};

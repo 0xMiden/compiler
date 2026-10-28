@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
     patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern},
@@ -96,7 +96,29 @@ impl RewritePattern for FoldConstantIndexSwitch {
         // Replace the operation with a potentially empty list of results.
         //
         // The fold mechanism doesn't support the case where the result list is empty
-        rewriter.replace_op_with_values(op, &results);
+        let unreachable = op
+            .borrow()
+            .regions()
+            .iter()
+            .filter(|region| region.as_region_ref() != case_region)
+            .flat_map(|region| {
+                region.body().iter().map(|block| block.as_block_ref()).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        {
+            let _debug_update = midenc_hir::dialects::debuginfo::DebugInfoMutation::for_blocks(
+                &unreachable,
+                midenc_hir::dialects::debuginfo::DebugInfoUpdate::DiscardUnreachable,
+            );
+            for block in unreachable {
+                rewriter.erase_block(block);
+            }
+        }
+        rewriter.replace_op_with_values_and_debug(
+            op,
+            &results,
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
 
         Ok(true)
     }

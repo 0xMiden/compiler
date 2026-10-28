@@ -1,9 +1,9 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, Op, Operation,
-    OperationName, OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter,
-    SmallVec, Spanned, Symbol, TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, Op, Operation, OperationName,
+    OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec,
+    Spanned, Symbol, TraceTarget, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::{

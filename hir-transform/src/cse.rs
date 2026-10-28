@@ -1,11 +1,13 @@
 use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    AsValueRange, BlockRef, EntityMut, FxHashMap, FxHashSet, Operation, OperationName,
-    OperationRef, RegionRef, Report, Rewriter, RewriterExt, SmallVec, ValueRef,
+    AsValueRange, BlockRef, EntityMut, Forward, FxHashMap, FxHashSet, Operation, OperationName,
+    OperationRef, RawWalk, RegionRef, Report, Rewriter, RewriterExt, SmallVec, ValueRef,
     adt::SmallDenseMap,
     cfg::Graph,
-    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
+    dialects::debuginfo::{
+        DebugDeclare, DebugInfoMutation, DebugInfoUpdate, DebugKill, DebugValue,
+    },
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
     effects::MemoryEffect,
     pass::{Pass, PassExecutionState, PostPassStatus},
@@ -62,6 +64,7 @@ impl Pass for CommonSubexpressionElimination {
             domtree: dominfo,
             ops_to_erase: Default::default(),
             mem_effects_cache: Default::default(),
+            debug_capture_owners: Default::default(),
         };
 
         let status = driver.simplify(op);
@@ -85,6 +88,7 @@ struct CSEDriver<'a> {
     rewriter: &'a mut RewriterImpl<TracingRewriterListener>,
     /// Operations marked as dead and to be erased.
     ops_to_erase: Vec<OperationRef>,
+    debug_capture_owners: FxHashSet<OperationRef>,
     /// Dominance info provided by the current analysis state
     domtree: Rc<DominanceInfo>,
     /// Cache holding MemoryEffect information between two operations.
@@ -154,6 +158,21 @@ impl ScopedCseCandidates {
 
 impl CSEDriver<'_> {
     pub fn simplify(&mut self, op: OperationRef) -> PostPassStatus {
+        op.raw_prewalk_all::<Forward, _>(|nested: OperationRef| {
+            let operation = nested.borrow();
+            if operation.is::<DebugValue>()
+                || operation.is::<DebugDeclare>()
+                || operation.is::<DebugKill>()
+            {
+                let mut parent = operation.parent_op();
+                while let Some(owner) = parent {
+                    if !self.debug_capture_owners.insert(owner) {
+                        break;
+                    }
+                    parent = owner.parent_op();
+                }
+            }
+        });
         // Simplify all regions.
         let mut known_values = ScopedCseCandidates::default();
         let mut next_region = op.borrow().regions().front().as_pointer();
@@ -167,7 +186,7 @@ impl CSEDriver<'_> {
         // Erase any operations that were marked as dead during simplification.
         status |= PostPassStatus::from(!self.ops_to_erase.is_empty());
         for op in self.ops_to_erase.drain(..) {
-            self.rewriter.erase_op(op);
+            self.rewriter.erase_op_with_debug(op, DebugInfoUpdate::Salvage);
         }
 
         status
@@ -191,6 +210,10 @@ impl CSEDriver<'_> {
         }
 
         if operation.implements::<dyn Transparent>() {
+            return PostPassStatus::Unchanged;
+        }
+
+        if self.debug_capture_owners.contains(&op) {
             return PostPassStatus::Unchanged;
         }
 
