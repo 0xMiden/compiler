@@ -214,7 +214,7 @@ fn refined_result_range(
         .map(|range| range.value().clone())
         .unwrap_or_else(IntegerValueRange::uninitialized);
 
-    Some(operand_range.constrained_by(&refinement.constraint))
+    Some(operand_range.refined_by(&refinement.range))
 }
 
 #[cfg(test)]
@@ -270,6 +270,123 @@ mod tests {
         assert_eq!(range.smax(), i32::MAX as i128);
         assert!(value_range(&solver, asserted).expect("expected integer range").is_proven());
 
+        Ok(())
+    }
+
+    #[test]
+    fn checked_felt_to_signed_cast_is_never_negative() -> Result<(), Report> {
+        for (ty, zero) in [
+            (Type::I8, Immediate::I8(0)),
+            (Type::I16, Immediate::I16(0)),
+            (Type::I32, Immediate::I32(0)),
+            (Type::I64, Immediate::I64(0)),
+            (Type::I128, Immediate::I128(0)),
+        ] {
+            let mut test = Test::new("checked_felt_cast_sign", &[Type::Felt], &[Type::I1]);
+            let comparison = {
+                let raw = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+                let mut builder = test.function_builder();
+                let cast = builder.cast(raw, ty, SourceSpan::UNKNOWN)?;
+                let zero = builder.imm(zero, SourceSpan::UNKNOWN);
+                let comparison = builder.lt(cast, zero, SourceSpan::UNKNOWN)?;
+                builder.ret([comparison], SourceSpan::UNKNOWN)?;
+                comparison
+            };
+            let solver = run_integer_range_analysis(&test)?;
+            assert_bool_range(&solver, comparison, false);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn checked_felt_cast_preserves_runtime_domain() -> Result<(), Report> {
+        for (ty, width, max) in [
+            (Type::I1, 1, 1),
+            (Type::I8, 8, 127),
+            (Type::I16, 16, 32_767),
+            (Type::I32, 32, 2_147_483_647),
+            (Type::I64, 64, 9_223_372_036_854_775_807),
+            (Type::I128, 128, 18_446_744_069_414_584_320),
+            (Type::U8, 8, 255),
+            (Type::U16, 16, 65_535),
+            (Type::U32, 32, 4_294_967_295),
+            (Type::U64, 64, 18_446_744_069_414_584_320),
+            (Type::U128, 128, 18_446_744_069_414_584_320),
+        ] {
+            let mut test =
+                Test::new("checked_felt_cast_domain", &[Type::Felt], core::slice::from_ref(&ty));
+            let cast = {
+                let raw = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+                let mut builder = test.function_builder();
+                let cast = builder.cast(raw, ty.clone(), SourceSpan::UNKNOWN)?;
+                builder.ret([cast], SourceSpan::UNKNOWN)?;
+                cast
+            };
+            let solver = run_integer_range_analysis(&test)?;
+            let range = value_range(&solver, cast).expect("checked result range");
+            assert!(range.is_proven(), "{ty}");
+            let range = range.range().unwrap();
+            assert_eq!((range.width(), range.umin(), range.umax()), (width, 0, max), "{ty}");
+            if (ty.is_signed_integer() && ty != Type::I1) || ty == Type::U128 {
+                assert_eq!((range.smin(), range.smax()), (0, max as i128), "{ty}");
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn assertions_establish_exact_values_at_the_result_width() -> Result<(), Report> {
+        for (ty, width) in [(Type::I1, 1), (Type::I8, 8), (Type::U32, 32), (Type::Felt, 64)] {
+            let mut test =
+                Test::new("assertion_value_domain", &[ty.clone(), ty.clone()], &[ty.clone(), ty]);
+            let (one, zero) = {
+                let one = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+                let zero = test.entry_block().borrow().arguments()[1].borrow().as_value_ref();
+                let mut builder = test.function_builder();
+                let one = builder.assert(one, SourceSpan::UNKNOWN)?;
+                let zero = builder.assertz(zero, SourceSpan::UNKNOWN)?;
+                builder.ret([one, zero], SourceSpan::UNKNOWN)?;
+                (one, zero)
+            };
+            let solver = run_integer_range_analysis(&test)?;
+            for (result, expected) in [(one, 1), (zero, 0)] {
+                let range = value_range(&solver, result).expect("assertion result range");
+                assert!(range.is_proven());
+                let range = range.range().unwrap();
+                assert_eq!(
+                    (range.width(), range.umin(), range.umax()),
+                    (width, expected, expected)
+                );
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn checked_felt_cast_keeps_valid_boundary_values_exact() -> Result<(), Report> {
+        for (ty, max) in [
+            (Type::I1, 1),
+            (Type::I8, 127),
+            (Type::I16, 32_767),
+            (Type::I32, 2_147_483_647),
+            (Type::I64, 9_223_372_036_854_775_807),
+            (Type::I128, 18_446_744_069_414_584_320),
+        ] {
+            for value in [0, max] {
+                let mut test =
+                    Test::new("checked_felt_cast_boundary", &[], core::slice::from_ref(&ty));
+                let cast = {
+                    let mut builder = test.function_builder();
+                    let raw = builder.felt(Felt::new(value).unwrap(), SourceSpan::UNKNOWN);
+                    let cast = builder.cast(raw, ty.clone(), SourceSpan::UNKNOWN)?;
+                    builder.ret([cast], SourceSpan::UNKNOWN)?;
+                    cast
+                };
+                let solver = run_integer_range_analysis(&test)?;
+                let range = range_for(&solver, cast);
+                assert_eq!((range.umin(), range.umax()), (value as u128, value as u128), "{ty}");
+            }
+        }
         Ok(())
     }
 
@@ -652,7 +769,7 @@ mod tests {
         };
         // Complete SCCP before loading range analysis. The checked operations therefore have
         // nonconstant facts when range analysis first sees their still-pending region input.
-        // No constant fallback can mask an eager full-range publication by constrained_by.
+        // No constant fallback can mask an eager full-range publication by refined_by.
         let mut config = DataFlowConfig::new();
         config.set_interprocedural(true);
         let mut solver = DataFlowSolver::new(config);

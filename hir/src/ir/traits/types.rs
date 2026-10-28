@@ -5,8 +5,8 @@ use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
 use crate::{
-    CompactString, Context, IntegerValueRange, Op, Operation, Report, Type, ValueRef,
-    derive::operation_trait, ir::value::Value,
+    CompactString, ConstantIntRange, Context, IntegerValueRange, Op, Operation, Report, Type,
+    ValueRef, derive::operation_trait, ir::value::Value,
 };
 
 /// OpInterface to compute the return type(s) of an operation.
@@ -22,7 +22,7 @@ pub trait InferTypeOpInterface: Op {
     }
 }
 
-/// A value-range constraint implied by an operation operand or by a checked refinement operation.
+/// A value-range constraint implied by an operation operand.
 ///
 /// This describes semantic constraints beyond the raw Miden field element representation. For
 /// example, a `u32`-typed operand implies that a raw field element must have been checked to fit
@@ -128,7 +128,8 @@ pub trait OperandRangeRequirementOpInterface: Op {
 pub struct ValueRangeRefinement {
     pub input: ValueRef,
     pub result: ValueRef,
-    pub constraint: ValueRangeConstraint,
+    /// The range checked at runtime, expressed at the result's storage width.
+    pub range: ConstantIntRange,
 }
 
 /// OpInterface for checked cast operations.

@@ -16,7 +16,6 @@ use crate::HirDialect;
     dialect = HirDialect,
     implements(
         InferTypeOpInterface,
-        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ValueRangeAssertionOpInterface,
@@ -42,7 +41,6 @@ pub struct Assert {
     dialect = HirDialect,
     implements(
         InferTypeOpInterface,
-        InferIntRangeInterface,
         MemoryEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ValueRangeAssertionOpInterface,
@@ -137,19 +135,8 @@ impl ValueRangeAssertionOpInterface for Assert {
         (asserted == result).then(|| ValueRangeRefinement {
             input: self.value().as_value_ref(),
             result: asserted,
-            constraint: ValueRangeConstraint::Type(Type::I1),
+            range: ConstantIntRange::exact_bool(self.result().ty(), true),
         })
-    }
-}
-
-impl InferIntRangeInterface for Assert {
-    fn infer_result_ranges(
-        &self,
-        _operands: &[IntegerValueRange],
-        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
-    ) {
-        let result = self.result().as_value_ref();
-        set_result_range(result, IntegerValueRange::exact_bool(self.result().ty(), true));
     }
 }
 
@@ -175,19 +162,8 @@ impl ValueRangeAssertionOpInterface for Assertz {
         (asserted == result).then(|| ValueRangeRefinement {
             input: self.value().as_value_ref(),
             result: asserted,
-            constraint: ValueRangeConstraint::Type(Type::I1),
+            range: ConstantIntRange::exact_bool(self.result().ty(), false),
         })
-    }
-}
-
-impl InferIntRangeInterface for Assertz {
-    fn infer_result_ranges(
-        &self,
-        _operands: &[IntegerValueRange],
-        set_result_range: &mut dyn FnMut(ValueRef, IntegerValueRange),
-    ) {
-        let result = self.result().as_value_ref();
-        set_result_range(result, IntegerValueRange::exact_bool(self.result().ty(), false));
     }
 }
 
@@ -212,7 +188,7 @@ impl ValueRangeAssertionOpInterface for AssertU32 {
         (asserted == result).then(|| ValueRangeRefinement {
             input: self.value().as_value_ref(),
             result: asserted,
-            constraint: ValueRangeConstraint::Type(Type::U32),
+            range: ConstantIntRange::max_for_type(&Type::U32),
         })
     }
 }

@@ -113,6 +113,13 @@ impl ConstantIntRange {
         }
     }
 
+    /// Return an exact boolean in the raw representation of `ty`.
+    pub fn exact_bool(ty: &Type, value: bool) -> Self {
+        let width = Self::max_for_type(ty).width();
+        let value = u128::from(value);
+        Self::from_unsigned(width, value, value)
+    }
+
     /// Return a range with unsigned semantic bounds.
     pub fn from_unsigned(width: u16, umin: u128, umax: u128) -> Self {
         if width == 0 || width > 128 {
@@ -329,6 +336,7 @@ impl fmt::Display for ConstantIntRange {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum IntegerRangeConfidence {
     /// The range is derived from operation semantics or a checked runtime refinement.
+    /// It contains every possible value, but may also contain unreachable values after widening.
     Proven,
     /// The range is only the conservative range of the value's static type.
     Assumed,
@@ -430,36 +438,32 @@ impl IntegerValueRange {
 
     /// Create a proven exact boolean in the raw representation of `ty`.
     pub fn exact_bool(ty: &Type, value: bool) -> Self {
-        let width = ConstantIntRange::max_for_type(ty).width();
-        let value = u128::from(value);
-        Self::proven(ConstantIntRange::from_unsigned(width, value, value))
+        Self::proven(ConstantIntRange::exact_bool(ty, value))
     }
 
-    /// Apply a runtime constraint to the zero-extended raw representation.
+    /// Refine with an explicit runtime-checked range in the result's representation.
     /// Cross-width refinement does not model sign extension.
-    pub fn constrained_by(&self, constraint: &ValueRangeConstraint) -> Self {
+    pub fn refined_by(&self, range: &ConstantIntRange) -> Self {
         let Some((current, confidence)) = self.value else {
             return Self::uninitialized();
         };
-        let constraint = ConstantIntRange::max_for_type(constraint.ty());
-        // A runtime check proves its own constraint, not assumptions inherited from the type.
+        // A runtime check proves its own range, not assumptions inherited from the type.
         let narrowed = match confidence {
             IntegerRangeConfidence::Assumed => None,
-            IntegerRangeConfidence::Proven if current.width == constraint.width => {
-                current.intersection(&constraint)
+            IntegerRangeConfidence::Proven if current.width == range.width => {
+                current.intersection(range)
             }
-            IntegerRangeConfidence::Proven
-                if !current.is_untracked() && !constraint.is_untracked() =>
-            {
-                let umin = current.umin.max(constraint.umin);
-                let umax = current.umax.min(constraint.umax);
+            IntegerRangeConfidence::Proven if !current.is_untracked() && !range.is_untracked() => {
+                let umin = current.umin.max(range.umin);
+                let umax = current.umax.min(range.umax);
                 (umin <= umax)
-                    .then(|| ConstantIntRange::from_unsigned(constraint.width, umin, umax))
+                    .then(|| ConstantIntRange::from_unsigned(range.width, umin, umax))
+                    .and_then(|current| current.intersection(range))
             }
             IntegerRangeConfidence::Proven => None,
         };
-        // Disjoint proven inputs trap. Any result that exists still satisfies the constraint.
-        Self::proven(narrowed.unwrap_or(constraint))
+        // Disjoint proven inputs trap. Any result that exists still satisfies the checked range.
+        Self::proven(narrowed.unwrap_or(*range))
     }
 }
 
@@ -545,7 +549,7 @@ mod tests {
     #[test]
     fn regression_checked_refinement_does_not_prove_assumed_bounds() {
         let assumed = IntegerValueRange::max_for_type(&Type::U8);
-        let refined = assumed.constrained_by(&ValueRangeConstraint::Type(Type::U32));
+        let refined = assumed.refined_by(&ConstantIntRange::max_for_type(&Type::U32));
         assert!(refined.is_proven());
         assert_eq!(refined.range().unwrap().umax(), u32::MAX as u128);
     }
@@ -612,22 +616,48 @@ mod tests {
 
     #[test]
     fn refinement_waits_for_input_and_preserves_proven_bounds() {
-        let constraint = ValueRangeConstraint::Type(Type::U32);
-        assert!(
-            IntegerValueRange::uninitialized()
-                .constrained_by(&constraint)
-                .is_uninitialized()
-        );
+        let range = ConstantIntRange::max_for_type(&Type::U32);
+        assert!(IntegerValueRange::uninitialized().refined_by(&range).is_uninitialized());
         let precise = IntegerValueRange::proven(ConstantIntRange::from_unsigned(64, 0, 10));
         assert_eq!(
-            precise.constrained_by(&constraint).range(),
+            precise.refined_by(&range).range(),
             Some(&ConstantIntRange::from_unsigned(32, 0, 10))
         );
         let disjoint = IntegerValueRange::constant(Immediate::U64(u64::MAX));
         assert_eq!(
-            disjoint.constrained_by(&constraint),
+            disjoint.refined_by(&range),
             IntegerValueRange::proven(ConstantIntRange::max_for_type(&Type::U32))
         );
+    }
+
+    #[test]
+    fn explicit_refinement_discards_assumed_bounds() {
+        let checked = ConstantIntRange::from_unsigned(32, 0, 2_147_483_647);
+        for input in [
+            ConstantIntRange::from_unsigned(8, 0, 3),
+            ConstantIntRange::from_unsigned(32, 0, 3),
+            ConstantIntRange::from_unsigned(64, 0, 3),
+        ] {
+            assert_eq!(
+                IntegerValueRange::assumed(input).refined_by(&checked),
+                IntegerValueRange::proven(checked)
+            );
+        }
+        assert!(IntegerValueRange::uninitialized().refined_by(&checked).is_uninitialized());
+    }
+
+    #[test]
+    fn cross_width_refinement_preserves_declared_signed_bounds() {
+        // The declared raw interval spans all eight-bit values, but its signed bounds exclude
+        // 6..=250. A wider input must not erase that part of the runtime check.
+        let checked = ConstantIntRange::from_signed(8, -5, 5);
+        for (min, max, expected) in [
+            (0, 200, ConstantIntRange::from_unsigned(8, 0, 5)),
+            (128, 255, ConstantIntRange::from_signed(8, -5, -1)),
+        ] {
+            let input = IntegerValueRange::proven(ConstantIntRange::from_unsigned(64, min, max));
+            assert_eq!(input.refined_by(&checked), IntegerValueRange::proven(expected));
+        }
     }
 
     #[test]
