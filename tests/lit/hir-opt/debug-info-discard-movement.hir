@@ -1,0 +1,23 @@
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-record-move}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-record-roundtrip}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=relocate-record}))' | filecheck %s --check-prefix=RELOCATED
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-record-erase-neighbor}))' | filecheck %s --check-prefix=STATIONARY
+// ERROR: debug-info DiscardUnreachable contract
+// ERROR: failed for variable 'x'
+
+// A surviving capture cannot move past a kill, even if it is moved back before the guard ends.
+// Explicit relocation remains available to rewrites that establish a valid capture mapping.
+builtin.module public @discard_movement {
+    // RELOCATED-LABEL: @entrypoint
+    // RELOCATED: di.debug_kill {{.*}}name = "x"
+    // RELOCATED-NEXT: di.debug_value {{.*}}name = "x"
+    // STATIONARY-LABEL: @entrypoint
+    // STATIONARY-NEXT: di.debug_value {{.*}}name = "x"
+    // STATIONARY-NEXT: di.debug_kill {{.*}}name = "x"
+    builtin.function public extern("C") @entrypoint(%input: u32, %other: u32) -> u32 {
+        %unused = arith.constant 0 : u32;
+        di.debug_value %input <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+        builtin.ret %input : (u32);
+    };
+};

@@ -188,6 +188,83 @@ impl Pass for TestDebugInfoMutation {
                 let _update = DebugInfoMutation::new(record, DebugInfoUpdate::DiscardUnreachable);
                 record.borrow_mut().erase();
             }
+            "discard-record-erase-neighbor" => {
+                let _update = DebugInfoMutation::new(record, DebugInfoUpdate::DiscardUnreachable);
+                rewriter.erase_op(record.prev().unwrap());
+            }
+            "discard-region-move"
+            | "discard-region-roundtrip"
+            | "discard-block-move"
+            | "discard-block-roundtrip"
+            | "relocate-region"
+            | "relocate-block" => {
+                let mut owner = record.parent_op().unwrap();
+                let update = if self.action.starts_with("relocate") {
+                    DebugInfoUpdate::Relocate
+                } else {
+                    DebugInfoUpdate::DiscardUnreachable
+                };
+                let _update = DebugInfoMutation::new(owner, update);
+                let iterations = if self.action.ends_with("roundtrip") {
+                    2
+                } else {
+                    1
+                };
+                for _ in 0..iterations {
+                    let mut owner = owner.borrow_mut();
+                    let regions = owner.regions_mut();
+                    if self.action.contains("region") {
+                        let mut detached = regions.take().into_iter();
+                        let first = detached.next().unwrap();
+                        for region in detached {
+                            regions.push_back(region);
+                        }
+                        regions.push_back(first);
+                    } else {
+                        let mut first = regions.front().as_pointer().unwrap();
+                        let mut second = regions.back().as_pointer().unwrap();
+                        let mut first = first.borrow_mut();
+                        let mut second = second.borrow_mut();
+                        let first_block = first.body_mut().pop_front().unwrap();
+                        let second_block = second.body_mut().pop_front().unwrap();
+                        first.body_mut().push_back(second_block);
+                        second.body_mut().push_back(first_block);
+                    }
+                }
+            }
+            "discard-record-move"
+            | "discard-record-roundtrip"
+            | "discard-dependency-move"
+            | "discard-dependency-roundtrip"
+            | "discard-container-move"
+            | "discard-container-roundtrip"
+            | "relocate-record"
+            | "relocate-container" => {
+                let mut moved = if self.action.contains("container") {
+                    record.parent_op().unwrap()
+                } else {
+                    record
+                };
+                let root = if self.action.contains("dependency") {
+                    store.unwrap()
+                } else {
+                    moved
+                };
+                let original = moved
+                    .prev()
+                    .map(ProgramPoint::after)
+                    .unwrap_or_else(|| ProgramPoint::at_start_of(moved.parent().unwrap()));
+                let update = if self.action.starts_with("relocate") {
+                    DebugInfoUpdate::Relocate
+                } else {
+                    DebugInfoUpdate::DiscardUnreachable
+                };
+                let _update = DebugInfoMutation::new(root, update);
+                moved.borrow_mut().move_to(ProgramPoint::after(last_kill.unwrap()));
+                if self.action.ends_with("roundtrip") {
+                    moved.borrow_mut().move_to(original);
+                }
+            }
             "discard-dependency-preserve"
             | "discard-dependency-rewrite"
             | "discard-dependency-erase" => {

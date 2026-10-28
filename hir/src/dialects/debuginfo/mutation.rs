@@ -33,6 +33,7 @@ pub enum DebugInfoUpdate {
     /// Replace affected locations with unavailable records, retaining their ownership.
     Invalidate,
     /// Discard records inside code the transform has proven unreachable.
+    /// Surviving dependent records must remain unchanged at their capture points.
     DiscardUnreachable,
 }
 
@@ -316,11 +317,21 @@ impl Audit {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum CaptureOwner {
+    Operation(OperationRef),
+    Block(BlockRef),
+    Region(RegionRef),
+}
+
 struct Permission {
     operations: FxHashSet<OperationRef>,
     audit_depth: usize,
     new_records: FxHashMap<OperationRef, Option<OperationRef>>,
     inserted: FxHashMap<OperationRef, Option<OperationRef>>,
+    /// Snapshot capture ownership so list hooks can track container motion without borrowing it.
+    captures_by_owner: FxHashMap<CaptureOwner, SmallVec<[OperationRef; 2]>>,
+    moved_records: FxHashSet<OperationRef>,
     update: DebugInfoUpdate,
 }
 
@@ -341,7 +352,24 @@ impl DebugInfoMutationState {
     }
 
     pub(crate) fn removed(&mut self, op: OperationRef) {
+        self.moved(CaptureOwner::Operation(op));
         self.require_intent(op, "removing or moving");
+    }
+
+    pub(crate) fn removed_block(&mut self, block: BlockRef) {
+        self.moved(CaptureOwner::Block(block));
+    }
+
+    pub(crate) fn removed_region(&mut self, region: RegionRef) {
+        self.moved(CaptureOwner::Region(region));
+    }
+
+    fn moved(&mut self, owner: CaptureOwner) {
+        for permission in &mut self.permissions {
+            if let Some(records) = permission.captures_by_owner.get(&owner) {
+                permission.moved_records.extend(records.iter().copied());
+            }
+        }
     }
 
     pub(crate) fn implicit_erase(&mut self, op: OperationRef) {
@@ -463,6 +491,21 @@ impl DebugInfoMutation {
                 }
             }
         }
+        let mut captures_by_owner =
+            FxHashMap::<CaptureOwner, SmallVec<[OperationRef; 2]>>::default();
+        if update == DebugInfoUpdate::DiscardUnreachable {
+            for record in mutation.records.keys().copied() {
+                let mut owner = Some(record);
+                while let Some(op) = owner {
+                    captures_by_owner.entry(CaptureOwner::Operation(op)).or_default().push(record);
+                    let Some(block) = op.parent() else { break };
+                    captures_by_owner.entry(CaptureOwner::Block(block)).or_default().push(record);
+                    let Some(region) = block.parent() else { break };
+                    captures_by_owner.entry(CaptureOwner::Region(region)).or_default().push(record);
+                    owner = region.parent();
+                }
+            }
+        }
         let mut state = mutation.context.debug_info_mutations.borrow_mut();
         let audit_depth = state.audits.len();
         let authorized = (0..audit_depth)
@@ -505,6 +548,8 @@ impl DebugInfoMutation {
             audit_depth,
             new_records: FxHashMap::default(),
             inserted: FxHashMap::default(),
+            captures_by_owner,
+            moved_records: FxHashSet::default(),
             update,
         });
         drop(state);
@@ -564,8 +609,9 @@ impl Drop for DebugInfoMutation {
         for (&op, before) in &self.records {
             let after = is_under(op, root).then(|| Record::read(op)).flatten();
             let valid = match (&after, self.update) {
-                (Some(after), DebugInfoUpdate::Preserve | DebugInfoUpdate::DiscardUnreachable) => {
-                    before == after
+                (Some(after), DebugInfoUpdate::Preserve) => before == after,
+                (Some(after), DebugInfoUpdate::DiscardUnreachable) => {
+                    before == after && !permission.moved_records.contains(&op)
                 }
                 (Some(after), DebugInfoUpdate::Equivalent) => {
                     before.same_binding(after)

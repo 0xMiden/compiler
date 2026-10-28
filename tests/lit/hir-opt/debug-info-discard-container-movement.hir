@@ -1,0 +1,34 @@
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-container-move}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-container-roundtrip}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=relocate-container}))' | filecheck %s --check-prefix=RELOCATED
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-region-move}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-region-roundtrip}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-block-move}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-block-roundtrip}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=relocate-region}))' | filecheck %s --check-prefix=SWAPPED
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=relocate-block}))' | filecheck %s --check-prefix=SWAPPED
+// ERROR: debug-info DiscardUnreachable contract
+// ERROR: failed for variable 'x'
+
+// Moving an owning operation relocates its captures without removing them from their blocks.
+builtin.module public @discard_container_movement {
+    // RELOCATED-LABEL: @entrypoint
+    // RELOCATED: di.debug_kill {{.*}}name = "x"
+    // RELOCATED-NEXT: %{{\d+}} = scf.if
+    // RELOCATED: di.debug_value {{.*}}name = "x"
+    // SWAPPED-LABEL: @entrypoint
+    // SWAPPED: scf.if
+    // SWAPPED-NEXT: scf.yield
+    // SWAPPED-NEXT: } else {
+    // SWAPPED-NEXT: di.debug_value {{.*}}name = "x"
+    builtin.function public extern("C") @entrypoint(%condition: i1, %input: u32, %other: u32) -> u32 {
+        %result = scf.if %condition then {
+            di.debug_value %input <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %input : (u32);
+        } else {
+            scf.yield %other : (u32);
+        } : (i1) -> u32;
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+        builtin.ret %result : (u32);
+    };
+};
