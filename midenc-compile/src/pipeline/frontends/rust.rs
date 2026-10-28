@@ -779,7 +779,7 @@ fn rustc(
         options.rustflags.as_deref(),
     );
     let direct_rustc = direct_rustc_flags(rustflags);
-    if direct_rustc.dropped_immediate_abort {
+    if direct_rustc.panic_strategy_is_immediate_abort {
         warn_unsupported_rustc_panic_strategy(&session.diagnostics);
         if session.diagnostics.has_errors() {
             return Err(Report::msg(
@@ -851,16 +851,15 @@ fn rustc(
 struct DirectRustcFlags {
     flags: Vec<String>,
     target: Option<String>,
-    /// Held back because the toolchain's prebuilt core library is incompatible with
-    /// `immediate-abort`.
-    dropped_immediate_abort: bool,
+    /// Whether the effective panic strategy is incompatible with the prebuilt core library.
+    panic_strategy_is_immediate_abort: bool,
 }
 
 fn direct_rustc_flags(flags: Vec<String>) -> DirectRustcFlags {
     let mut rustc_flags = Vec::with_capacity(flags.len());
     let mut flags = flags.into_iter();
     let mut target = None;
-    let mut dropped_immediate_abort = false;
+    let mut panic_strategy_is_immediate_abort = false;
     while let Some(flag) = flags.next() {
         if flag == "--target"
             && let Some(value) = flags.next()
@@ -869,13 +868,17 @@ fn direct_rustc_flags(flags: Vec<String>) -> DirectRustcFlags {
         } else if flag == "-C"
             && let Some(value) = flags.next()
         {
-            if value == "panic=immediate-abort" {
-                dropped_immediate_abort = true;
-            } else {
+            if let Some(strategy) = value.strip_prefix("panic=") {
+                panic_strategy_is_immediate_abort = strategy == "immediate-abort";
+            }
+            if value != "panic=immediate-abort" {
                 rustc_flags.extend([flag, value]);
             }
-        } else if flag == "-Cpanic=immediate-abort" {
-            dropped_immediate_abort = true;
+        } else if let Some(strategy) = flag.strip_prefix("-Cpanic=") {
+            panic_strategy_is_immediate_abort = strategy == "immediate-abort";
+            if !panic_strategy_is_immediate_abort {
+                rustc_flags.push(flag);
+            }
         } else {
             rustc_flags.push(flag);
         }
@@ -883,7 +886,7 @@ fn direct_rustc_flags(flags: Vec<String>) -> DirectRustcFlags {
     DirectRustcFlags {
         flags: rustc_flags,
         target,
-        dropped_immediate_abort,
+        panic_strategy_is_immediate_abort,
     }
 }
 
@@ -3925,7 +3928,7 @@ path = "lib.rs"
         for flags in [vec!["-C", "panic=immediate-abort"], vec!["-Cpanic=immediate-abort"]] {
             let parsed = direct_rustc_flags(flags.iter().map(|flag| (*flag).to_string()).collect());
             assert!(parsed.flags.is_empty(), "{flags:?}");
-            assert!(parsed.dropped_immediate_abort, "{flags:?}");
+            assert!(parsed.panic_strategy_is_immediate_abort, "{flags:?}");
         }
     }
 
@@ -3934,7 +3937,77 @@ path = "lib.rs"
         let flags = ["-Cpanic=abort", "-C", "panic=abort", "-C", "opt-level=3"];
         let parsed = direct_rustc_flags(flags.map(str::to_string).to_vec());
         assert_eq!(parsed.flags, flags);
-        assert!(!parsed.dropped_immediate_abort);
+        assert!(!parsed.panic_strategy_is_immediate_abort);
+    }
+
+    /// Checks that an effective abort override is passed through without a warning.
+    ///
+    /// - `inherited_encoded`: inherited `CARGO_ENCODED_RUSTFLAGS` value.
+    /// - `inherited_plain`: inherited `RUSTFLAGS` value.
+    /// - `explicit`: programmatic Rust flags.
+    /// - `expected_flags`: flags expected to pass through to rustc.
+    fn assert_direct_rustc_abort_override(
+        inherited_encoded: Option<&str>,
+        inherited_plain: Option<&str>,
+        explicit: Option<&str>,
+        expected_flags: &[&str],
+    ) {
+        use std::ffi::OsStr;
+
+        let flags = manifest::merge_rust_flags(
+            &[midenc_session::PanicStrategy::ImmediateAbort.as_rustc_arg()],
+            inherited_encoded.map(OsStr::new),
+            inherited_plain.map(OsStr::new),
+            explicit,
+        );
+        let parsed = direct_rustc_flags(flags);
+        assert_eq!(parsed.flags, expected_flags);
+        assert!(!parsed.panic_strategy_is_immediate_abort, "the effective panic strategy is abort");
+    }
+
+    #[test]
+    fn direct_rustc_inherited_abort_overrides_default() {
+        for (flags, expected) in [
+            ("-Cpanic=abort", vec!["-Cpanic=abort"]),
+            ("-C panic=abort", vec!["-C", "panic=abort"]),
+        ] {
+            assert_direct_rustc_abort_override(None, Some(flags), None, &expected);
+        }
+    }
+
+    #[test]
+    fn direct_rustc_encoded_abort_overrides_default() {
+        for (flags, expected) in [
+            ("-Cpanic=abort", vec!["-Cpanic=abort"]),
+            ("-C\x1fpanic=abort", vec!["-C", "panic=abort"]),
+        ] {
+            assert_direct_rustc_abort_override(Some(flags), None, None, &expected);
+        }
+    }
+
+    #[test]
+    fn direct_rustc_programmatic_abort_overrides_inherited() {
+        for (flags, expected) in [
+            ("-Cpanic=abort", vec!["-Cpanic=abort"]),
+            ("-C panic=abort", vec!["-C", "panic=abort"]),
+        ] {
+            assert_direct_rustc_abort_override(
+                None,
+                Some("-C panic=immediate-abort"),
+                Some(flags),
+                &expected,
+            );
+        }
+    }
+
+    #[test]
+    fn direct_rustc_warns_when_immediate_abort_overrides_abort() {
+        for flags in ["-Cpanic=immediate-abort", "-C panic=immediate-abort"] {
+            let merged = manifest::merge_rust_flags(&["-Cpanic=abort"], None, None, Some(flags));
+            let parsed = direct_rustc_flags(merged);
+            assert_eq!(parsed.flags, ["-Cpanic=abort"]);
+            assert!(parsed.panic_strategy_is_immediate_abort, "{flags}");
+        }
     }
 
     #[test]
