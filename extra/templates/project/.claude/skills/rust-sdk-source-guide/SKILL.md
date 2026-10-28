@@ -123,7 +123,7 @@ Contains the SDK that powers the `#[component_storage]`, `#[component]`, `#[acco
   |---|---|
   | `compiler/examples/counter-contract/` | account component with `StorageMap`, `#[account_procedure]`, full `miden-project.toml` |
   | `compiler/examples/basic-wallet/` | asset in/out, `output_note::create` wrapped as an account procedure |
-  | `compiler/examples/storage-example/` | `StorageValue` + `StorageMap<Word, AssetAmount>`, `miden::generate!()` + `bindings::export!` over a hand-written WIT interface |
+  | `compiler/examples/storage-example/` | `StorageValue` + `StorageMap<Word, AssetAmount>`, custom `#[export_type]` slot types (`Limits`, `Holding`) with a codec crate in `storage-example-codec/`, `miden::generate!()` + `bindings::export!` over a hand-written WIT interface |
   | `compiler/examples/auth-component-no-auth/` | minimal `#[auth_script]` auth component, `incr_nonce()` |
   | `compiler/examples/auth-component-rpo-falcon512/` | signature-checking auth component, transaction-summary hashing |
   | `compiler/examples/p2id-note/` | typed `#[note]` struct decoded from note storage, `#[account(basic_wallet::BasicWallet)]` wrapper |
