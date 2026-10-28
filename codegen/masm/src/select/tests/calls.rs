@@ -227,7 +227,7 @@ fn exact_kernel_owner_sets_entry_and_target_conventions() {
 fn kernel_entry_convention_follows_emitted_visibility() {
     for (visibility, convention) in [
         ("public", CallingConvention::Kernel),
-        ("internal", CallingConvention::Kernel),
+        ("internal", CallingConvention::SameContext),
         ("private", CallingConvention::SameContext),
     ] {
         let f = parse_module_function(&format!(
@@ -239,6 +239,25 @@ fn kernel_entry_convention_follows_emitted_visibility() {
         let (plan, frame, body) = ready(&f, &SelectEnv::default());
         verify::verify(&plan, &frame, body).unwrap();
     }
+}
+
+#[test]
+fn public_kernel_entry_can_exec_internal_helper() {
+    let f = parse_module_function(
+        r#"builtin.module public @"$kernel" {
+            builtin.function internal extern("C") @helper(%x:felt) -> felt {
+                builtin.ret %x : (felt);
+            };
+            builtin.function public extern("C") @dispatch(%x:felt) -> felt {
+                %r=hir.exec @helper(%x) : extern("C") (felt) -> felt;
+                builtin.ret %r : (felt);
+            };
+        };"#,
+    );
+    let selected = checked(&f, &SelectEnv::default());
+    assert_eq!(selected.abi.convention(), CallingConvention::Kernel);
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    verify::verify(&plan, &frame, body).unwrap();
 }
 
 #[test]

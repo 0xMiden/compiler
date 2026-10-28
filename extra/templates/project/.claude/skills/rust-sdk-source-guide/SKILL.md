@@ -75,18 +75,17 @@ When stuck at any stage: search the source repos for a similar working pattern. 
 
 ## Which Version Is Which
 
-The three-way version skew is the most confusing thing about this stack. These are four independent
-release lines:
+These are five independent release lines. Keep the client, protocol, and VM types aligned:
 
 | Line | Crates | Version | MSRV |
 |---|---|---|---|
-| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | project manifests use `0.15.0-rc.2` | Rust 1.99 + nightly `2026-09-01`, target `wasm32-wasip2` |
-| Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `cargo-miden` `0.10.0`, usually installed through midenup / cargo-miden | Rust 1.99 |
-| Protocol | `miden-protocol`, `miden-standards`, `miden-testing`, `miden-tx`, `miden-tx-batch`, `miden-block-prover`, `miden-agglayer` | integration manifests lower-bound standards/testing at `0.16.0-rc.4`; `Cargo.lock` resolves protocol/standards/testing to `0.16.0-rc.6` | see each crate |
-| Client | `miden-client`, `miden-client-sqlite-store` | integration manifests lower-bound at `0.16.0-rc.1`; `Cargo.lock` resolves both to `0.16.0-rc.2` | see each crate |
-| VM / package crates | `miden-assembly`, `miden-assembly-syntax`, `miden-core`, `miden-core-lib`, `miden-crypto`, `miden-mast-package`, `miden-processor`, `miden-project`, `miden-prover` | `Cargo.lock` resolves package crates such as `miden-mast-package` to `0.29.4` | see each crate |
+| Contract SDK (guest) | `miden`, `miden-base`, `miden-base-macros`, `miden-base-sys`, `miden-stdlib-sys`, `miden-sdk-alloc` | project manifests use the `0.15` series (`0.15.0`) | Rust 1.99 + nightly `2026-09-01`, target `wasm32-wasip2` |
+| Compiler / build tool | compiler workspace, `midenc`, `cargo-miden` | `0.11.0` in the current checkout; use a matching toolchain or locally built `cargo-miden` | Rust 1.99 |
+| Protocol | `miden-protocol`, `miden-standards`, `miden-testing`, `miden-tx`, `miden-tx-batch`, `miden-block-prover`, `miden-agglayer` | `0.18.0` | see each crate |
+| Client | `miden-client`, `miden-client-sqlite-store` | `0.18.0` from crates.io; resolved versions in `Cargo.lock` | see each crate |
+| VM / package crates | `miden-assembly`, `miden-assembly-syntax`, `miden-core`, `miden-core-lib`, `miden-crypto`, `miden-mast-package`, `miden-processor`, `miden-project`, `miden-prover` | `0.36.x` | see each crate |
 
-Follow the local manifests: contract crates use `miden = { version = "0.15.0-rc.2" }` and matching `miden-sdk-build-script-support = { version = "0.15.0-rc.2" }`. Full pre-release strings matter for release-candidate dependencies such as these and `miden-client = { version = "0.16.0-rc.1" }`, `miden-standards = { version = "0.16.0-rc.4" }`, and `miden-testing = "0.16.0-rc.4"`; read both `integration/Cargo.toml` and `Cargo.lock` before changing version requirements.
+Follow the local manifests: contract crates use `miden = { version = "0.15" }` and matching `miden-sdk-build-script-support = { version = "0.15" }`. The integration crate uses protocol/standards/testing `0.18.0`, VM/package crates in the `0.36` series, and the released client crates `0.18.0` from crates.io. Read both `integration/Cargo.toml` and `Cargo.lock` before changing version requirements; the lockfile records the resolved crate versions.
 
 Keep the build tool out of the integration crate's dependency graph. The current project builds contracts out of process with midenup / cargo-miden via `build_project_in_dir(...)`, then tests those packages with the client, standards, and `miden-testing` libraries resolved in `Cargo.lock`.
 
@@ -98,19 +97,19 @@ Clone these repos alongside your project for reference. Claude will explore them
 
 ```bash
 # Required: protocol layer, standard note types and account components (crate: miden-protocol)
-git clone --branch v0.16.0-rc.6 https://github.com/0xMiden/protocol.git ../protocol
+git clone --branch v0.18.0 https://github.com/0xMiden/protocol.git ../protocol
 
 # Required: client API for deployment and chain interaction (crate: miden-client)
-git clone --branch v0.16.0-rc.2 https://github.com/0xMiden/miden-client.git ../miden-client
+git clone --branch v0.18.0 https://github.com/0xMiden/rust-sdk.git ../miden-client
 
-# Required: the Rust SDK macros and compiler; the sdk tag names the guest SDK version.
-git clone --branch sdk/v0.14.0 https://github.com/0xMiden/compiler.git ../compiler
+# Required: the Rust SDK macros and compiler; select the revision matching your guest SDK.
+git clone https://github.com/0xMiden/compiler.git ../compiler
 
 # Optional: the VM, assembler, and package format, when you need MASM or `.masp` internals
-git clone --branch v0.29.4 https://github.com/0xMiden/miden-vm.git ../miden-vm
+git clone --branch v0.36.3 https://github.com/0xMiden/miden-vm.git ../miden-vm
 ```
 
-`--depth 1` is intentionally omitted so you can check out other refs later if needed.
+`--depth 1` is intentionally omitted so you can check out other refs later if needed. For exact client parity, use the release tag matching the client version recorded in the project's `Cargo.lock`.
 
 ### `compiler/` — The Rust-to-MASM Compiler and the Guest SDK
 
@@ -136,9 +135,9 @@ Contains the SDK that powers the `#[component_storage]`, `#[component]`, `#[acco
   `protocol/crates/miden-standards/src/account/faucets/fungible/mod.rs` (the `FungibleFaucet`
   component) or the compiler's own `compiler/tests/integration/src/sdk/base/faucet.rs` binding test.
 
-- **`compiler/sdk/`** — the guest SDK, and at v0.16 the single most authoritative API reference. Whitelisted
+- **`compiler/sdk/`** — the guest SDK and the authoritative API reference. Whitelisted
   for exploration:
-  - `compiler/sdk/sdk/MIGRATION.md` — start here; the `## Unreleased` section is the v0.16 contract-surface
+  - `compiler/sdk/sdk/MIGRATION.md` — start here; the `## Unreleased` section is the current contract-surface
     change list with before/after code
   - `compiler/sdk/CHANGELOG.md`
   - `compiler/sdk/base-sys/src/bindings/` — the exact signature of every kernel binding
@@ -214,7 +213,7 @@ data layouts, and the canonical MASM shape.
 
 ### `miden-client/` - Client Library (crate `miden-client`)
 
-The client repo is `https://github.com/0xMiden/miden-client`; the published crate is `miden-client`,
+The client repo is `https://github.com/0xMiden/rust-sdk` (cloned above as `miden-client/`); the published crate is `miden-client`,
 and the CLI source lives under `bin/miden-cli/`.
 
 - Rust client for building transactions, syncing state, managing accounts and notes

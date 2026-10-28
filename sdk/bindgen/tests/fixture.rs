@@ -24,7 +24,7 @@ use midenc_package_interface::{
 
 /// The fixture's root module, `::fixture`.
 ///
-/// The syntax the assembler (0.35) accepts, as settled here: a submodule is declared by its parent
+/// The syntax the assembler (0.36) accepts, as settled here: a submodule is declared by its parent
 /// (`pub mod nested`); an enum is `pub enum Kind : u8 { … }`, and its variants are exported as
 /// constants of the enum's module too (`PRIVATE`, `PUBLIC`); a struct's representation is an
 /// annotation after `struct` (`@align(16)`, `@packed`, `@transparent`); a hashed constant is

@@ -2,7 +2,7 @@
 //!
 //! Similar to llvm-dwarfdump, this tool parses the `.debug_info` section from compiled MASP
 //! packages and displays the debug metadata in a human-readable format.
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, fmt, path::PathBuf, sync::Arc};
 
 use clap::Args;
 use miden_mast_package::{
@@ -72,7 +72,7 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
         Some(Section::Types) => print_types(&debug_info, config.raw),
         Some(Section::Files) => print_files(&debug_info, config.raw),
         Some(Section::Functions) => {
-            print_functions(&debug_info, package.mast_forest(), config.raw, config.verbose)
+            print_functions(&debug_info, package.mast_forest(), config.raw, config.verbose);
         }
         Some(Section::Variables) => print_variables(&debug_info, package.mast_forest(), config.raw),
         Some(Section::Locations) => print_locations(&debug_info),
@@ -148,7 +148,7 @@ fn print_summary(debug_info: &PackageDebugInfo) {
     println!("  | records: {}", debug_info.nodes().len());
     println!("  | roots:   {}", debug_info.roots().len());
     println!("  | debug variables (total): {total_vars}");
-    println!("  | inline calls (total):    {total_inlined}");
+    println!("  | inline-call ranges (total): {total_inlined}");
     println!();
 
     // Count debug vars in MAST
@@ -413,6 +413,9 @@ fn print_functions(
         print_function(idx, func, debug_info, mast_forest, raw, verbose);
         println!();
     }
+    if verbose {
+        print!("{}", InlineRanges { debug_info, raw });
+    }
 }
 
 fn print_function(
@@ -486,36 +489,6 @@ fn print_function(
                 print_variable(var, debug_info, raw, verbose);
             }
         }
-        // Inlined calls
-        if !source_node.inline_calls.is_empty() && verbose {
-            println!("         Inlined calls ({}):", source_node.inline_calls.len());
-            for call in source_node.inline_calls.iter() {
-                let callee = if raw {
-                    format!("func[{}]", call.callee_idx).into_boxed_str().into()
-                } else {
-                    debug_info
-                        .get_function(call.callee_idx)
-                        .and_then(|f| debug_info.get_string(f.name_idx))
-                        .unwrap_or_else(|| "<unknown>".into())
-                };
-                let loc = debug_info.get_location(call.loc_idx);
-                let call_file = if raw {
-                    format!("loc[{}]", call.loc_idx).into_boxed_str().into()
-                } else {
-                    loc.clone()
-                        .map(|loc| Arc::<str>::from(loc.uri))
-                        .unwrap_or_else(|| "<unknown>".into())
-                };
-                if let Some(loc) = loc {
-                    println!(
-                        "           - {callee} inlined at {call_file}:{}..{}",
-                        loc.start, loc.end
-                    );
-                } else {
-                    println!("           - {callee} inlined at {call_file}:?..?",);
-                }
-            }
-        }
     }
 }
 
@@ -552,6 +525,55 @@ fn print_variable(var: &DebugSourceVar, debug_info: &PackageDebugInfo, raw: bool
     */
 
     println!();
+}
+
+/// Render all source occurrences, including invocation copies outside canonical function roots.
+struct InlineRanges<'a> {
+    debug_info: &'a PackageDebugInfo,
+    raw: bool,
+}
+
+impl fmt::Display for InlineRanges<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let debug_info = self.debug_info;
+        writeln!(f, ".debug_inline contents (operation ranges local to each execution node):")?;
+        for (source, node) in debug_info.nodes().iter().enumerate() {
+            if node.inline_calls.is_empty() {
+                continue;
+            }
+            writeln!(
+                f,
+                "  [source-node#{source} -> exec-node#{}] Inline-call ranges ({}):",
+                u32::from(node.exec_node),
+                node.inline_calls.len()
+            )?;
+            // Preserve row order: nested inline chains are stored innermost first.
+            for row in &node.inline_calls {
+                let callee = if self.raw {
+                    format!("func[{}]", row.callee_idx).into()
+                } else {
+                    debug_info
+                        .get_function(row.callee_idx)
+                        .and_then(|func| debug_info.get_string(func.name_idx))
+                        .unwrap_or_else(|| Arc::<str>::from("<unknown>"))
+                };
+                let site = if self.raw {
+                    format!("loc[{}]", row.loc_idx)
+                } else {
+                    debug_info.get_location(row.loc_idx).map_or_else(
+                        || "<unknown>".to_string(),
+                        |loc| format!("{}:{}..{}", loc.uri, loc.start, loc.end),
+                    )
+                };
+                write!(f, "    {callee} ops[{}..{})", row.op_idx, row.op_end)?;
+                if row.op_idx == row.op_end {
+                    write!(f, " (external boundary)")?;
+                }
+                writeln!(f, " inlined at {site}")?;
+            }
+        }
+        Ok(())
+    }
 }
 
 fn print_variables(debug_info: &PackageDebugInfo, mast_forest: &MastForest, raw: bool) {
@@ -658,7 +680,104 @@ fn print_locations(debug_info: &PackageDebugInfo) {
 
 #[cfg(test)]
 mod tests {
-    use miden_assembly_syntax::ast::DebugVarLocation;
+    use miden_assembly_syntax::{
+        ast::DebugVarLocation,
+        debuginfo::{ColumnNumber, LineNumber},
+    };
+    use miden_core::mast::MastNodeId;
+    use miden_mast_package::debug_info::{
+        DebugFileInfo, DebugFunctionInfo, DebugLoc, DebugSourceInlineCall, DebugSourceNode,
+        PackageDebugInfoBuilder,
+    };
+
+    use super::InlineRanges;
+
+    #[test]
+    fn inline_ranges_preserve_source_occurrences_and_nested_order() {
+        let mut builder = PackageDebugInfoBuilder::default();
+        let path_idx = builder.add_string("inline-calls.masm");
+        let file_idx = builder.add_file_info(DebugFileInfo::new(path_idx));
+        let callees = ["outer", "inner"].map(|name| {
+            let name_idx = builder.add_string(name);
+            builder.add_function(DebugFunctionInfo::new(
+                None,
+                name_idx,
+                file_idx,
+                LineNumber::new(1).unwrap(),
+                ColumnNumber::new(1).unwrap(),
+                Default::default(),
+            ))
+        });
+        let sites = [(10, 20), (30, 40)].map(|(start, end)| {
+            builder.add_location_info(DebugLoc {
+                file_idx,
+                start: start.into(),
+                end: end.into(),
+            })
+        });
+        // Non-root occurrences can share executable code with distinct inline chains.
+        // External boundaries have their own executable node and zero-width range.
+        for (exec, op_start, op_end, frames) in [
+            (7, 3, 9, vec![(1, 1), (0, 0)]),
+            (7, 3, 9, vec![(0, 1)]),
+            (8, 0, 0, vec![(0, 0)]),
+        ] {
+            builder
+                .add_node(DebugSourceNode {
+                    exec_node: MastNodeId::new_unchecked(exec),
+                    children: vec![],
+                    op_start,
+                    op_end,
+                    asm_ops: vec![],
+                    debug_vars: vec![],
+                    inline_calls: frames
+                        .into_iter()
+                        .map(|(callee, site)| DebugSourceInlineCall {
+                            op_idx: op_start,
+                            op_end,
+                            callee_idx: callees[callee],
+                            loc_idx: sites[site],
+                        })
+                        .collect(),
+                })
+                .unwrap();
+        }
+        let debug_info = builder.build();
+        assert_eq!(
+            InlineRanges {
+                debug_info: &debug_info,
+                raw: true
+            }
+            .to_string(),
+            concat!(
+                ".debug_inline contents (operation ranges local to each execution node):\n",
+                "  [source-node#0 -> exec-node#7] Inline-call ranges (2):\n",
+                "    func[1] ops[3..9) inlined at loc[1]\n",
+                "    func[0] ops[3..9) inlined at loc[0]\n",
+                "  [source-node#1 -> exec-node#7] Inline-call ranges (1):\n",
+                "    func[0] ops[3..9) inlined at loc[1]\n",
+                "  [source-node#2 -> exec-node#8] Inline-call ranges (1):\n",
+                "    func[0] ops[0..0) (external boundary) inlined at loc[0]\n",
+            )
+        );
+        assert_eq!(
+            InlineRanges {
+                debug_info: &debug_info,
+                raw: false
+            }
+            .to_string(),
+            concat!(
+                ".debug_inline contents (operation ranges local to each execution node):\n",
+                "  [source-node#0 -> exec-node#7] Inline-call ranges (2):\n",
+                "    inner ops[3..9) inlined at inline-calls.masm:30..40\n",
+                "    outer ops[3..9) inlined at inline-calls.masm:10..20\n",
+                "  [source-node#1 -> exec-node#7] Inline-call ranges (1):\n",
+                "    outer ops[3..9) inlined at inline-calls.masm:30..40\n",
+                "  [source-node#2 -> exec-node#8] Inline-call ranges (1):\n",
+                "    outer ops[0..0) (external boundary) inlined at inline-calls.masm:10..20\n",
+            )
+        );
+    }
 
     #[test]
     fn formats_unavailable_location() {
