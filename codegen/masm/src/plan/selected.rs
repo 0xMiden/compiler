@@ -187,6 +187,10 @@ pub(crate) enum OutputPublication {
     /// no physical inputs, storage bindings, scratch, address results, or effects; replay must
     /// establish every source's recoverability and preserve physical state unchanged.
     Aliases,
+    /// Outputs are literal reconstructions whose consumers all take them as instruction
+    /// immediates, so no physical copy is ever produced. The unit has no inputs, storage
+    /// bindings, scratch, address results, effects, or instructions.
+    Literal,
 }
 
 /// One allocation boundary whose internal instruction sequence is owned by a lowering definition.

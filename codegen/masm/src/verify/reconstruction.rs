@@ -299,6 +299,30 @@ pub(super) fn matches(
     })
 }
 
+/// Resolve literal-only results to their canonical literal tokens. The caller separately
+/// proves that the unit changed no state; publication then checks each token against the
+/// value's literal reconstruction like any other output.
+pub(super) fn literal_outputs(
+    program: &SelectedProgram,
+    outputs: &[Atom],
+    tokens: &mut Tokens,
+) -> Result<Vec<Token>, VerificationError> {
+    outputs
+        .iter()
+        .map(|output| {
+            let Some(Reconstruction::Literal(lanes)) =
+                &program.values[&output.value].reconstruction
+            else {
+                return Err(error("literal publication lacks a literal reconstruction"));
+            };
+            let lane = lanes
+                .get(usize::from(output.lane))
+                .ok_or_else(|| error("literal publication lacks a complete lane"))?;
+            Ok(tokens.literal(*lane))
+        })
+        .collect()
+}
+
 /// Resolve semantic-only results from the incoming state, before any output names are rebound.
 /// Named tokens alone are insufficient: every source must still have a physical representation
 /// or a checked reconstruction. The caller separately proves that the unit changed no state.

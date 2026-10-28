@@ -514,6 +514,12 @@ fn observe(
                     }
                 }
             }
+            // A literal with no resident copy is still describable by its value.
+            if found == Location::Unavailable
+                && let StoredValue::Literal(value) = context.source(state, *atom)?
+            {
+                found = Location::Literal(value);
+            }
             locations.push(found);
         }
         let id = DebugLocationId(

@@ -70,6 +70,9 @@ pub(crate) struct UnitEvidence {
     pub loops: BTreeMap<ControlId, LoopSchema>,
     /// Ordered source-authorized call sites, with order interpreted within each path.
     pub calls: Vec<CallSite>,
+    /// Semantic inputs the body carries as instruction immediates rather than stack lanes,
+    /// in body order, each with the literal its value must reconstruct to.
+    pub immediates: Vec<(Atom, Felt)>,
 }
 
 /// Source authority for generic event emission. This permits only the registered event form;
@@ -409,7 +412,7 @@ fn validate_graph(
                         return Err(error("invalid generated event source contract"));
                     }
                 }
-                if unit.publication == OutputPublication::Aliases {
+                if unit.publication != OutputPublication::Stack {
                     let evidence = &units[&unit.id];
                     if !unit.stack_inputs.is_empty()
                         || !unit.stored_inputs.is_empty()
@@ -421,11 +424,48 @@ fn validate_graph(
                         || !evidence.calls.is_empty()
                         || !evidence.loops.is_empty()
                         || !evidence.scratch_outputs.is_empty()
+                        || !evidence.immediates.is_empty()
                     {
                         return Err(error(
-                            "alias publication has a physical or effectful contract",
+                            "semantic publication has a physical or effectful contract",
                         ));
                     }
+                }
+                if unit.publication == OutputPublication::Literal {
+                    if !unit.semantic_inputs.is_empty() {
+                        return Err(error("literal publication has semantic inputs"));
+                    }
+                    for output in &unit.outputs {
+                        if !matches!(
+                            program.values[&output.value].reconstruction,
+                            Some(Reconstruction::Literal(_))
+                        ) {
+                            return Err(error("literal publication lacks a literal value"));
+                        }
+                    }
+                }
+                // An immediate is a dependency the body carries without a lane: its value must
+                // be a literal the unit names semantically but never physically.
+                for (atom, literal) in &units[&unit.id].immediates {
+                    validate_atom(program, *atom)?;
+                    let lanes = match &program.values[&atom.value].reconstruction {
+                        Some(Reconstruction::Literal(lanes)) => lanes,
+                        _ => return Err(error("immediate input is not a literal value")),
+                    };
+                    if lanes.get(usize::from(atom.lane)) != Some(literal) {
+                        return Err(error("immediate input disagrees with its literal value"));
+                    }
+                    if !unit.semantic_inputs.contains(&atom.value)
+                        || unit.stack_inputs.contains(atom)
+                        || unit
+                            .stored_inputs
+                            .iter()
+                            .any(|stored| stored.value == StoredValue::Atom(*atom))
+                    {
+                        return Err(error("immediate input is not a lane-free semantic input"));
+                    }
+                }
+                if unit.publication == OutputPublication::Aliases {
                     for output in &unit.outputs {
                         let Some(Reconstruction::Alias(sources)) =
                             &program.values[&output.value].reconstruction

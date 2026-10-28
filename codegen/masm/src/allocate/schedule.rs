@@ -135,10 +135,11 @@ fn prepare_order(
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
     let needs = normalize::requirements(unit, live_after, context)?;
-    if unit.publication == OutputPublication::Aliases {
+    if matches!(unit.publication, OutputPublication::Aliases | OutputPublication::Literal) {
         let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
-        // Alias publication consumes nothing. Even forced fallback must not drain a buried
-        // source simply to introduce another semantic name for its existing representation.
+        // Alias and literal publication consume nothing. Even forced fallback must not drain a
+        // buried source simply to introduce another semantic name for its existing
+        // representation.
         if !valid(&base, unit, &needs)? {
             return Err(invariant(
                 DiagnosticCategory::UnavailableValue,

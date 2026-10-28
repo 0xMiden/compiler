@@ -89,6 +89,70 @@ pub(crate) enum Kind {
     Poison,
 }
 
+/// The count a shift carries as an instruction immediate: `op` is an `arith.shl` or `arith.shr`
+/// whose shifted type has a native immediate form and whose count is an `arith.constant` below
+/// the 32-bit shift limit. Signed and 64-bit right shifts are helper calls that take the count
+/// on the stack, so they never fold.
+///
+/// The shift and the constant both consult this rule, so selection agrees on which values are
+/// consumed as immediates without a physical lane.
+pub(crate) fn immediate_shift_count(op: &Operation) -> Option<u32> {
+    let kind = if op.is::<arith::Shl>() {
+        Kind::Shl
+    } else if op.is::<arith::Shr>() {
+        Kind::Shr
+    } else {
+        return None;
+    };
+    let operands = op.operands().all();
+    if operands.len() != 2 {
+        return None;
+    }
+    let shifted = operands[0].borrow().ty().clone();
+    let native = match kind {
+        Kind::Shl => {
+            matches!(shifted, Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32)
+        }
+        _ => matches!(shifted, Type::U8 | Type::U16 | Type::U32),
+    };
+    if !native {
+        return None;
+    }
+    let count = operands[1].borrow().as_value_ref();
+    // The same value as shifted operand and count would be both a lane and an immediate.
+    if count == operands[0].borrow().as_value_ref() {
+        return None;
+    }
+    let count = count.borrow().get_defining_op()?;
+    let count = count.borrow();
+    let count = count.downcast_ref::<arith::Constant>()?.get_value().as_u32()?;
+    (count < 32).then_some(count)
+}
+
+/// Whether every non-transparent user of `constant` consumes it as a shift immediate, so that
+/// no physical copy of its result is ever required. A constant with no such user, or with any
+/// other user (including the shifted operand of a shift), keeps its stack publication.
+pub(crate) fn consumed_as_immediate(constant: &Operation) -> bool {
+    use midenc_hir::{Usable, traits::Transparent};
+    let results = constant.results().all();
+    let Some(result) = results.iter().next() else {
+        return false;
+    };
+    let result = result.borrow();
+    let mut folded = false;
+    for user in result.iter_uses() {
+        let owner = user.owner.borrow();
+        if owner.implements::<dyn Transparent>() {
+            continue;
+        }
+        if user.index != 1 || immediate_shift_count(&owner).is_none() {
+            return false;
+        }
+        folded = true;
+    }
+    folded
+}
+
 /// A snapshot of a source-checked, storage-free construction.
 ///
 /// Build with `from_source`, then `bind` the selected atoms before using its evidence. The raw
@@ -100,6 +164,10 @@ pub(crate) struct Arithmetic {
     pub input_order: Vec<usize>,
     /// Source-fixed literal available for reconstruction of pointer/global/poison results.
     pub literal: Option<Immediate>,
+    /// Source operands carried by the instructions as immediates, with the literal each must
+    /// equal. They are semantic inputs of the unit, never stack lanes, and are absent from
+    /// `input_order`.
+    pub immediates: Vec<(usize, Felt)>,
     /// Source-derived aliases and exact helper-call contracts, completed by `bind`.
     pub proof: UnitEvidence,
     aliases: Vec<(usize, usize)>,
@@ -227,6 +295,8 @@ impl Arithmetic {
                 | Type::Felt
         );
         let mut order = (0..inputs.len()).collect::<Vec<_>>();
+        let mut immediates = vec![];
+        let shift_count = matches!(kind, Shl | Shr).then(|| immediate_shift_count(op)).flatten();
         let expected = match kind {
             ConstantPointer | GlobalSymbol | Poison if inputs.is_empty() => {
                 vec![target.clone().unwrap()]
@@ -324,7 +394,14 @@ impl Arithmetic {
                         | Type::U64
                 ) =>
             {
-                order.reverse();
+                // A folded count leaves only the shifted value on the stack.
+                match shift_count {
+                    Some(count) => {
+                        order = vec![0];
+                        immediates.push((1, Felt::from(count)));
+                    }
+                    None => order.reverse(),
+                }
                 vec![ty.clone()]
             }
             Shr if inputs.len() == 2
@@ -334,7 +411,13 @@ impl Arithmetic {
                     Type::U8 | Type::U16 | Type::I32 | Type::U32 | Type::I64 | Type::U64
                 ) =>
             {
-                order.reverse();
+                match shift_count {
+                    Some(count) => {
+                        order = vec![0];
+                        immediates.push((1, Felt::from(count)));
+                    }
+                    None => order.reverse(),
+                }
                 vec![ty.clone()]
             }
             Rotl | Rotr
@@ -471,8 +554,14 @@ impl Arithmetic {
                 Band => e.band(span),
                 Bor => e.bor(span),
                 Bxor => e.bxor(span),
-                Shl => e.shl(span),
-                Shr => e.shr(span),
+                Shl => match shift_count {
+                    Some(count) => e.shl_imm(count, span),
+                    None => e.shl(span),
+                },
+                Shr => match shift_count {
+                    Some(count) => e.shr_imm(count, span),
+                    None => e.shr(span),
+                },
                 Rotl => e.rotl(span),
                 Rotr => e.rotr(span),
                 Eq => e.eq(span),
@@ -653,6 +742,7 @@ impl Arithmetic {
             body,
             input_order: order,
             literal,
+            immediates,
             proof,
             aliases,
             call_inputs,
@@ -700,6 +790,7 @@ impl Arithmetic {
             body,
             input_order: vec![0],
             literal: None,
+            immediates: vec![],
             proof: UnitEvidence::default(),
             call_inputs: vec![],
             publications: vec![],
@@ -711,11 +802,17 @@ impl Arithmetic {
     }
 
     /// Bind source atoms after the opcode/type rule has fixed all physical relationships.
-    /// Inputs follow `input_order` and outputs use the source result lane order. Their lengths
-    /// must match the previously validated source tuple; this step does not revalidate arity.
-    pub fn bind(&mut self, inputs: &[Atom], outputs: &[Atom]) {
+    /// Inputs follow `input_order`, immediates follow `immediates`, and outputs use the source
+    /// result lane order. Their lengths must match the previously validated source tuple; this
+    /// step does not revalidate arity.
+    pub fn bind(&mut self, inputs: &[Atom], immediates: &[Atom], outputs: &[Atom]) {
         self.proof.aliases =
             LaneAliases::new(self.aliases.iter().map(|&(o, i)| (outputs[o], inputs[i])).collect());
+        self.proof.immediates = immediates
+            .iter()
+            .zip(&self.immediates)
+            .map(|(atom, (_, literal))| (*atom, *literal))
+            .collect();
         for (call, lanes) in self.proof.calls.iter_mut().zip(&self.call_inputs) {
             for &(argument, source) in lanes {
                 call.inputs[argument] = CallArgument::Exact(StoredValue::Atom(inputs[source]));

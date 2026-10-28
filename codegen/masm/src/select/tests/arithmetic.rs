@@ -1276,3 +1276,177 @@ fn pointer_equality_remains_outside_the_hir_operand_domain() {
         }
     }
 }
+
+/// A one-shift function whose count is the constant `count`.
+fn shift_by_constant(op: &str, ty: &str, count: u32) -> Parsed {
+    parse(&format!(
+        "builtin.function public extern(\"C\") @f(%a:{ty}) -> {ty} {{ %c = arith.constant {count} \
+         : u32; %r = arith.{op} %a, %c; builtin.ret %r : ({ty}); }};"
+    ))
+}
+
+#[test]
+fn constant_shift_counts_are_immediates() {
+    for (op, ty, instruction, a, expected) in [
+        ("shl", "u32", "u32shl.3", 5usize, 40usize),
+        ("shl", "i32", "u32shl.3", 5, 40),
+        ("shl", "u16", "u32shl.3", 0x2345, 0x1a28),
+        ("shl", "u8", "u32shl.3", 200, 64),
+        ("shr", "u32", "u32shr.3", 40, 5),
+        ("shr", "u16", "u32shr.3", 0x1234, 0x246),
+        ("shr", "u8", "u32shr.3", 200, 25),
+    ] {
+        let f = shift_by_constant(op, ty, 3);
+        let procedure = selected_procedure(&f, &SelectEnv::default());
+        assert!(procedure.contains(instruction), "{op} {ty}: {procedure}");
+        assert!(!procedure.contains("push.3"), "{op} {ty}: {procedure}");
+        execute(&f, &SelectEnv::default(), &[a], &[expected]);
+        let selected = checked(&f, &SelectEnv::default());
+        let units = &selected.segments[0].units;
+        assert_eq!(units[0].publication, OutputPublication::Literal, "{op} {ty}");
+        assert_eq!(units[0].outputs.len(), 1);
+        assert_eq!(units[1].stack_inputs.len(), 1, "{op} {ty}: only the shifted value");
+        assert_eq!(units[1].semantic_inputs.len(), 2, "{op} {ty}: the count stays a dependency");
+    }
+}
+
+#[test]
+fn signed_and_wide_shifts_keep_the_count_on_the_stack() {
+    for (op, ty, a, expected) in [("shr", "i32", 40usize, 5usize), ("shl", "u64", 5, 40)] {
+        let f = shift_by_constant(op, ty, 3);
+        let procedure = selected_procedure(&f, &SelectEnv::default());
+        assert!(procedure.contains("push.3"), "{op} {ty}: {procedure}");
+        assert!(!procedure.contains("u32shr.") && !procedure.contains("u32shl."), "{procedure}");
+        let inputs = if ty == "u64" { vec![a, 0] } else { vec![a] };
+        let outputs = if ty == "u64" {
+            vec![expected, 0]
+        } else {
+            vec![expected]
+        };
+        execute_linked(&f, &inputs, &outputs);
+    }
+}
+
+#[test]
+fn shift_counts_at_or_above_the_width_are_not_immediates() {
+    let f = shift_by_constant("shl", "u32", 32);
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert!(procedure.contains("push.32"), "{procedure}");
+    assert!(!procedure.contains("u32shl."), "{procedure}");
+    let selected = checked(&f, &SelectEnv::default());
+    assert_eq!(selected.segments[0].units[0].publication, OutputPublication::Stack);
+}
+
+#[test]
+fn a_zero_shift_count_is_an_immediate() {
+    let f = shift_by_constant("shr", "u32", 0);
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert!(procedure.contains("u32shr.0"), "{procedure}");
+    assert!(!procedure.contains("push.0"), "{procedure}");
+    execute(&f, &SelectEnv::default(), &[7], &[7]);
+}
+
+#[test]
+fn a_count_shared_with_another_user_is_pushed_for_that_user_only() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%a:u32) -> u32 { %c = arith.constant 3 : u32; \
+         %r = arith.shl %a, %c; %s = arith.add %r, %c <{ overflow = #builtin.overflow<wrapping> \
+         }>; builtin.ret %s : (u32); };",
+    );
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert!(procedure.contains("u32shl.3"), "{procedure}");
+    assert_eq!(procedure.matches("push.3").count(), 1, "{procedure}");
+    execute(&f, &SelectEnv::default(), &[5], &[43]);
+    let selected = checked(&f, &SelectEnv::default());
+    assert_eq!(selected.segments[0].units[0].publication, OutputPublication::Stack);
+}
+
+#[test]
+fn a_constant_shifted_by_itself_keeps_the_stack_form() {
+    // One value cannot be both the shifted lane and the immediate of the same instruction.
+    let f = parse(
+        "builtin.function public extern(\"C\") @f() -> u32 { %c = arith.constant 3 : u32; %r = \
+         arith.shl %c, %c; builtin.ret %r : (u32); };",
+    );
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert!(!procedure.contains("u32shl."), "{procedure}");
+    assert!(procedure.contains("push.3"), "{procedure}");
+    execute(&f, &SelectEnv::default(), &[], &[24]);
+}
+
+#[test]
+fn a_dominating_count_folds_into_a_nested_shift() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%p: i1, %a: u32) -> u32 { %c = arith.constant 3 \
+         : u32; %x = scf.if %p then { %r = arith.shl %a, %c; scf.yield %r : (u32); } else { \
+         scf.yield %a : (u32); } : (i1) -> u32; builtin.ret %x : (u32); };",
+    );
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert!(procedure.contains("u32shl.3"), "{procedure}");
+    assert!(!procedure.contains("push.3"), "{procedure}");
+    execute(&f, &SelectEnv::default(), &[1, 5], &[40]);
+    execute(&f, &SelectEnv::default(), &[0, 5], &[5]);
+}
+
+#[test]
+fn a_folded_count_is_observable_as_a_constant() {
+    use midenc_hir::{
+        Builder, OpBuilder, SourceSpan,
+        dialects::debuginfo::{DIBuilder, attributes::Variable},
+        interner::Symbol,
+    };
+    let f = shift_by_constant("shl", "u32", 3);
+    let entry = f.borrow().entry_block();
+    let ops = entry.borrow().body().iter().map(|op| op.as_operation_ref()).collect::<Vec<_>>();
+    let count = ops[0].borrow().results().all()[0].borrow().as_value_ref();
+    let mut builder = OpBuilder::new(f.context.clone());
+    builder.set_insertion_point_before(ops[1]);
+    let variable = Variable::new(Symbol::intern("count"), Symbol::intern("test.rs"), 1, None);
+    builder.debug_value(count, variable, SourceSpan::UNKNOWN).unwrap();
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    let record = plan.debug_locations.values().find(|r| !r.locations.is_empty()).unwrap();
+    assert_eq!(
+        record.locations,
+        vec![crate::lower::debug::Location::Literal(miden_core::Felt::from(3u32))]
+    );
+    let mut expanded = ExpansionEnv::default();
+    expanded.resolve_debug(&plan, &frame);
+    let variable = expanded
+        .debug
+        .values()
+        .find_map(|decorator| match decorator {
+            DebugDecorator::Variable(info) => Some(info),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(
+        *variable.value_location(),
+        crate::masm::DebugVarLocation::Const(miden_core::Felt::from(3u32))
+    );
+    let procedure = verify::verify(&plan, &frame, body)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("selected").unwrap())
+        .unwrap()
+        .to_pretty_string();
+    assert!(procedure.contains("u32shl.3") && !procedure.contains("push.3"), "{procedure}");
+}
+
+#[test]
+fn an_immediate_shift_body_must_carry_the_registered_count() {
+    let f = shift_by_constant("shl", "u32", 3);
+    let (plan, frame, mut body) = ready(&f, &SelectEnv::default());
+    let mut rewritten = 0;
+    for op in body.ops_mut() {
+        if let AnnotatedOp::Instruction {
+            instruction: crate::masm::Instruction::U32ShlImm(value),
+            ..
+        } = op
+        {
+            *value = 4u8.into();
+            rewritten += 1;
+        }
+    }
+    assert_eq!(rewritten, 1);
+    let error = verify::verify(&plan, &frame, body).unwrap_err();
+    assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+}

@@ -1008,3 +1008,144 @@ fn semantic_alias_contract_rejects_physical_effects_and_incomplete_mappings() {
     candidate.segments[0].units[0].publication = OutputPublication::Aliases;
     assert!(check_selection(candidate, &SourceContext::Generated(&Identity)).is_err());
 }
+
+/// Ways a literal-published count consumed as an immediate can be misdeclared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImmediateDefect {
+    None,
+    /// The immediate's value has no literal reconstruction.
+    NotLiteral,
+    /// The evidence names a different literal than the value reconstructs to.
+    WrongLiteral,
+    /// The immediate is also demanded as a stack lane.
+    AlsoStackInput,
+    /// The immediate is not a semantic input of its consumer.
+    NotSemanticInput,
+    /// The literal publication claims a semantic input.
+    LiteralHasInputs,
+    /// The literal publication claims an effect.
+    LiteralHasEffects,
+}
+
+/// A literal count published without a physical copy, consumed as an immediate by the
+/// identity unit, with one optional defect in the source declaration.
+struct ImmediateCount(ImmediateDefect);
+
+impl GeneratedDefinition for ImmediateCount {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(3)
+    }
+
+    fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        use ImmediateDefect::*;
+        assert!(parameters.is_empty());
+        let mut evidence = Identity.instantiate(&[])?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        let count = Atom::new(ValueId(2), 0);
+        evidence.program.values.insert(
+            ValueId(2),
+            SelectedValue {
+                id: ValueId(2),
+                origin: ValueOrigin::Temporary {
+                    step: SourceStepId(0),
+                    index: 0,
+                },
+                layout: ValueLayout::new(Type::U32).unwrap(),
+                reconstruction: (self.0 != NotLiteral)
+                    .then(|| Reconstruction::Literal(vec![Felt::from(3u32)])),
+            },
+        );
+        let consumer = &mut evidence.program.segments[0].units[0];
+        consumer.id = SelectedStepId(1);
+        consumer.source = SourceStepId(1);
+        if self.0 != NotSemanticInput {
+            consumer.semantic_inputs.push(ValueId(2));
+        }
+        if self.0 == AlsoStackInput {
+            consumer.stack_inputs.push(count);
+        }
+        let mut literal = consumer.clone();
+        literal.id = SelectedStepId(0);
+        literal.source = SourceStepId(0);
+        literal.kind = LoweringKind(1);
+        literal.semantic_inputs = if self.0 == LiteralHasInputs {
+            vec![ValueId(0)]
+        } else {
+            vec![]
+        };
+        literal.stack_inputs = vec![];
+        literal.outputs = vec![count];
+        literal.publication = OutputPublication::Literal;
+        literal.effects.may_trap = self.0 == LiteralHasEffects;
+        evidence.program.segments[0].units.insert(0, literal);
+        evidence.program.source_map = BTreeMap::from([
+            (
+                SourceStepId(0),
+                SourceRecord {
+                    origin: SourceOrigin::Generated {
+                        definition: self.id(),
+                        stage: 0,
+                    },
+                    location: SourceLocation::default(),
+                },
+            ),
+            (
+                SourceStepId(1),
+                SourceRecord {
+                    origin: SourceOrigin::Generated {
+                        definition: self.id(),
+                        stage: 1,
+                    },
+                    location: SourceLocation::default(),
+                },
+            ),
+        ]);
+        let registered: u32 = if self.0 == WrongLiteral { 4 } else { 3 };
+        evidence.units = BTreeMap::from([
+            (SelectedStepId(0), UnitEvidence::default()),
+            (
+                SelectedStepId(1),
+                UnitEvidence {
+                    aliases: LaneAliases::new(vec![(
+                        Atom::new(ValueId(1), 0),
+                        Atom::new(ValueId(0), 0),
+                    )]),
+                    immediates: vec![(count, Felt::from(registered))],
+                    ..Default::default()
+                },
+            ),
+        ]);
+        Ok(evidence)
+    }
+}
+
+#[test]
+fn immediate_inputs_are_lane_free_literals_named_by_their_consumer() {
+    use ImmediateDefect::*;
+    let sound = ImmediateCount(None);
+    check_selection(sound.instantiate(&[]).unwrap().program, &SourceContext::Generated(&sound))
+        .unwrap();
+    for defect in [
+        NotLiteral,
+        WrongLiteral,
+        AlsoStackInput,
+        NotSemanticInput,
+        LiteralHasInputs,
+        LiteralHasEffects,
+    ] {
+        let source = ImmediateCount(defect);
+        assert_eq!(
+            check_selection(
+                source.instantiate(&[]).unwrap().program,
+                &SourceContext::Generated(&source)
+            )
+            .unwrap_err()
+            .category,
+            DiagnosticCategory::InvalidSelectedLowering,
+            "{defect:?}"
+        );
+    }
+}

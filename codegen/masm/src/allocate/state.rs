@@ -289,7 +289,7 @@ impl AllocationState {
                     self.push(*atom)?;
                 }
             }
-            OutputPublication::Aliases => {
+            OutputPublication::Aliases | OutputPublication::Literal => {
                 // Forget stale semantic facts above, but preserve occurrences and storage.
                 // Checked reconstructions now make these complete output names available.
                 self.available_values.extend(definitions);
