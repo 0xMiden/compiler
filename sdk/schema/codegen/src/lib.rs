@@ -114,6 +114,33 @@ impl Default for RuntimePaths {
     }
 }
 
+/// Rust host types generated for the named types reachable from a set of schema types.
+pub struct NamedTypes {
+    tokens: TokenStream,
+    type_idents: Vec<Ident>,
+    rust_names: BTreeMap<String, Ident>,
+    runtime: RuntimePaths,
+}
+
+impl NamedTypes {
+    /// Returns the generated Rust items, including the private helper traits.
+    pub const fn tokens(&self) -> &TokenStream {
+        &self.tokens
+    }
+
+    /// Returns every generated Rust type identifier in emission order.
+    pub fn type_idents(&self) -> &[Ident] {
+        &self.type_idents
+    }
+
+    /// Returns the Rust type of one schema type in the scope of the generated items.
+    ///
+    /// The type must be one of the roots the types were generated from, or reachable from one.
+    pub fn rust_type(&self, ty: &SchemaType) -> Result<TokenStream, CodegenError> {
+        rust_type(ty, &self.rust_names, &self.runtime)
+    }
+}
+
 /// Generates Rust host-profile types and structural felt conversion helpers.
 pub fn generate_host_types(
     schema: &Schema,
@@ -130,9 +157,35 @@ pub fn generate_host_types(
         .name()
         .ok_or_else(|| CodegenError::new("the schema root does not have a WIT name"))?;
 
+    let named = generate_named_types(&[root], runtime)?;
+    let root_ident =
+        named.rust_names.get(root_fqn).cloned().unwrap_or_else(|| type_ident(root_name));
+    let has_nested_named_types = named.rust_names.keys().any(|fqn| fqn != root_fqn);
+
+    Ok(GeneratedTypes {
+        tokens: named.tokens,
+        root_ident,
+        type_idents: named.type_idents,
+        has_nested_named_types,
+    })
+}
+
+/// Generates Rust host-profile types for every named record and variant reachable from `roots`,
+/// with their structural felt conversion helpers.
+///
+/// A schema kind whose root is not one type, such as account storage with one type per slot,
+/// generates the types of all its roots in one scope.
+pub fn generate_named_types(
+    roots: &[&SchemaType],
+    runtime: &RuntimePaths,
+) -> Result<NamedTypes, CodegenError> {
     let mut definitions = Vec::new();
     let mut seen = BTreeSet::new();
-    collect_named_types(root, &mut seen, &mut definitions)?;
+    for root in roots {
+        root.validate_native_leaf_shapes()
+            .map_err(|error| CodegenError::new(error.to_string()))?;
+        collect_named_types(root, &mut seen, &mut definitions)?;
+    }
 
     let mut rust_names = BTreeMap::new();
     let mut used_names = BTreeMap::<String, String>::new();
@@ -150,7 +203,6 @@ pub fn generate_host_types(
         rust_names.insert(fqn.to_owned(), ident);
     }
 
-    let root_ident = rust_names.get(root_fqn).cloned().unwrap_or_else(|| type_ident(root_name));
     let helper_traits = generate_helper_traits(runtime);
     let mut felt_repr_support = FeltReprSupport::default();
     let items = definitions
@@ -166,18 +218,15 @@ pub fn generate_host_types(
                 .clone()
         })
         .collect();
-    let has_nested_named_types = definitions
-        .iter()
-        .any(|definition| definition.fqn().is_some_and(|fqn| fqn != root_fqn));
 
-    Ok(GeneratedTypes {
+    Ok(NamedTypes {
         tokens: quote! {
             #helper_traits
             #(#items)*
         },
-        root_ident,
         type_idents,
-        has_nested_named_types,
+        rust_names,
+        runtime: runtime.clone(),
     })
 }
 
@@ -778,6 +827,12 @@ fn case_docs(case: &SchemaCase) -> TokenStream {
 /// agree on the upper camel case conversion and on the escape of a Rust reserved word.
 pub fn generated_type_ident(name: &str) -> String {
     type_ident(name).to_string()
+}
+
+/// Returns the Rust identifier the generator gives one WIT field name, with a Rust reserved
+/// word escaped.
+pub fn generated_value_ident(name: &str) -> Ident {
+    value_ident(name)
 }
 
 /// Converts a WIT type or case name to a Rust type identifier.

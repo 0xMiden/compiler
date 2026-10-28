@@ -21,7 +21,9 @@
 //!
 //! A protocol slot name is `<component namespace>::<leaf>`. The schema carries the leaf only: a
 //! field name is the leaf in kebab case, and [`StorageSlot::leaf`] returns it in snake case, as
-//! it appears in the slot name.
+//! it appears in the slot name. With the `protocol` feature, [`AccountStorageSchema::from_package`]
+//! also reads the package's protocol component metadata, checks that its slots and the schema's
+//! slots match by leaf and by kind, and records each slot's full name ([`StorageSlot::name`]).
 //!
 //! # Word layout
 //!
@@ -31,8 +33,10 @@
 //!
 //! # Features
 //!
-//! - `protocol` (default): enables the protocol features of `miden-schema` and checks the word
-//!   width against `miden-protocol`. It is what makes this crate depend on `miden-protocol`.
+//! - `protocol` (default): slot names from the protocol metadata, building
+//!   [`InitStorageData`] from text values ([`InitStorageBuilder`]), and decoding slot words. It
+//!   enables the protocol features of `miden-schema` and is what makes this crate depend on
+//!   `miden-protocol`.
 //! - `codec-component`: loading author-supplied codec components with Wasmtime. Implies
 //!   `protocol`.
 //!
@@ -44,6 +48,13 @@ use std::{collections::HashSet, sync::Arc};
 
 pub use miden_schema::*;
 use wit_parser::{Field, Resolve, Type, TypeDefKind, TypeId};
+
+#[cfg(feature = "protocol")]
+mod protocol;
+#[cfg(feature = "protocol")]
+pub use miden_protocol::{Word, account::component::InitStorageData};
+#[cfg(feature = "protocol")]
+pub use protocol::{InitStorageBuilder, felts_from_word, word_from_felts};
 
 #[cfg(test)]
 mod tests;
@@ -89,6 +100,7 @@ pub enum StorageSlotKind {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StorageSlot {
     leaf: String,
+    name: Option<String>,
     docs: Option<String>,
     kind: StorageSlotKind,
 }
@@ -97,6 +109,14 @@ impl StorageSlot {
     /// Returns the slot's leaf name in snake case, the last segment of its protocol slot name.
     pub fn leaf(&self) -> &str {
         &self.leaf
+    }
+
+    /// Returns the slot's full protocol slot name, `<component namespace>::<leaf>`.
+    ///
+    /// The name comes from the package's protocol metadata, so it is `None` for a schema read
+    /// from WIT text alone or without the `protocol` feature.
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     /// Returns the slot's WIT documentation.
@@ -119,17 +139,36 @@ impl StorageSlot {
     }
 }
 
-/// A resolved account storage schema.
-#[derive(Clone, Debug)]
+/// A resolved account storage schema, with the standard codec registry when the `protocol`
+/// feature is enabled.
+#[derive(Clone)]
 pub struct AccountStorageSchema {
     wit_text: String,
     slots: Vec<StorageSlot>,
+    #[cfg(feature = "protocol")]
+    codecs: CodecRegistry,
+}
+
+impl core::fmt::Debug for AccountStorageSchema {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("AccountStorageSchema")
+            .field("wit_text", &self.wit_text)
+            .field("slots", &self.slots)
+            .finish_non_exhaustive()
+    }
 }
 
 impl AccountStorageSchema {
     /// Reads and resolves the account storage schema section from a Miden package.
+    ///
+    /// With the `protocol` feature, the package's protocol component metadata is read as well:
+    /// every schema slot must match a protocol slot by leaf and by kind (value or map), every
+    /// protocol slot must have a schema slot, and each slot gets its full protocol name.
     pub fn from_package(package: &miden_mast_package::Package) -> Result<Self> {
-        Self::from_wit_text(read_schema_section(package, &ACCOUNT_STORAGE_PROFILE)?)
+        let schema = Self::from_wit_text(read_schema_section(package, &ACCOUNT_STORAGE_PROFILE)?)?;
+        #[cfg(feature = "protocol")]
+        let schema = schema.with_protocol_metadata(&protocol::read_component_metadata(package)?)?;
+        Ok(schema)
     }
 
     /// Resolves an account storage schema from a WIT document.
@@ -162,6 +201,8 @@ impl AccountStorageSchema {
         let schema = Self {
             wit_text: wit_text.trim_end_matches('\0').to_owned(),
             slots,
+            #[cfg(feature = "protocol")]
+            codecs: CodecRegistry::default(),
         };
         schema.validate_native_leaf_shapes()?;
         Ok(schema)
@@ -201,6 +242,21 @@ impl AccountStorageSchema {
             .flat_map(StorageSlot::types)
             .try_for_each(SchemaType::validate_native_leaf_shapes)
     }
+
+    /// Returns the slot with a snake-case or kebab-case `leaf` name, or an error naming it.
+    #[cfg(feature = "protocol")]
+    fn find_slot(&self, leaf: &str) -> Result<&StorageSlot> {
+        let normalized = leaf.trim().replace('-', "_");
+        self.slot(&normalized).ok_or_else(|| {
+            Error::new(format!("the account storage schema has no slot named `{normalized}`"))
+        })
+    }
+}
+
+impl CustomTypes for AccountStorageSchema {
+    fn custom_type_fqns(&self) -> HashSet<String> {
+        AccountStorageSchema::custom_type_fqns(self)
+    }
 }
 
 /// Resolves one root record field into a storage slot.
@@ -216,6 +272,7 @@ fn resolve_slot(resolve: &Resolve, field: &Field) -> Result<StorageSlot> {
     };
     Ok(StorageSlot {
         leaf,
+        name: None,
         docs: field.docs.contents.clone(),
         kind,
     })

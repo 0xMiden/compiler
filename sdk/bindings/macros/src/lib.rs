@@ -4,8 +4,12 @@
 
 extern crate proc_macro;
 
+mod storage;
+
+use miden_account_storage_schema::AccountStorageSchema;
+use miden_mast_package::SectionId;
 use miden_note_schema::NoteStorageSchema;
-use miden_schema::{PackageArtifact, PackageResolver};
+use miden_schema::{PackageArtifact, PackageResolver, PackageSchemaKind};
 use miden_schema_codegen::{RuntimePaths, generate_host_types};
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
@@ -15,8 +19,8 @@ use syn::{LitStr, parse_macro_input};
 
 /// Generates typed bindings from the package built by a Miden project.
 ///
-/// The project path is relative to `CARGO_MANIFEST_DIR`. Build the note project with
-/// `cargo miden build` before compiling the consumer.
+/// The project path is relative to `CARGO_MANIFEST_DIR`. Build the note or account component
+/// project with `cargo miden build` before compiling the consumer.
 #[proc_macro]
 pub fn from_project(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as LitStr);
@@ -66,18 +70,48 @@ fn expand_from_package(input: &LitStr) -> syn::Result<TokenStream2> {
 }
 
 /// Expands bindings from a loaded package and tracks the artifact as a macro input.
+///
+/// The schema section the package carries selects the bindings: a note gets its storage root
+/// type, an account component its `Storage` root.
 fn expand_package_artifact(artifact: &PackageArtifact, span: Span) -> syn::Result<TokenStream2> {
-    let schema = NoteStorageSchema::from_package(artifact.package()).map_err(|error| {
+    let read_error = |kind: &str, error: miden_schema::Error| {
         syn::Error::new(
             span,
             format!(
-                "{MACRO_CRATE}: failed to read note storage schema from '{}': {error}",
+                "{MACRO_CRATE}: failed to read {kind} schema from '{}': {error}",
                 artifact.path().display()
             ),
         )
-    })?;
+    };
     let scope_key = artifact.path().to_string_lossy();
-    let bindings = expand_schema(&schema, span, &scope_key)?;
+    let kind = artifact
+        .schema_kind()
+        .map_err(|error| syn::Error::new(span, format!("{MACRO_CRATE}: {error}")))?;
+    let bindings = match kind {
+        PackageSchemaKind::NoteStorage => {
+            let schema = NoteStorageSchema::from_package(artifact.package())
+                .map_err(|error| read_error("note storage", error))?;
+            expand_schema(&schema, span, &scope_key)?
+        }
+        PackageSchemaKind::AccountStorage => {
+            let schema = AccountStorageSchema::from_package(artifact.package())
+                .map_err(|error| read_error("account storage", error))?;
+            let metadata = artifact
+                .package()
+                .sections
+                .iter()
+                .find(|section| section.id == SectionId::ACCOUNT_COMPONENT_METADATA)
+                .map(|section| section.data.as_ref())
+                .expect("an account storage schema is read together with the protocol metadata");
+            storage::expand_storage_schema(
+                &schema,
+                metadata,
+                &binding_facade(),
+                span,
+                &scope_ident(&scope_key),
+            )?
+        }
+    };
     let tracked_path = artifact.path().to_string_lossy();
     let tracked_manifests = artifact
         .tracked_inputs()
@@ -96,10 +130,22 @@ fn expand_package_artifact(artifact: &PackageArtifact, span: Span) -> syn::Resul
 }
 
 /// Expands bindings from a WIT string literal.
+///
+/// Only a note storage schema is accepted: the slot names of an account storage schema come
+/// from the package's protocol metadata.
 fn expand_from_wit_text(input: &LitStr) -> syn::Result<TokenStream2> {
-    let schema = NoteStorageSchema::from_wit_text(&input.value())
-        .map_err(|error| syn::Error::new(input.span(), error.to_string()))?;
-    expand_schema(&schema, input.span(), &input.value())
+    let wit_text = input.value();
+    let schema = NoteStorageSchema::from_wit_text(&wit_text).map_err(|error| {
+        let message = if AccountStorageSchema::from_wit_text(&wit_text).is_ok() {
+            "an account storage schema needs the slot names of its package's protocol metadata; \
+             generate its bindings with from_project! or from_package!"
+                .to_owned()
+        } else {
+            error.to_string()
+        };
+        syn::Error::new(input.span(), message)
+    })?;
+    expand_schema(&schema, input.span(), &wit_text)
 }
 
 /// Adds the typed consumer API to shared generated host types.
@@ -116,7 +162,7 @@ fn expand_schema(
     let root_ident = generated.root_ident();
     let type_idents = generated.type_idents();
     let wit_text = schema.wit_text();
-    let scope_ident = format_ident!("__miden_bindings_{:016x}", stable_hash(scope_key));
+    let scope_ident = scope_ident(scope_key);
     let runtime = quote!(#facade_path::__private);
 
     Ok(quote! {
@@ -259,6 +305,11 @@ fn binding_facade() -> syn::Path {
         }
         Err(_) => syn::parse_quote!(::miden_bindings),
     }
+}
+
+/// Returns the module that scopes the bindings of one macro input.
+fn scope_ident(scope_key: &str) -> syn::Ident {
+    format_ident!("__miden_bindings_{:016x}", stable_hash(scope_key))
 }
 
 /// Returns a deterministic FNV-1a scope suffix for one macro input.

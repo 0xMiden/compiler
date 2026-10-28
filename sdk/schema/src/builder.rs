@@ -14,7 +14,8 @@ use crate::{
 
 /// Builds the felt encoding of a schema root from normalized dotted string paths.
 pub struct ValueBuilder<'a> {
-    schema: &'a Schema,
+    root: &'a SchemaType,
+    kind: &'a str,
     registry: &'a CodecRegistry,
     values: BTreeMap<String, String>,
 }
@@ -22,8 +23,19 @@ pub struct ValueBuilder<'a> {
 impl<'a> ValueBuilder<'a> {
     /// Creates an empty builder for a schema and codec registry.
     pub(crate) fn new(schema: &'a Schema, registry: &'a CodecRegistry) -> Self {
+        Self::for_type(schema.root(), schema.profile().name, registry)
+    }
+
+    /// Creates an empty builder for one type that is not a schema root.
+    ///
+    /// A schema kind whose values are several types, such as the slots of account storage,
+    /// builds each one with its own builder. Paths name the fields of `root`, so it must be a
+    /// record; [`encode_text_value`] encodes a whole value from one text. `kind` names the value
+    /// in diagnostics.
+    pub fn for_type(root: &'a SchemaType, kind: &'a str, registry: &'a CodecRegistry) -> Self {
         Self {
-            schema,
+            root,
+            kind,
             registry,
             values: BTreeMap::new(),
         }
@@ -34,9 +46,9 @@ impl<'a> ValueBuilder<'a> {
     /// Options accept `none` or `some(<value>)`. Variants accept a case name or
     /// `case-name(<value>)` when the selected case has a payload.
     pub fn set(mut self, path: &str, value: impl AsRef<str>) -> Result<Self> {
-        let segments = normalize_path(path, self.schema.profile().name)?;
+        let segments = normalize_path(path, self.kind)?;
         let normalized = segments.join(".");
-        let ty = resolve_path(self.schema.root(), &segments)?;
+        let ty = resolve_path(self.root, &segments)?;
         let value = value.as_ref();
         reject_unsupported_constructor_path(ty, &normalized, value, self.registry)?;
 
@@ -55,17 +67,17 @@ impl<'a> ValueBuilder<'a> {
 
     /// Checks completeness and returns the felts in declaration order.
     pub fn build(self) -> Result<Vec<Felt>> {
-        let kind = self.schema.profile().name;
+        let kind = self.kind;
         let mut felts = Vec::new();
         encode_type(
-            self.schema.root(),
+            self.root,
             "",
             &self.values,
             self.registry,
             kind,
             &mut FeltWriter::new(&mut felts),
         )?;
-        validate_encoding(self.schema.root(), &felts)
+        validate_encoding(self.root, &felts)
             .map_err(|err| err.context(format!("built {kind} does not match its schema")))?;
         Ok(felts)
     }
@@ -161,7 +173,7 @@ fn encode_type(
     writer: &mut FeltWriter<'_>,
 ) -> Result<()> {
     if let Some(value) = values.get(path) {
-        let felts = encode_text_value(ty, value, registry)
+        let felts = encode_text(ty, value, registry)
             .map_err(|err| err.context(format!("value at `{path}`")))?;
         for felt in felts {
             writer.write(felt);
@@ -223,8 +235,24 @@ fn encode_record_fields(
     Ok(())
 }
 
+/// Encodes one whole value of `ty` from text.
+///
+/// The text uses the syntax of [`ValueBuilder::set`]: a leaf value, `none` or `some(<value>)`
+/// for an option, and a case name or `case-name(<value>)` for a variant. A type with a codec in
+/// `registry` is parsed by that codec. A record without a codec has no text form; build it from
+/// its fields with a [`ValueBuilder`].
+pub fn encode_text_value(
+    ty: &SchemaType,
+    value: &str,
+    registry: &CodecRegistry,
+) -> Result<Vec<Felt>> {
+    let felts = encode_text(ty, value, registry)?;
+    validate_encoding(ty, &felts)?;
+    Ok(felts)
+}
+
 /// Encodes one direct string value.
-fn encode_text_value(ty: &SchemaType, value: &str, registry: &CodecRegistry) -> Result<Vec<Felt>> {
+fn encode_text(ty: &SchemaType, value: &str, registry: &CodecRegistry) -> Result<Vec<Felt>> {
     if let Some(fqn) = ty.fqn()
         && let Some(codec) = registry.codec(fqn)
     {
@@ -267,7 +295,7 @@ fn encode_text_value(ty: &SchemaType, value: &str, registry: &CodecRegistry) -> 
                     return Err(Error::new(format!("variant case `{case_name}` needs a payload")));
                 }
                 (Some(payload), Some(payload_text)) => {
-                    felts.extend(encode_text_value(payload, payload_text, registry)?);
+                    felts.extend(encode_text(payload, payload_text, registry)?);
                 }
             }
             Ok(felts)
@@ -292,7 +320,7 @@ fn encode_option(payload: &SchemaType, value: &str, registry: &CodecRegistry) ->
     let payload_text =
         payload_text.ok_or_else(|| Error::new("an option `some` value needs a payload"))?;
     let mut felts = write_repr(&1u32);
-    felts.extend(encode_text_value(payload, payload_text, registry)?);
+    felts.extend(encode_text(payload, payload_text, registry)?);
     Ok(felts)
 }
 

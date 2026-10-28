@@ -146,6 +146,12 @@ impl NoteStorageSchema {
     }
 }
 
+impl CustomTypes for NoteStorageSchema {
+    fn custom_type_fqns(&self) -> std::collections::HashSet<String> {
+        self.0.custom_type_fqns()
+    }
+}
+
 /// Builds note storage from normalized dotted string paths.
 #[cfg(feature = "protocol")]
 pub struct NoteStorageBuilder<'a>(ValueBuilder<'a>);

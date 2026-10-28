@@ -284,7 +284,8 @@ miden_codec::export_codecs!();
 ```
 
 `NoteStorageSchema::from_package`, `builder().set(..).build()` and `decode` are unchanged.
-`CodecRegistry::load_from_package` now takes the schema the codec belongs to:
+`CodecRegistry::load_from_package` now takes the schema the codec belongs to, any schema that
+implements the `CustomTypes` trait (`NoteStorageSchema`, `AccountStorageSchema`, `Schema`):
 
 ```rust
 // Before
@@ -292,7 +293,26 @@ let codecs = CodecRegistry::load_from_package(&package)?;
 
 // After
 let schema = NoteStorageSchema::from_package(&package)?;
-let codecs = CodecRegistry::load_from_package(&package, schema.schema())?;
+let codecs = CodecRegistry::load_from_package(&package, &schema)?;
+```
+
+`miden_bindings::from_project!`/`from_package!` and `miden_codec::from_project!`/`from_package!`
+now also accept account component packages; the schema section the package carries selects the
+kind. For a component, the bindings generate the custom slot types and a `Storage` struct with
+one field per slot (`Vec<(K, V)>` for a map slot) that builds the component's
+`InitStorageData` and decodes slot words; the codec crate generates the custom types of every
+slot. A component project opts in to the codec build with the same
+`[package.metadata.midenc.codec]` table as a note project.
+
+```rust
+miden_bindings::from_project!("../storage-example");
+
+let init_data = Storage {
+    owner_public_key: owner,
+    asset_qty_map: vec![(asset_id, amount)],
+}
+.to_init_storage_data()?;
+let component = AccountComponent::from_package(package, &init_data)?;
 ```
 
 The schema package that `#[note]` emits is no longer versioned: `miden:p2id-schema@0.1.0` is now

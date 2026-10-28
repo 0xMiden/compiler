@@ -55,9 +55,8 @@ impl Error {
         self.codec_failure
     }
 
-    /// Adds context before the current error message.
-    #[cfg(feature = "protocol")]
-    pub(crate) fn context(self, context: impl fmt::Display) -> Self {
+    /// Adds context before the current error message, keeping the codec failure class.
+    pub fn context(self, context: impl fmt::Display) -> Self {
         Self {
             message: format!("{context}: {}", self.message),
             codec_failure: self.codec_failure,

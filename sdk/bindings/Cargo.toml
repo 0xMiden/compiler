@@ -17,6 +17,7 @@ edition.workspace = true
 doctest = false
 
 [dependencies]
+miden-account-storage-schema = { workspace = true, features = ["protocol"] }
 miden-bindings-macros.workspace = true
 miden-field.workspace = true
 miden-field-repr.workspace = true

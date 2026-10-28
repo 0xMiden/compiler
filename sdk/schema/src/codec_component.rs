@@ -11,7 +11,7 @@ use wasmtime::{
 };
 
 use crate::{
-    CodecFailure, CodecRegistry, ConsumerTypeCodec, Error, Result, Schema,
+    CodecFailure, CodecRegistry, ConsumerTypeCodec, CustomTypes, Error, Result,
     codec_structure::{MAX_CORE_INSTANCES, MAX_INSTANTIATED_MEMORIES, MAX_INSTANTIATED_TABLES},
     validate_codec_component,
 };
@@ -97,7 +97,10 @@ impl CodecRegistry {
     /// Loads the codec component from a package under the default limits.
     ///
     /// `schema` is the package's schema; the component may only handle its custom types.
-    pub fn load_from_package(package: &Package, schema: &Schema) -> Result<Self> {
+    pub fn load_from_package(
+        package: &Package,
+        schema: &(impl CustomTypes + ?Sized),
+    ) -> Result<Self> {
         Self::load_from_package_with_limits(package, schema, CodecLimits::default())
     }
 
@@ -110,7 +113,7 @@ impl CodecRegistry {
     /// registers on top of. More than one codec section is still an error.
     pub fn load_from_package_with_limits(
         package: &Package,
-        schema: &Schema,
+        schema: &(impl CustomTypes + ?Sized),
         limits: CodecLimits,
     ) -> Result<Self> {
         let section_id = package_codec_section_id();
@@ -123,7 +126,11 @@ impl CodecRegistry {
     }
 
     /// Loads a codec component with every unresolved import stubbed as a trap.
-    fn load_from_component(bytes: &[u8], schema: &Schema, limits: CodecLimits) -> Result<Self> {
+    fn load_from_component(
+        bytes: &[u8],
+        schema: &(impl CustomTypes + ?Sized),
+        limits: CodecLimits,
+    ) -> Result<Self> {
         let runtime = Arc::new(ComponentRuntime::new(bytes, limits)?);
         let supported_types = runtime.supported_types()?;
         let mut registry = Self::default();
@@ -513,7 +520,7 @@ impl ConsumerTypeCodec for ComponentCodec {
 /// Validates the component's claimed type authority before registration.
 fn validate_reported_fqns(
     reported: &[String],
-    schema: &Schema,
+    schema: &(impl CustomTypes + ?Sized),
     standard_registry: &CodecRegistry,
 ) -> Result<()> {
     let custom_type_fqns = schema.custom_type_fqns();
@@ -535,8 +542,7 @@ fn validate_reported_fqns(
         if !custom_type_fqns.contains(fqn) {
             return Err(Error::new(format!(
                 "codec component reported `{fqn}`, but that custom type does not appear in the \
-                 package {} schema",
-                schema.profile().name
+                 package schema"
             )));
         }
     }
@@ -652,7 +658,7 @@ pub(crate) mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::tests::NOTE_PROFILE;
+    use crate::{Schema, tests::NOTE_PROFILE};
 
     const WASM_TARGET: &str = "wasm32-wasip2";
     const FIXTURE_FQN: &str = "example:codec-schema/note-storage.ratio";
@@ -1096,7 +1102,7 @@ package miden:base@1.0.0 {
             validate_reported_fqns(&["example:other/schema.value".to_owned()], &allowed, &standard)
                 .unwrap_err()
                 .to_string();
-        assert!(unrelated.contains("does not appear in the package note storage schema"));
+        assert!(unrelated.contains("does not appear in the package schema"));
 
         let duplicate = validate_reported_fqns(
             &[FIXTURE_FQN.to_owned(), FIXTURE_FQN.to_owned()],

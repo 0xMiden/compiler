@@ -1,8 +1,10 @@
 //! Author-side support for codecs of custom types in Miden package schemas.
 //!
-//! A codec crate generates the custom types of one package schema (today, a note storage
-//! schema), implements [`AuthorTypeCodec`] for the ones that need text parsing, display, or
-//! validation, and builds to a Wasm component that the compiler embeds in the package.
+//! A codec crate generates the custom types of one package schema, implements
+//! [`AuthorTypeCodec`] for the ones that need text parsing, display, or validation, and builds to
+//! a Wasm component that the compiler embeds in the package. The package is a note, whose note
+//! storage schema supplies the types, or an account component, whose account storage schema
+//! supplies the types of its storage slots, map keys, and map values.
 //!
 //! Codec components exchange field elements as canonical `u64` values. This crate checks every
 //! integer before it enters [`Felt`], so a component cannot introduce a non-canonical (unreduced)
@@ -25,18 +27,18 @@
 //! miden_codec::export_codecs!();
 //! ```
 //!
-//! The note project opts in to the codec build with package-level metadata in its
-//! `miden-project.toml`. The `crate` directory is relative to that manifest:
+//! The note or account component project opts in to the codec build with package-level
+//! metadata in its `miden-project.toml`. The `crate` directory is relative to that manifest:
 //!
 //! ```toml
 //! [package.metadata.midenc.codec]
 //! crate = "../my-note-codec"
 //! ```
 //!
-//! The codec is embedded only when the note is built as its own project. A note that another
-//! project pulls in as a source dependency carries no codec section, because the codec crate's
-//! inputs are outside the build provenance, so a stored dependency copy could keep a stale codec
-//! after the codec crate changes. Load the note's own package to get the codec.
+//! The codec is embedded only when the note or component is built as its own project. A package
+//! that another project pulls in as a source dependency carries no codec section, because the
+//! codec crate's inputs are outside the build provenance, so a stored dependency copy could keep
+//! a stale codec after the codec crate changes. Load the project's own package to get the codec.
 
 #![deny(missing_docs)]
 

@@ -6,7 +6,11 @@ use std::{
 };
 
 use miden_mast_package::Package;
-use midenc_frontend_wasm_metadata::package_cache;
+use midenc_frontend_wasm_metadata::{
+    PACKAGE_ACCOUNT_STORAGE_SCHEMA_SECTION_ID, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
+    package_account_storage_schema_section_id, package_cache,
+    package_note_storage_schema_section_id,
+};
 
 use crate::{Error, Result};
 
@@ -36,6 +40,38 @@ impl PackageArtifact {
     pub fn tracked_inputs(&self) -> &[PathBuf] {
         &self.tracked_inputs
     }
+
+    /// Returns the kind of the schema the package carries, told by its schema section.
+    ///
+    /// A package carries exactly one schema section: a note package the note storage schema, an
+    /// account component package the account storage schema.
+    pub fn schema_kind(&self) -> Result<PackageSchemaKind> {
+        let has_section = |id: miden_mast_package::SectionId| {
+            self.package.sections.iter().any(|section| section.id == id)
+        };
+        let note = has_section(package_note_storage_schema_section_id());
+        let storage = has_section(package_account_storage_schema_section_id());
+        match (note, storage) {
+            (true, false) => Ok(PackageSchemaKind::NoteStorage),
+            (false, true) => Ok(PackageSchemaKind::AccountStorage),
+            (found_note, _) => Err(Error::new(format!(
+                "package '{}' carries {} of the `{PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID}` (a \
+                 note) and `{PACKAGE_ACCOUNT_STORAGE_SCHEMA_SECTION_ID}` (an account component) \
+                 sections; a package needs exactly one",
+                self.path.display(),
+                if found_note { "both" } else { "neither" }
+            ))),
+        }
+    }
+}
+
+/// The kind of schema a package carries.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PackageSchemaKind {
+    /// A note storage schema, carried by a note package.
+    NoteStorage,
+    /// An account storage schema, carried by an account component package.
+    AccountStorage,
 }
 
 /// Resolves package artifacts for one schema macro crate.

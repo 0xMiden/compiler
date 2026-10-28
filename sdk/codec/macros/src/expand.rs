@@ -1,9 +1,10 @@
 //! Macro expansion for generated author types and component dispatch.
 
+use miden_account_storage_schema::{AccountStorageSchema, StorageSlotKind};
 use miden_codec_wit::CODEC_WIT;
 use miden_note_schema::NoteStorageSchema;
-use miden_schema::{PackageArtifact, PackageResolver, Schema};
-use miden_schema_codegen::{RuntimePaths, generate_host_types};
+use miden_schema::{PackageArtifact, PackageResolver, PackageSchemaKind, SchemaType};
+use miden_schema_codegen::{RuntimePaths, generate_named_types};
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
@@ -31,24 +32,53 @@ pub(crate) fn from_package(input: &LitStr) -> syn::Result<TokenStream> {
 }
 
 /// Expands a WIT string literal for internal tests.
+///
+/// The text is a note storage schema or, failing that, an account storage schema.
 pub(crate) fn from_wit_text(input: &LitStr) -> syn::Result<TokenStream> {
-    let schema = NoteStorageSchema::from_wit_text(&input.value())
-        .map_err(|error| syn::Error::new(input.span(), error.to_string()))?;
-    expand_schema(schema.schema(), input.span())
+    let wit_text = input.value();
+    match NoteStorageSchema::from_wit_text(&wit_text) {
+        Ok(schema) => expand_note_schema(&schema, input.span()),
+        Err(note_error) => match AccountStorageSchema::from_wit_text(&wit_text) {
+            Ok(schema) => expand_storage_schema(&schema, input.span()),
+            Err(storage_error) => Err(syn::Error::new(
+                input.span(),
+                format!(
+                    "the WIT is neither a note storage schema ({note_error}) nor an account \
+                     storage schema ({storage_error})"
+                ),
+            )),
+        },
+    }
 }
 
 /// Loads one package, tracks it as an input, and expands its schema types.
+///
+/// The schema section the package carries selects the schema kind.
 fn expand_package_artifact(artifact: &PackageArtifact, span: Span) -> syn::Result<TokenStream> {
-    let schema = NoteStorageSchema::from_package(artifact.package()).map_err(|error| {
+    let read_error = |kind: &str, error: miden_schema::Error| {
         syn::Error::new(
             span,
             format!(
-                "{MACRO_CRATE}: failed to read note storage schema from '{}': {error}",
+                "{MACRO_CRATE}: failed to read {kind} schema from '{}': {error}",
                 artifact.path().display()
             ),
         )
-    })?;
-    let types = expand_schema(schema.schema(), span)?;
+    };
+    let kind = artifact
+        .schema_kind()
+        .map_err(|error| syn::Error::new(span, format!("{MACRO_CRATE}: {error}")))?;
+    let types = match kind {
+        PackageSchemaKind::NoteStorage => {
+            let schema = NoteStorageSchema::from_package(artifact.package())
+                .map_err(|error| read_error("note storage", error))?;
+            expand_note_schema(&schema, span)?
+        }
+        PackageSchemaKind::AccountStorage => {
+            let schema = AccountStorageSchema::from_package(artifact.package())
+                .map_err(|error| read_error("account storage", error))?;
+            expand_storage_schema(&schema, span)?
+        }
+    };
     let tracked_path = artifact.path().to_string_lossy();
     let tracked_manifests = artifact
         .tracked_inputs()
@@ -66,13 +96,32 @@ fn expand_package_artifact(artifact: &PackageArtifact, span: Span) -> syn::Resul
     })
 }
 
-/// Generates host-profile types and records their WIT identities.
-fn expand_schema(schema: &Schema, span: Span) -> syn::Result<TokenStream> {
+/// Generates the host-profile types of a note storage schema, its root included.
+fn expand_note_schema(schema: &NoteStorageSchema, span: Span) -> syn::Result<TokenStream> {
+    expand_types(schema.wit_text(), &[schema.root()], span)
+}
+
+/// Generates the host-profile types of the slots of an account storage schema.
+fn expand_storage_schema(schema: &AccountStorageSchema, span: Span) -> syn::Result<TokenStream> {
+    let roots = schema
+        .slots()
+        .iter()
+        .flat_map(|slot| match slot.kind() {
+            StorageSlotKind::Value(ty) => vec![ty.as_ref()],
+            StorageSlotKind::Map { key, value } => vec![key.as_ref(), value.as_ref()],
+        })
+        .collect::<Vec<_>>();
+    expand_types(schema.wit_text(), &roots, span)
+}
+
+/// Generates the named types reachable from `roots` and records their WIT identities under the
+/// schema `wit_text`.
+fn expand_types(wit_text: &str, roots: &[&SchemaType], span: Span) -> syn::Result<TokenStream> {
     let facade = codec_facade();
     let runtime = RuntimePaths::through_facade(quote!(#facade));
-    let generated = generate_host_types(schema, &runtime)
+    let generated = generate_named_types(roots, &runtime)
         .map_err(|error| syn::Error::new(span, error.to_string()))?;
-    register_schema(schema, span)?;
+    register_schema(wit_text, roots, span)?;
     Ok(generated.tokens().clone())
 }
 

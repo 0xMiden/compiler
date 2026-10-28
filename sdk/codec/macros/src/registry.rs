@@ -5,7 +5,7 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use miden_schema::{Schema, SchemaCase, SchemaType, SchemaTypeKind};
+use miden_schema::{SchemaCase, SchemaType, SchemaTypeKind};
 use miden_schema_codegen::generated_type_ident;
 use proc_macro2::Span;
 
@@ -75,10 +75,20 @@ fn registry() -> &'static Mutex<BTreeMap<String, Registry>> {
     REGISTRY.get_or_init(|| Mutex::new(BTreeMap::new()))
 }
 
-/// Records every generated named type, including the storage root.
-pub(crate) fn register_schema(schema: &Schema, span: Span) -> syn::Result<()> {
+/// Records every named type generated from `roots` under the schema `wit_text`.
+///
+/// The roots are the schema root of a note storage schema, or the slot types of an account
+/// storage schema; the WIT text identifies the schema.
+pub(crate) fn register_schema(
+    wit_text: &str,
+    roots: &[&SchemaType],
+    span: Span,
+) -> syn::Result<()> {
     let mut bindings = BTreeMap::new();
-    collect_type_bindings(schema.root(), &mut BTreeSet::new(), &mut bindings)?;
+    let mut seen = BTreeSet::new();
+    for root in roots {
+        collect_type_bindings(root, &mut seen, &mut bindings)?;
+    }
     let bindings = index_by_rust_type_name(&bindings, span)?;
 
     let mut registries = registry()
@@ -87,7 +97,7 @@ pub(crate) fn register_schema(schema: &Schema, span: Span) -> syn::Result<()> {
     let registry = registries.entry(macro_invocation_crate_key()).or_default();
     let location = expansion_location(span);
     match &registry.schema {
-        Some((existing, _)) if existing == schema.wit_text() => return Ok(()),
+        Some((existing, _)) if existing == wit_text => return Ok(()),
         Some((_, existing_location)) if *existing_location == location => {
             // A long-lived macro host re-expanded an edited invocation; replace the stale
             // schema and drop the codecs that were registered against it.
@@ -103,7 +113,7 @@ pub(crate) fn register_schema(schema: &Schema, span: Span) -> syn::Result<()> {
         }
         None => {}
     }
-    registry.schema = Some((schema.wit_text().to_owned(), location));
+    registry.schema = Some((wit_text.to_owned(), location));
     registry.types = bindings;
     Ok(())
 }

@@ -124,6 +124,24 @@ pub(crate) fn decode(
     Ok(value)
 }
 
+/// Decodes one value of `ty` from the start of `felts` with the codecs of `registry`.
+///
+/// Returns the value and the number of felts it consumed; the felts after them are left to the
+/// caller. The value is named after the type.
+pub fn decode_felts(
+    ty: &SchemaType,
+    felts: &[Felt],
+    registry: &CodecRegistry,
+) -> Result<(DecodedValue, usize)> {
+    decode_type(
+        ty,
+        felts,
+        Some(registry),
+        ty.name().map(str::to_owned),
+        ty.docs().map(str::to_owned),
+    )
+}
+
 /// Validates one complete structural encoding without applying codecs.
 pub(crate) fn validate_encoding(ty: &SchemaType, felts: &[Felt]) -> Result<()> {
     let (_, consumed) = decode_type(ty, felts, None, None, None)?;

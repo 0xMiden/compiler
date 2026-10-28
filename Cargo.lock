@@ -3079,6 +3079,8 @@ dependencies = [
  "miden-protocol",
  "miden-schema",
  "midenc-frontend-wasm-metadata",
+ "midenc-integration-test-support",
+ "tempfile",
  "wit-parser 0.259.0",
 ]
 
@@ -3243,6 +3245,7 @@ dependencies = [
 name = "miden-bindings"
 version = "0.15.0"
 dependencies = [
+ "miden-account-storage-schema",
  "miden-bindings-macros",
  "miden-field",
  "miden-field-repr",
@@ -3259,7 +3262,10 @@ dependencies = [
 name = "miden-bindings-macros"
 version = "0.15.0"
 dependencies = [
+ "miden-account-storage-schema",
+ "miden-mast-package",
  "miden-note-schema",
+ "miden-protocol",
  "miden-schema",
  "miden-schema-codegen",
  "midenc-expect-test",
@@ -3345,6 +3351,7 @@ dependencies = [
 name = "miden-codec-macros"
 version = "0.15.0"
 dependencies = [
+ "miden-account-storage-schema",
  "miden-codec-wit",
  "miden-note-schema",
  "miden-schema",

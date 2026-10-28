@@ -10,10 +10,12 @@ mod registry;
 use proc_macro::TokenStream;
 use syn::{ItemImpl, LitStr, parse_macro_input};
 
-/// Generates host-profile note types from the package built by a Miden project.
+/// Generates host-profile schema types from the package built by a Miden project.
 ///
-/// The project path is relative to `CARGO_MANIFEST_DIR`. Build the note project with
-/// `cargo miden build` before compiling the codec crate.
+/// The package is a note or an account component; the types are those of its note storage
+/// schema or of its account storage slots. The project path is relative to
+/// `CARGO_MANIFEST_DIR`. Build the project with `cargo miden build` before compiling the codec
+/// crate.
 #[proc_macro]
 pub fn from_project(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as LitStr);
@@ -22,7 +24,8 @@ pub fn from_project(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Generates host-profile note types from one exact Miden package path.
+/// Generates host-profile schema types from one exact Miden package path, a note or an account
+/// component.
 ///
 /// A relative path is resolved against `CARGO_MANIFEST_DIR`.
 #[proc_macro]
@@ -33,7 +36,8 @@ pub fn from_package(input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Generates host-profile note types from WIT text for internal tests.
+/// Generates host-profile schema types from note or account storage schema WIT text for internal
+/// tests.
 #[doc(hidden)]
 #[proc_macro]
 pub fn from_wit_text(input: TokenStream) -> TokenStream {

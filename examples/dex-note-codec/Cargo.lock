@@ -1614,6 +1614,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "miden-account-storage-schema"
+version = "0.15.0"
+dependencies = [
+ "miden-mast-package",
+ "miden-schema",
+ "midenc-frontend-wasm-metadata",
+ "wit-parser",
+]
+
+[[package]]
 name = "miden-ace-codegen"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1709,6 +1719,7 @@ dependencies = [
 name = "miden-codec-macros"
 version = "0.15.0"
 dependencies = [
+ "miden-account-storage-schema",
  "miden-codec-wit",
  "miden-note-schema",
  "miden-schema",

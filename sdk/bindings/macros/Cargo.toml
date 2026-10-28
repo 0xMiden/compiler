@@ -18,6 +18,8 @@ proc-macro = true
 doctest = false
 
 [dependencies]
+miden-account-storage-schema = { workspace = true, features = ["protocol"] }
+miden-mast-package = { workspace = true, features = ["std"] }
 miden-note-schema = { workspace = true, features = ["protocol"] }
 miden-schema = { workspace = true, features = ["protocol"] }
 miden-schema-codegen.workspace = true
@@ -28,5 +30,6 @@ quote.workspace = true
 syn.workspace = true
 
 [dev-dependencies]
+miden-protocol = { workspace = true, features = ["std"] }
 midenc-expect-test.workspace = true
 prettyplease = { workspace = true }

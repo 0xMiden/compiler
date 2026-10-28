@@ -268,6 +268,24 @@ impl SchemaCase {
     }
 }
 
+/// A resolved schema that names the custom types a package's codec may handle.
+///
+/// Every schema kind implements it, so a codec registry can be loaded against the schema of any
+/// package kind.
+pub trait CustomTypes {
+    /// Returns every custom named type in the schema.
+    ///
+    /// A custom type is a named type that is not a [`StandardLeaf`]; these are the types an
+    /// author codec may handle.
+    fn custom_type_fqns(&self) -> HashSet<String>;
+}
+
+impl CustomTypes for Schema {
+    fn custom_type_fqns(&self) -> HashSet<String> {
+        Schema::custom_type_fqns(self)
+    }
+}
+
 /// A resolved schema of one [`SchemaProfile`], with the standard codec registry when the
 /// `protocol` feature is enabled.
 #[derive(Clone)]

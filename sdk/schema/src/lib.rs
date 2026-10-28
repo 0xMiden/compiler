@@ -56,9 +56,9 @@ mod value;
 #[cfg(all(test, feature = "protocol"))]
 mod tests;
 
-pub use artifact::{PackageArtifact, PackageResolver};
+pub use artifact::{PackageArtifact, PackageResolver, PackageSchemaKind};
 #[cfg(feature = "protocol")]
-pub use builder::ValueBuilder;
+pub use builder::{ValueBuilder, encode_text_value};
 #[cfg(feature = "protocol")]
 pub use codec::{CodecRegistry, ConsumerTypeCodec};
 #[cfg(feature = "codec-component")]
@@ -70,10 +70,10 @@ pub use codec_structure::{
 pub use error::{CodecFailure, Error, Result};
 pub use miden_field::Felt;
 pub use schema::{
-    FeltLayout, PrimitiveType, ResolvedSchema, Schema, SchemaCase, SchemaField, SchemaLimits,
-    SchemaProfile, SchemaType, SchemaTypeKind, build_model_type, read_schema_section,
+    CustomTypes, FeltLayout, PrimitiveType, ResolvedSchema, Schema, SchemaCase, SchemaField,
+    SchemaLimits, SchemaProfile, SchemaType, SchemaTypeKind, build_model_type, read_schema_section,
     resolve_schema_package,
 };
 pub use standard_leaf::{ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, FELT_FQN, StandardLeaf, WORD_FQN};
 #[cfg(feature = "protocol")]
-pub use value::{DecodedValue, DecodedValueKind};
+pub use value::{DecodedValue, DecodedValueKind, decode_felts};

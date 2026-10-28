@@ -29,3 +29,7 @@ miden-schema.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
 # This reader accepts package-supplied WIT; it walks the root record the schema model does not.
 wit-parser.workspace = true
+
+[dev-dependencies]
+midenc-integration-test-support.workspace = true
+tempfile.workspace = true

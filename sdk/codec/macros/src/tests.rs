@@ -217,3 +217,74 @@ fn codec_registry_uses_canonical_standard_leaf_definition() {
     assert!(source.contains("pub struct Digest"));
     assert!(error.contains("not part of a registered schema"));
 }
+
+const STORAGE_SCHEMA: &str = r#"
+package example:codec-storage-schema;
+
+interface account-storage {
+    record ratio {
+        numerator: u32,
+        denominator: u32,
+    }
+
+    record pair {
+        left: u32,
+        right: u32,
+    }
+
+    record storage {
+        count: u32,
+        prices: list<tuple<pair, ratio>>,
+    }
+}
+"#;
+
+#[test]
+fn a_storage_schema_registers_the_types_of_every_slot() {
+    let _guard = lock_registry();
+    reset_for_tests();
+    let schema = LitStr::new(STORAGE_SCHEMA, Span::call_site());
+    let generated = expand::from_wit_text(&schema).unwrap();
+    for rust_type in ["Pair", "Ratio"] {
+        let ident = syn::Ident::new(rust_type, Span::call_site());
+        let item: ItemImpl = syn::parse2(quote! {
+            impl miden_codec::AuthorTypeCodec for #ident {
+                fn parse(_value: &str) -> Result<Self, String> { todo!() }
+                fn display(&self) -> String { todo!() }
+                fn validate(&self) -> Result<(), String> { todo!() }
+            }
+        })
+        .unwrap();
+        expand::codec(quote!(), item).unwrap();
+    }
+    // The root record holds the slots; it is not a type of any slot.
+    let root: ItemImpl = syn::parse2(quote! {
+        impl miden_codec::AuthorTypeCodec for Storage {
+            fn parse(_value: &str) -> Result<Self, String> { todo!() }
+            fn display(&self) -> String { todo!() }
+            fn validate(&self) -> Result<(), String> { todo!() }
+        }
+    })
+    .unwrap();
+    let error = expand::codec(quote!(), root).unwrap_err().to_string();
+    let exported = expand::export_codecs(quote!()).unwrap();
+    let source = prettyplease::unparse(&syn::parse2(quote!(#generated #exported)).unwrap());
+
+    assert!(error.contains("not part of a registered schema"), "{error}");
+    assert!(source.contains("pub struct Pair"));
+    assert!(source.contains("pub struct Ratio"));
+    assert!(!source.contains("pub struct Storage"));
+    assert!(source.contains("example:codec-storage-schema/account-storage.pair"));
+    assert!(source.contains("example:codec-storage-schema/account-storage.ratio"));
+}
+
+#[test]
+fn wit_text_that_is_no_schema_names_both_kinds() {
+    let _guard = lock_registry();
+    reset_for_tests();
+    let schema = LitStr::new("package example:empty;", Span::call_site());
+    let error = expand::from_wit_text(&schema).unwrap_err().to_string();
+
+    assert!(error.contains("neither a note storage schema"), "{error}");
+    assert!(error.contains("nor an account storage schema"), "{error}");
+}
