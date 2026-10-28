@@ -1,8 +1,8 @@
 // RUN: not midenc %s --emit=masm=- -o %t/out.masp 2>&1 | filecheck %s
 //
 // The call window is padded by felt count, and a zero-sized value has no field element in it,
-// so a `hir.dyncall` returning one (`?` parses to an unknown type of size zero) is reported by
-// legalization rather than reaching the emitter.
+// so a `hir.dyncall` returning one (`?` parses to an unknown type of size zero) is reported as a
+// diagnostic at the call rather than panicking the backend.
 
 builtin.world {
     builtin.module public @app {
@@ -14,6 +14,6 @@ builtin.world {
 };
 
 // The report is wrapped to the terminal's width, so its parts are pinned one by one.
-// CHECK: failed to legalize operation 'hir.dyncall'
-// CHECK: zero-sized
+// CHECK: operand has no raw representation
+// CHECK: hir.dyncall
 // CHECK-NOT: panicked

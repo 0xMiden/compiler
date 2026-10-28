@@ -241,11 +241,11 @@ SDK macros derive its interface from the package manifest:
   `get-conversion-rate: func(..) -> tuple<bool, conversion-rate>`). A derived procedure can also
   be called through FPI, which puts a six-element prefix (the account id prefix and suffix and
   the procedure root) before the parameters: a parameter list that does not fit beside the
-  prefix (more than 16 elements with it) travels through memory, and otherwise the prefix, the
-  parameter elements and, for a result that flattens to more than one value, its pointer must
-  fit 16 elements. So a procedure with exactly ten parameter elements and such a result is
-  callable natively but not through FPI, which reports that the FPI import lowers to 17 operand
-  stack felts; among the standard components, `check_policy` of
+  prefix (more than 16 elements with it) travels through memory, and otherwise the prefix and
+  the parameter elements must fit 16 elements. The pointer through which a result that flattens
+  to more than one value is returned stays in the caller's context and does not count, so a
+  procedure with exactly ten parameter elements and such a result is callable both natively and
+  through FPI; among the standard components, `check_policy` of
   `miden-standards-faucets-policies-mint-allow-all` and
   `miden-standards-faucets-policies-mint-owner-controlled-owner-only` is such a procedure.
 

@@ -60,8 +60,9 @@ fn an_export_returning_sixteen_felts_compiles() {
 fn an_export_returning_eighteen_felts_is_rejected() {
     let err = compile_u64_record_component(9).expect_err("an 18-felt result must be rejected");
     assert!(
-        err.contains("component export `get_record` returns 18 result felts")
-            && err.contains("at most 16"),
+        err.contains(
+            "get_record': 18 result field elements exceed the 16-element context result ABI"
+        ),
         "unexpected diagnostic: {err}"
     );
 }

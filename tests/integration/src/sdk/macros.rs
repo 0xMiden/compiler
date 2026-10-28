@@ -27,7 +27,8 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
 
 /// The over-wide-argument negative case: the account's `test_custom_types` export takes a
 /// `StructA` (12 felts) and an `Asset` (8 felts), 20 argument felts in all, more than the 16 a
-/// cross-context call passes on the operand stack, so the account is rejected at export lifting.
+/// cross-context call passes on the operand stack. Canonical flattening collapses such a list into
+/// a tuple pointer, which export lifting rejects as the unimplemented advice-provider path.
 #[test]
 fn component_macros_account_and_note() {
     let config = WasmTranslationConfig::default();
@@ -55,7 +56,9 @@ fn component_macros_account_and_note() {
     };
 
     assert!(
-        panic_message.contains("takes 20 argument felts") && panic_message.contains("at most 16"),
+        panic_message.contains("test_custom_types")
+            && panic_message
+                .contains("not yet implemented for passing the parameters using the advice"),
         "unexpected panic message: {panic_message}"
     );
 }
@@ -1339,11 +1342,12 @@ impl ReceiveNote {
     );
 }
 
-/// A procedure with ten parameter felts and a multi-value result is offered, since a native call
-/// can pass it; over FPI the six prefix felts, the parameters and the result pointer take 17
-/// stack elements, and the FPI lowering reports that.
+/// A procedure with ten parameter felts and a multi-value result is offered and compiles both
+/// natively and over FPI: the result pointer of the generated lowering never crosses the context
+/// boundary, so it does not count against the sixteen-element window the six FPI prefix felts
+/// and the parameters share.
 #[test]
-fn masm_account_component_ten_felts_and_tuple_result_compile_natively_but_not_over_fpi() {
+fn masm_account_component_ten_felts_and_tuple_result_compile_natively_and_over_fpi() {
     const NAMESPACE: &str = "miden::test_wallet::wallet";
     const SOURCE: &str = "@account_procedure
 pub proc check(a: word, b: felt, c: felt, d: word) -> (word, felt)
@@ -1387,9 +1391,11 @@ impl CheckNote {
         "account.check(arg, arg[0], arg[1], arg)",
         "TestAccount::new(AccountId::new(arg[1], arg[2])).check(arg, arg[0], arg[1], arg)",
     );
-    let err =
-        compiler_test("masm_account_component_ten_felts_fpi", &fpi_lib_rs).compile_package_err();
-    assert!(err.contains("lowers to 17 operand stack felts"), "unexpected error: {err}");
+    let masm = compiler_test("masm_account_component_ten_felts_fpi", &fpi_lib_rs).masm_src();
+    assert!(
+        masm.contains("exec.::miden::protocol::tx::execute_foreign_procedure"),
+        "expected an FPI call in:\n{masm}"
+    );
 }
 
 /// A Miden Assembly account-component dependency without WIT is usable from `#[account]`.

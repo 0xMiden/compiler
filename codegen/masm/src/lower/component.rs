@@ -753,7 +753,7 @@ fn world_body_to_masm_component(
             let stub = path
                 .to_absolute()
                 .map_err(|err| Report::msg(format!("unable to canonicalize '{}': {err}", path)))?;
-            if namespace.strip_prefix(&*stub).is_some() {
+            if namespace.strip_prefix(&stub).is_some() {
                 return Err(Report::msg(format!(
                     "refusing to root a world that defines no component at '{namespace}', at or \
                      under '{stub}', the namespace of one of its declaration-only components: its \
