@@ -202,8 +202,9 @@ fn user_masm_counter_is_updated_by_a_rust_note() {
 /// and checks them against the values the host passes in its arguments, so every element of the
 /// word must come back where the component puts it. It then checks, against values that change
 /// when felts are reordered, `wide` (four words, the 16 parameter felts a call can pass), `split`
-/// (a tuple result), `four_words` (the 16 result felts a call can return) and `fifteen_to_word`
-/// (15 parameter felts next to the pointer of a word result).
+/// (a tuple result), `four_words` (the 16 result felts a call can return), `fifteen_to_word` and
+/// `sixteen_to_word` (15 and 16 parameter felts next to the pointer of a word result, which
+/// takes no stack element of the call).
 #[test]
 fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
     let tx_script_package =
@@ -223,7 +224,7 @@ fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
     // Pinned at the cycles of the script's calls into the counter.
-    expect!["6028"].assert_eq(tx_script_processing_cycles(&measurements));
+    expect!["6538"].assert_eq(tx_script_processing_cycles(&measurements));
     assert_count(&chain, account.id(), INITIAL_COUNT);
 }
 
@@ -297,7 +298,7 @@ fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
 
     let cycles = consume_note(&mut chain, &wallet, &note, &[counter.id()]);
     // Pinned at the cycles of the note's two foreign calls into the counter.
-    expect!["4290"].assert_eq(&cycles);
+    expect!["4280"].assert_eq(&cycles);
     assert_count(&chain, counter.id(), INITIAL_COUNT);
 }
 

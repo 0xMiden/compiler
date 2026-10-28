@@ -373,10 +373,11 @@ end
     );
 }
 
-/// A result flattening to several values comes back through a pointer passed after the
-/// parameters, which counts against the direct-call budget; a single-value result does not.
+/// A result flattening to several values comes back through a pointer the consumer's lowering
+/// passes after the parameters, which stays in the caller's context and does not count against
+/// the direct-call budget: sixteen parameter elements are offered whatever the result.
 #[test]
-fn a_multi_value_result_counts_its_pointer_in_the_parameter_budget() {
+fn a_multi_value_result_does_not_count_its_pointer_in_the_parameter_budget() {
     let iface = component(
         r#"
 @account_procedure
@@ -401,16 +402,7 @@ end
 "#,
     );
     let generated = generate(&iface).unwrap();
-    let skipped: Vec<(&str, &str)> =
-        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
-    assert_eq!(
-        skipped,
-        [(
-            "miden::test::my_component::sixteen_to_word",
-            "parameters and the result pointer occupy 17 stack elements, more than the 16 a \
-             direct call can pass"
-        )]
-    );
+    assert!(generated.skipped.is_empty(), "{:?}", generated.skipped);
     assert_eq!(
         parse(&generated.wit, "my-component"),
         [
@@ -425,6 +417,10 @@ end
             (
                 "sixteen-to-nothing".to_owned(),
                 "miden::test::my_component::sixteen_to_nothing".to_owned()
+            ),
+            (
+                "sixteen-to-word".to_owned(),
+                "miden::test::my_component::sixteen_to_word".to_owned()
             ),
         ]
     );

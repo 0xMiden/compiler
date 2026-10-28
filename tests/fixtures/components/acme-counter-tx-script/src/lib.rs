@@ -7,8 +7,9 @@
 //! multi-element result comes back; `wide` takes four words, the 16 parameter felts a call can
 //! pass, and its result pins the order in which they arrive. `split` returns a tuple, whose order
 //! the script checks; `four_words` returns the 16 result felts a call can return, and
-//! `fifteen_to_word` takes 15 parameter felts and returns a word through a result pointer, the
-//! most a call with that pointer can pass.
+//! `fifteen_to_word` and `sixteen_to_word` take 15 and 16 parameter felts and return a word
+//! through a result pointer, which stays in the caller's context and takes no stack element of
+//! the call.
 
 #![no_std]
 #![feature(alloc_error_handler)]
@@ -31,7 +32,7 @@ pub struct TxScriptArgs {
 }
 
 /// Reads the count and the count word and asserts each equals the expected one, then asserts the
-/// results of `wide`, `split`, `four_words` and `fifteen_to_word`.
+/// results of `wide`, `split`, `four_words`, `fifteen_to_word` and `sixteen_to_word`.
 #[tx_script]
 fn run(args: TxScriptArgs, account: &mut CounterAccount) {
     assert_eq(account.get_count(), args.count);
@@ -62,6 +63,13 @@ fn run(args: TxScriptArgs, account: &mut CounterAccount) {
         felt!(3000),
     );
     assert_word(fifteen, Word::new([felt!(1000), felt!(2000), felt!(3000), felt!(2700)]));
+    let sixteen = account.sixteen_to_word(
+        Word::new([felt!(1), felt!(2), felt!(3), felt!(4)]),
+        Word::new([felt!(10), felt!(20), felt!(30), felt!(40)]),
+        Word::new([felt!(100), felt!(200), felt!(300), felt!(400)]),
+        Word::new([felt!(1000), felt!(2000), felt!(3000), felt!(4000)]),
+    );
+    assert_word(sixteen, Word::new([felt!(1000), felt!(2000), felt!(3000), felt!(6700)]));
 }
 
 /// Asserts every element of `actual` equals the one of `expected` at the same index.

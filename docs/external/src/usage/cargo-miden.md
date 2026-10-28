@@ -227,9 +227,9 @@ SDK macros derive its interface from the package manifest:
   built by an SDK that put the prefix first) becomes a local type of that name instead. A type
   named by another WIT id is not supported;
 - auth procedures (also when tagged `@account_procedure`), procedures without a typed
-  signature, outside the interface module, with parameters or results beyond 16 stack elements,
-  with 16 parameter elements and a result that flattens to more than one value (it comes back
-  through a pointer passed after the parameters, the 17th element), with a 64-bit integer
+  signature, outside the interface module, with parameters or results beyond 16 stack elements
+  (the pointer through which a result flattening to more than one value comes back is passed
+  after the parameters but stays in the caller's context, so it does not count), with a 64-bit integer
   (`u64`/`s64`) parameter or result or a record containing a 64-bit integer field (not callable
   yet), with types WIT cannot express, with local types named `Option`, `Result`, `String` or
   `Vec` (they would clash with the Rust prelude in the bindings), whose names have no WIT form, clash,

@@ -7,8 +7,8 @@
 //! where they match exactly or are named by their `core-types` id (as in a Rust-built component),
 //! and declared locally otherwise. A procedure the interface cannot offer (an auth procedure, no
 //! typed signature, outside the interface module, unsupported or clashing names and types,
-//! parameters, results or a result pointer beyond the stack budget, 64-bit integer parameters or
-//! results, reserved or invalid names) is left out and reported in [`Generated::skipped`] and in
+//! parameters or results beyond the stack budget, 64-bit integer parameters or results, reserved
+//! or invalid names) is left out and reported in [`Generated::skipped`] and in
 //! the interface's doc comment. A procedure with several results returns them as one tuple. A
 //! package fails as a whole only when it is not an account component ([`Error::NotAComponent`]),
 //! has no interface procedures ([`Error::NoInterfaceProcedures`]), has no usable WIT package id
@@ -380,16 +380,6 @@ fn function(
         return Err(format!(
             "parameters flatten to {param_felts} stack elements, more than the \
              {MAX_STACK_ELEMENTS} a direct call can pass"
-        ));
-    }
-    // Results flattening to more than one value come back through a pointer the caller passes
-    // after the parameters, and the consumer's lowering counts that pointer in the same budget.
-    let result_values: usize = results.iter().map(|mapped| mapped.values).sum();
-    if result_values > 1 && param_felts + 1 > MAX_STACK_ELEMENTS {
-        return Err(format!(
-            "parameters and the result pointer occupy {} stack elements, more than the \
-             {MAX_STACK_ELEMENTS} a direct call can pass",
-            param_felts + 1
         ));
     }
     // Results are offered when they contain no 64-bit integer and occupy at most the stack

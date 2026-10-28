@@ -172,6 +172,30 @@ pub proc fifteen_to_word(a: word, b: word, c: word, d: felt, e: felt, f: felt) -
     # => [d, e, f, sum, pad(12)]
 end
 
+#! Returns `[d0, d1, d2, sum + d3]`, where `sum` is the sum of the 12 felts of `a`, `b` and `c`
+#! weighted by position as in `fifteen_to_word`: 16 parameter felts, every one a call can pass,
+#! next to a word result, whose pointer stays in the caller's context and takes no stack element
+#! of the call.
+#!
+#! Inputs:  [a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3]
+#! Outputs: [d0, d1, d2, sum + d3, pad(12)]
+#!
+#! Invocation: call
+@account_procedure
+pub proc sixteen_to_word(a: word, b: word, c: word, d: word) -> word
+    dup
+    # => [a0, a0, a1, ..., c3, d0, d1, d2, d3]
+
+    # As in `fifteen_to_word`: the felt at position i is added 12 - i times.
+    repeat.11
+        movup.2 add dup movup.2 add swap
+    end
+    # => [run, sum, d0, d1, d2, d3, pad(10)]
+
+    drop movup.4 add movdn.3
+    # => [d0, d1, d2, sum + d3, pad(12)]
+end
+
 #! Authenticates a transaction against the account by incrementing its nonce.
 #!
 #! Inputs:  [AUTH_ARGS, pad(12)]
