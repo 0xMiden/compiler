@@ -19,6 +19,7 @@ use syn::{
 pub(crate) use crate::component_macro::storage::typecheck_storage_field;
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
+    account_storage_schema::expand_account_storage_schema,
     boilerplate::runtime_boilerplate,
     component_macro::{
         generate_wit::{ComponentWitSpec, build_component_wit},
@@ -368,6 +369,7 @@ fn expand_component_storage(
 
     let mut stored_procedure_slots = Vec::new();
     let mut namespace = None;
+    let mut storage_slots = Vec::new();
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
             // Rewrites the stored-procedure field types to their generated marker types before
@@ -380,7 +382,9 @@ fn expand_component_storage(
             if metadata.has_miden_project_toml {
                 namespace = Some(metadata.namespace(struct_name.span())?);
             }
-            let field_inits = process_storage_fields(fields, &mut acc_builder, namespace.as_ref())?;
+            let field_inits;
+            (field_inits, storage_slots) =
+                process_storage_fields(fields, &mut acc_builder, namespace.as_ref())?;
             // Checked after field validation so type errors take priority.
             if !fields.named.is_empty() && namespace.is_none() {
                 return Err(syn::Error::new(
@@ -422,6 +426,8 @@ fn expand_component_storage(
         midenc_frontend_wasm_metadata::pad_to_link_section_alignment(component_metadata.to_bytes());
 
     let link_section = generate_link_section(&metadata_bytes);
+    let storage_schema =
+        expand_account_storage_schema(&input_struct, namespace.as_ref(), &storage_slots)?;
     let runtime_boilerplate = runtime_boilerplate();
 
     // Hidden handshake constant consumed by the `#[component]` impl expansion (see
@@ -440,6 +446,7 @@ fn expand_component_storage(
         impl ::miden::native_account::NativeAccount for #struct_name {}
         impl ::miden::active_account::ActiveAccount for #struct_name {}
         #link_section
+        #storage_schema
     })
 }
 

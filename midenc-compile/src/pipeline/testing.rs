@@ -291,6 +291,7 @@ pub(crate) fn component_in_namespace(
             account_component_metadata: metadata,
             component_wit: None,
             note_storage_schema: None,
+            account_storage_schema: None,
         },
         source_provenance: ProjectSourceProvenanceInputs {
             root: SourceFileProvenance {

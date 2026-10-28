@@ -68,6 +68,7 @@
 extern crate proc_macro;
 
 mod account_component_metadata;
+mod account_storage_schema;
 mod boilerplate;
 mod component_macro;
 mod dependency_package;
@@ -80,6 +81,7 @@ mod manifest_paths;
 mod namespace;
 mod note;
 mod note_schema;
+mod schema_render;
 mod script;
 #[cfg(test)]
 mod test_support;
@@ -225,6 +227,20 @@ pub fn component(
 ///     }
 /// }
 /// ```
+///
+/// # Storage schema
+///
+/// A struct with at least one slot emits a WIT storage schema into the package's
+/// `account_storage_schema` section, next to the protocol metadata. The schema package is
+/// `<component-package>-storage-schema`, its `account-storage` interface declares a `storage`
+/// record with one field per slot in declaration order, and a map slot is a `list<tuple<K, V>>`.
+/// Field doc comments are copied into the schema; a field without one uses its `description`.
+///
+/// A slot type is `Word`, `Felt`, an SDK core-type record, `u8`, `u16`, `u32`, `u64`, `bool`, or
+/// an `#[export_type]` record or enum that implements `WordValue` (see `#[export_type]`). Apply
+/// `#[export_type]` to each custom type before the storage struct. A `#[storage(type = "...")]`
+/// override on a slot whose type is an `#[export_type]` type is an error: its schema type is its
+/// WIT type.
 ///
 /// # Stored procedure slots
 ///

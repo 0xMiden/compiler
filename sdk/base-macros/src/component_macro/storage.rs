@@ -4,8 +4,11 @@ use quote::quote;
 use syn::{Field, Type, ext::IdentExt, spanned::Spanned};
 
 use crate::{
-    account_component_metadata::AccountComponentMetadataBuilder, component_macro::stored_procedure,
-    namespace::ComponentNamespace, types::StorageFieldType,
+    account_component_metadata::{AccountComponentMetadataBuilder, extract_storage_type_args},
+    account_storage_schema::{StorageSlotKind, StorageSlotSpec},
+    component_macro::stored_procedure,
+    namespace::ComponentNamespace,
+    types::{StorageFieldType, doc_comments},
 };
 
 /// Rust crate the supported storage field types are expected to come from.
@@ -120,12 +123,15 @@ fn slot_id_tokens(id: miden_protocol::account::StorageSlotId) -> proc_macro2::To
 
 /// Processes component struct fields, recording storage metadata and building default
 /// initializers.
+///
+/// Returns the field initializers and the storage schema slots, both in field declaration order.
 pub fn process_storage_fields(
     fields: &mut syn::FieldsNamed,
     builder: &mut AccountComponentMetadataBuilder,
     namespace: Option<&ComponentNamespace>,
-) -> Result<Vec<proc_macro2::TokenStream>, syn::Error> {
+) -> Result<(Vec<proc_macro2::TokenStream>, Vec<StorageSlotSpec>), syn::Error> {
     let mut field_infos = Vec::new();
+    let mut slot_specs = Vec::new();
     let mut errors = Vec::new();
     let mut slot_names = HashMap::<String, String>::new();
     let mut slot_ids = HashMap::<(u64, u64), String>::new();
@@ -219,6 +225,10 @@ pub fn process_storage_fields(
             slot_names.insert(slot_name_str, field_name_str.clone());
             slot_ids.insert(slot_id_key, field_name_str);
 
+            match storage_slot_spec(field, &field_type, &args) {
+                Ok(spec) => slot_specs.push(spec),
+                Err(err) => errors.push(err),
+            }
             if let Err(err) = builder.add_storage_entry(
                 slot_name.clone(),
                 args.description,
@@ -247,7 +257,54 @@ pub fn process_storage_fields(
         });
     }
 
-    Ok(field_inits)
+    Ok((field_inits, slot_specs))
+}
+
+/// Describes the storage slot of `field` for the storage schema.
+///
+/// The docs are the field's doc comment lines or, when it has none, the `description` argument
+/// of its `#[storage(...)]` attribute as one line.
+fn storage_slot_spec(
+    field: &Field,
+    field_type: &StorageFieldType,
+    args: &StorageAttributeArgs,
+) -> Result<StorageSlotSpec, syn::Error> {
+    let mut docs = doc_comments(&field.attrs);
+    if docs.is_empty() {
+        docs.extend(args.description.clone());
+    }
+    let kind = match (field_type, extract_storage_type_args(field)?.as_slice()) {
+        (StorageFieldType::StorageValue, _)
+            if stored_procedure::mentions_stored_procedure(&field.ty) =>
+        {
+            StorageSlotKind::StoredProcedure
+        }
+        (StorageFieldType::StorageValue, [ty]) => StorageSlotKind::Value {
+            ty: Box::new(ty.clone()),
+        },
+        (StorageFieldType::StorageMap, [key, value]) => StorageSlotKind::Map {
+            key: Box::new(key.clone()),
+            value: Box::new(value.clone()),
+        },
+        (StorageFieldType::StorageValue, _) => {
+            return Err(syn::Error::new(
+                field.ty.span(),
+                format!("expected `{TYPENAME_VALUE}<T>` with one type argument"),
+            ));
+        }
+        (StorageFieldType::StorageMap, _) => {
+            return Err(syn::Error::new(
+                field.ty.span(),
+                format!("expected `{TYPENAME_MAP}<K, V>` with two type arguments"),
+            ));
+        }
+    };
+    Ok(StorageSlotSpec {
+        field_ident: field.ident.clone().expect("named fields must have identifiers"),
+        docs,
+        has_type_override: args.type_attr.is_some(),
+        kind,
+    })
 }
 
 /// Checks that the type of `field` is either `StorageMap` or `StorageValue` from the `miden`
@@ -352,8 +409,9 @@ mod tests {
     use syn::{parse::Parser, parse_quote};
 
     use super::{
-        StorageFieldType, derive_storage_slot_name, reject_stored_procedure_in_map,
-        reject_stored_procedure_type_override, typecheck_storage_field,
+        StorageAttributeArgs, StorageFieldType, StorageSlotKind, derive_storage_slot_name,
+        reject_stored_procedure_in_map, reject_stored_procedure_type_override, storage_slot_spec,
+        typecheck_storage_field,
     };
     use crate::namespace::ComponentNamespace;
 
@@ -401,6 +459,43 @@ mod tests {
             .expect("test field must parse");
         reject_stored_procedure_type_override(&field, Some("u32"))
             .expect("ordinary value slots keep their type override");
+    }
+
+    /// A slot's schema docs are its doc comments, else its `description`; a stored-procedure
+    /// slot is described by its kind alone.
+    #[test]
+    fn describes_slots_for_the_storage_schema() {
+        let args = |description: Option<&str>| StorageAttributeArgs {
+            description: description.map(str::to_owned),
+            type_attr: None,
+        };
+        let field = syn::Field::parse_named
+            .parse2(quote!(
+                /// Documented.
+                count: StorageValue<Felt>
+            ))
+            .expect("test field must parse");
+        let spec = storage_slot_spec(&field, &StorageFieldType::StorageValue, &args(Some("count")))
+            .expect("a value slot is described");
+        assert_eq!(spec.docs, [" Documented."]);
+        assert!(matches!(spec.kind, StorageSlotKind::Value { .. }));
+
+        let field = syn::Field::parse_named
+            .parse2(quote!(balances: StorageMap<Word, Felt>))
+            .expect("test field must parse");
+        let spec =
+            storage_slot_spec(&field, &StorageFieldType::StorageMap, &args(Some("balances")))
+                .expect("a map slot is described");
+        assert_eq!(spec.docs, ["balances"]);
+        assert!(matches!(spec.kind, StorageSlotKind::Map { .. }));
+
+        let field = syn::Field::parse_named
+            .parse2(quote!(authority: StorageValue<StoredProcedure<fn()>>))
+            .expect("test field must parse");
+        let spec = storage_slot_spec(&field, &StorageFieldType::StorageValue, &args(None))
+            .expect("a stored-procedure slot is described");
+        assert!(spec.docs.is_empty());
+        assert!(matches!(spec.kind, StorageSlotKind::StoredProcedure));
     }
 
     #[test]

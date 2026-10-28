@@ -86,7 +86,10 @@ pub(crate) fn supported_component_model_features() -> WasmFeatures {
 
 #[cfg(test)]
 mod tests {
-    use midenc_frontend_wasm_metadata::WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME;
+    use midenc_frontend_wasm_metadata::{
+        WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+        WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+    };
 
     use super::*;
 
@@ -106,5 +109,24 @@ mod tests {
             Some(b"schema".as_slice()),
             "the schema section must be propagated into the frontend output"
         );
+    }
+
+    /// A `#[component_storage]` crate compiled as a raw core module keeps its account storage
+    /// schema section, like the note schema above.
+    #[test]
+    fn core_module_propagates_account_storage_schema_section() {
+        let wat = format!(
+            r#"(module (@custom "{WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}" "schema"))"#
+        );
+        let wasm = wat::parse_str(wat).expect("core module WAT must parse");
+        let context = Rc::new(Context::default());
+        let output = translate(&wasm, &WasmTranslationConfig::default(), context)
+            .expect("a core module with an account storage schema section must translate");
+        assert_eq!(
+            output.sections.account_storage_schema.as_deref(),
+            Some(b"schema".as_slice()),
+            "the account storage schema section must be propagated into the frontend output"
+        );
+        assert_eq!(output.sections.note_storage_schema, None);
     }
 }

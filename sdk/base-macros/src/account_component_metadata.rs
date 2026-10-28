@@ -14,7 +14,7 @@ use syn::spanned::Spanned;
 use crate::{component_macro::typecheck_storage_field, types::StorageFieldType};
 
 /// Extracts the generic type arguments from a storage field declaration.
-fn extract_storage_type_args(field: &syn::Field) -> Result<Vec<syn::Type>, syn::Error> {
+pub(crate) fn extract_storage_type_args(field: &syn::Field) -> Result<Vec<syn::Type>, syn::Error> {
     let type_path = match &field.ty {
         syn::Type::Path(type_path) => type_path,
         _ => return Err(syn::Error::new(field.span(), "storage field type must be a path")),
