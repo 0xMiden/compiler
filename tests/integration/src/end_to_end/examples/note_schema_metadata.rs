@@ -6,8 +6,8 @@ use midenc_frontend_wasm_metadata::{package_note_storage_schema_section_id, trim
 use midenc_integration_test_support::{compile_project, workspace_root};
 use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
 
-/// Shared SDK core-types package appended to every generated note schema.
-const EXPECTED_CORE_TYPES: &str = concat!(
+/// Shared SDK core-types package appended to every generated note and account storage schema.
+pub(super) const EXPECTED_CORE_TYPES: &str = concat!(
     r#"package miden:base@1.0.0 {
     interface core-types {
         /// Represents an on-chain felt.

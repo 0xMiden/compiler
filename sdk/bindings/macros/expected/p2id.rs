@@ -187,6 +187,39 @@ mod __miden_bindings_dbbbaf8198e47b5a {
                 })
         }
     }
+    impl __MidenSchemaEncode for u16 {
+        fn __write_felts(
+            &self,
+            writer: &mut ::miden_bindings::__private::miden_field_repr::FeltWriter<'_>,
+        ) -> ::miden_bindings::__private::miden_schema::Result<()> {
+            ::miden_bindings::__private::miden_field_repr::ToFeltRepr::write_felt_repr(
+                &u32::from(*self),
+                writer,
+            );
+            Ok(())
+        }
+    }
+    impl __MidenSchemaDecode for u16 {
+        fn __read_felts(
+            reader: &mut ::miden_bindings::__private::miden_field_repr::FeltReader<'_>,
+        ) -> ::miden_bindings::__private::miden_schema::Result<Self> {
+            let value = reader
+                .read_u32()
+                .map_err(|error| {
+                    ::miden_bindings::__private::miden_schema::Error::new(
+                        format!("failed to decode u16 from its felt encoding: {error}"),
+                    )
+                })?;
+            u16::try_from(value)
+                .map_err(|_| {
+                    ::miden_bindings::__private::miden_schema::Error::new(
+                        format!(
+                            "failed to decode u16 from its felt encoding: value {value} does not fit"
+                        ),
+                    )
+                })
+        }
+    }
     impl __MidenSchemaEncode
     for ::miden_bindings::__private::miden_protocol::account::AccountId {
         fn __write_felts(

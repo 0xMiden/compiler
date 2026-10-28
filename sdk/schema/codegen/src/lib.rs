@@ -284,6 +284,34 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
 
         #(#primitive_impls)*
 
+        // `miden-field-repr` has no `u16` encoding; the felt is the `u32` of the same value.
+        impl __MidenSchemaEncode for u16 {
+            fn __write_felts(
+                &self,
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_schema::Result<()> {
+                #miden_field_repr::ToFeltRepr::write_felt_repr(&u32::from(*self), writer);
+                Ok(())
+            }
+        }
+
+        impl __MidenSchemaDecode for u16 {
+            fn __read_felts(
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_schema::Result<Self> {
+                let value = reader.read_u32().map_err(|error| {
+                    #miden_schema::Error::new(format!(
+                        "failed to decode u16 from its felt encoding: {error}"
+                    ))
+                })?;
+                u16::try_from(value).map_err(|_| {
+                    #miden_schema::Error::new(format!(
+                        "failed to decode u16 from its felt encoding: value {value} does not fit"
+                    ))
+                })
+            }
+        }
+
         impl __MidenSchemaEncode for #miden_protocol::account::AccountId {
             fn __write_felts(
                 &self,
@@ -641,6 +669,7 @@ fn rust_type(
     match ty.kind() {
         SchemaTypeKind::Primitive(PrimitiveType::U64) => Ok(quote!(u64)),
         SchemaTypeKind::Primitive(PrimitiveType::U32) => Ok(quote!(u32)),
+        SchemaTypeKind::Primitive(PrimitiveType::U16) => Ok(quote!(u16)),
         SchemaTypeKind::Primitive(PrimitiveType::U8) => Ok(quote!(u8)),
         SchemaTypeKind::Primitive(PrimitiveType::Bool) => Ok(quote!(bool)),
         SchemaTypeKind::Option(payload) => {
@@ -702,6 +731,8 @@ impl FeltReprSupport {
             return false;
         }
         match ty.kind() {
+            // `miden-field-repr` has no `u16` encoding.
+            SchemaTypeKind::Primitive(PrimitiveType::U16) => false,
             SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => true,
             SchemaTypeKind::Record(fields) => {
                 fields.iter().all(|field| self.supports_native_felt_repr(field.ty()))

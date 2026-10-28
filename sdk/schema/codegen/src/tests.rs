@@ -115,6 +115,20 @@ fn derives_native_repr_for_custom_records_and_variants() {
 }
 
 #[test]
+fn maps_u16_without_native_repr() {
+    let (source, _, root) = generate(
+        "package example:small; interface note-storage { record small { count: u16 } type storage \
+         = small; }",
+    );
+
+    assert_eq!(root, "Small");
+    assert!(source.contains("pub count: u16"));
+    assert!(source.contains("impl __MidenSchemaDecode for u16"));
+    // `miden-field-repr` has no `u16` encoding, so the record cannot derive it.
+    assert!(!source.contains("felt_repr(crate_path"));
+}
+
+#[test]
 fn generates_nonstandard_embedded_core_record_as_schema_owned_type() {
     let (source, has_nested_named_types, root) = generate(EMBEDDED_CORE_SCHEMA);
 

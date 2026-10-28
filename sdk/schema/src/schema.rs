@@ -7,7 +7,7 @@ use std::{
 
 use miden_mast_package::{Package, SectionId};
 use midenc_frontend_wasm_metadata::trim_trailing_nuls;
-use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
+use wit_parser::{InterfaceId, PackageId, Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
 #[cfg(feature = "protocol")]
 use crate::{CodecRegistry, DecodedValue, Felt, ValueBuilder};
@@ -137,6 +137,8 @@ pub enum PrimitiveType {
     U64,
     /// An unsigned 32-bit integer stored in one felt.
     U32,
+    /// An unsigned 16-bit integer stored in one felt.
+    U16,
     /// An unsigned 8-bit integer stored in one felt.
     U8,
     /// A boolean stored as zero or one.
@@ -197,6 +199,22 @@ impl SchemaType {
     /// Classifies this type as a standard protocol leaf.
     pub fn standard_leaf(&self) -> Option<StandardLeaf> {
         self.fqn.as_deref().and_then(StandardLeaf::from_fqn)
+    }
+
+    /// Verifies native host mappings of this type and every type in it against the pinned
+    /// standard type shapes.
+    pub fn validate_native_leaf_shapes(&self) -> Result<()> {
+        validate_model_type_shapes(self, &mut HashSet::new())
+    }
+
+    /// Returns this type and every type in it that is a custom named type.
+    ///
+    /// A custom type is a named type that is not a [`StandardLeaf`]; these are the types an
+    /// author codec may handle.
+    pub fn custom_type_fqns(&self) -> HashSet<String> {
+        let mut fqns = HashSet::new();
+        collect_custom_type_fqns(self, &mut HashSet::new(), &mut fqns);
+        fqns
     }
 }
 
@@ -264,65 +282,15 @@ pub struct Schema {
 impl Schema {
     /// Reads and resolves the schema section of `profile` from a Miden package.
     pub fn from_package(package: &Package, profile: &SchemaProfile) -> Result<Self> {
-        let section_id = SectionId::custom(profile.section_id).map_err(|err| {
-            Error::new(format!(
-                "`{}` is not a valid package section id for the {} schema: {err}",
-                profile.section_id, profile.name
-            ))
-        })?;
-        let bytes =
-            crate::section::unique_package_section(package, section_id, profile.section_id)?;
-        ensure_schema_byte_limit(bytes.len(), profile)?;
-        let text = core::str::from_utf8(trim_trailing_nuls(bytes)).map_err(|err| {
-            Error::new(format!("{} schema section is not valid UTF-8: {err}", profile.name))
-        })?;
-        Self::from_wit_text(text, profile)
+        Self::from_wit_text(read_schema_section(package, profile)?, profile)
     }
 
     /// Resolves a schema of `profile` from a WIT document.
     pub fn from_wit_text(wit_text: &str, profile: &SchemaProfile) -> Result<Self> {
-        ensure_schema_byte_limit(wit_text.len(), profile)?;
-        let wit_text = wit_text.trim_end_matches('\0');
-        let limits = &profile.limits;
-        let mut resolve = Resolve::default();
-        let package_id = resolve
-            .push_str(format!("{}-schema.wit", profile.interface), wit_text)
-            .map_err(|err| {
-                Error::new(format!("failed to resolve {} schema WIT: {err:#}", profile.name))
-            })?;
-        if resolve.types.len() > limits.max_types {
-            return Err(Error::new(format!(
-                "{} schema defines {} WIT types; the limit is {}",
-                profile.name,
-                resolve.types.len(),
-                limits.max_types
-            )));
-        }
-        let package = &resolve.packages[package_id];
-        // Custom type FQNs embed the schema package name, and codecs and generated bindings are
-        // keyed by them, so a version there would change every name on each release.
-        if package.name.version.is_some() {
-            return Err(Error::new(format!(
-                "schema package `{}` must not carry a version; schema type names are unversioned",
-                package.name
-            )));
-        }
-        let interface_id = package.interfaces.get(profile.interface).copied().ok_or_else(|| {
-            Error::new(format!(
-                "schema package `{}` does not define the `{}` interface",
-                package.name, profile.interface
-            ))
-        })?;
-        let interface = &resolve.interfaces[interface_id];
-        let root_id = interface.types.get(profile.root_alias).copied().ok_or_else(|| {
-            Error::new(format!(
-                "the `{}` interface does not define the `{}` type alias",
-                profile.interface, profile.root_alias
-            ))
-        })?;
-        validate_resolved_core_types(&resolve)?;
+        let resolved = resolve_schema_package(wit_text, profile)?;
         // The root may be an alias of a record or the record itself; the builder follows aliases.
-        let root = ModelBuilder::new(&resolve, limits).build(Type::Id(root_id))?;
+        let root =
+            build_model_type(&resolved.resolve, Type::Id(resolved.root_type_id), &profile.limits)?;
         if !matches!(root.kind(), SchemaTypeKind::Record(_)) {
             return Err(Error::new(format!(
                 "the `{}.{}` alias must resolve to a record, found {}",
@@ -333,7 +301,7 @@ impl Schema {
         }
         let schema = Self {
             profile: *profile,
-            wit_text: wit_text.to_owned(),
+            wit_text: wit_text.trim_end_matches('\0').to_owned(),
             root,
             #[cfg(feature = "protocol")]
             codecs: CodecRegistry::default(),
@@ -359,7 +327,7 @@ impl Schema {
 
     /// Verifies native host mappings against the pinned standard type shapes.
     pub fn validate_native_leaf_shapes(&self) -> Result<()> {
-        validate_model_type_shapes(&self.root, &mut HashSet::new())
+        self.root.validate_native_leaf_shapes()
     }
 
     /// Returns all custom named types reachable from the root.
@@ -367,9 +335,7 @@ impl Schema {
     /// A custom type is a named type that is not a [`StandardLeaf`]; these are the types an
     /// author codec may handle.
     pub fn custom_type_fqns(&self) -> HashSet<String> {
-        let mut fqns = HashSet::new();
-        collect_custom_type_fqns(&self.root, &mut HashSet::new(), &mut fqns);
-        fqns
+        self.root.custom_type_fqns()
     }
 
     /// Returns the root felt layout.
@@ -417,6 +383,105 @@ impl Schema {
     ) -> Result<DecodedValue> {
         crate::value::decode(&self.root, felts, registry, self.profile.name)
     }
+}
+
+/// A schema WIT document of one [`SchemaProfile`], resolved by wit-parser and checked up to its
+/// root type, which is not built into the schema model yet.
+///
+/// A schema kind whose root is not a single model type (account storage, whose root fields are
+/// slots) walks the root itself and builds the types in it with [`build_model_type`].
+pub struct ResolvedSchema {
+    /// The resolved WIT packages of the document.
+    pub resolve: Resolve,
+    /// The schema package, the document's main package.
+    pub package_id: PackageId,
+    /// The profile's interface in the schema package.
+    pub interface_id: InterfaceId,
+    /// The profile's root type in that interface, before aliases are followed.
+    pub root_type_id: TypeId,
+}
+
+/// Reads the WIT text of the schema section of `profile` from a Miden package.
+///
+/// The section must be unique, within the profile's byte limit, and UTF-8; trailing alignment
+/// padding is removed.
+pub fn read_schema_section<'a>(package: &'a Package, profile: &SchemaProfile) -> Result<&'a str> {
+    let section_id = SectionId::custom(profile.section_id).map_err(|err| {
+        Error::new(format!(
+            "`{}` is not a valid package section id for the {} schema: {err}",
+            profile.section_id, profile.name
+        ))
+    })?;
+    let bytes = crate::section::unique_package_section(package, section_id, profile.section_id)?;
+    ensure_schema_byte_limit(bytes.len(), profile)?;
+    core::str::from_utf8(trim_trailing_nuls(bytes)).map_err(|err| {
+        Error::new(format!("{} schema section is not valid UTF-8: {err}", profile.name))
+    })
+}
+
+/// Resolves a schema WIT document of `profile` up to its root type.
+///
+/// Checks the profile's byte and type-count limits, that the schema package is unversioned and
+/// defines the profile's interface and root type, and that an embedded `miden:base` core-types
+/// package has the pinned canonical shapes.
+pub fn resolve_schema_package(wit_text: &str, profile: &SchemaProfile) -> Result<ResolvedSchema> {
+    ensure_schema_byte_limit(wit_text.len(), profile)?;
+    let wit_text = wit_text.trim_end_matches('\0');
+    let limits = &profile.limits;
+    let mut resolve = Resolve::default();
+    let package_id = resolve
+        .push_str(format!("{}-schema.wit", profile.interface), wit_text)
+        .map_err(|err| {
+            Error::new(format!("failed to resolve {} schema WIT: {err:#}", profile.name))
+        })?;
+    if resolve.types.len() > limits.max_types {
+        return Err(Error::new(format!(
+            "{} schema defines {} WIT types; the limit is {}",
+            profile.name,
+            resolve.types.len(),
+            limits.max_types
+        )));
+    }
+    let package = &resolve.packages[package_id];
+    // Custom type FQNs embed the schema package name, and codecs and generated bindings are
+    // keyed by them, so a version there would change every name on each release.
+    if package.name.version.is_some() {
+        return Err(Error::new(format!(
+            "schema package `{}` must not carry a version; schema type names are unversioned",
+            package.name
+        )));
+    }
+    let interface_id = package.interfaces.get(profile.interface).copied().ok_or_else(|| {
+        Error::new(format!(
+            "schema package `{}` does not define the `{}` interface",
+            package.name, profile.interface
+        ))
+    })?;
+    let interface = &resolve.interfaces[interface_id];
+    let root_type_id = interface.types.get(profile.root_alias).copied().ok_or_else(|| {
+        Error::new(format!(
+            "the `{}` interface does not define the `{}` type alias",
+            profile.interface, profile.root_alias
+        ))
+    })?;
+    validate_resolved_core_types(&resolve)?;
+    Ok(ResolvedSchema {
+        resolve,
+        package_id,
+        interface_id,
+        root_type_id,
+    })
+}
+
+/// Builds one WIT type of a resolved schema into the schema model, held to `limits`.
+///
+/// Aliases are followed; shared types are resolved once per call.
+pub fn build_model_type(
+    resolve: &Resolve,
+    ty: Type,
+    limits: &SchemaLimits,
+) -> Result<Arc<SchemaType>> {
+    ModelBuilder::new(resolve, limits).build(ty)
 }
 
 /// Enforces the parser input budget before WIT resolution or component work begins.
@@ -726,6 +791,7 @@ impl<'a> ModelBuilder<'a> {
             Type::Id(id) => self.build_type_id(id, depth),
             Type::U64 => self.primitive(PrimitiveType::U64, None, None, None),
             Type::U32 => self.primitive(PrimitiveType::U32, None, None, None),
+            Type::U16 => self.primitive(PrimitiveType::U16, None, None, None),
             Type::U8 => self.primitive(PrimitiveType::U8, None, None, None),
             Type::Bool => self.primitive(PrimitiveType::Bool, None, None, None),
             unsupported => Err(Error::new(format!(
@@ -905,6 +971,7 @@ impl<'a> ModelBuilder<'a> {
             Type::Id(_) => unreachable!("build_type_id must follow ID aliases first"),
             Type::U64 => self.primitive(PrimitiveType::U64, name, fqn, docs),
             Type::U32 => self.primitive(PrimitiveType::U32, name, fqn, docs),
+            Type::U16 => self.primitive(PrimitiveType::U16, name, fqn, docs),
             Type::U8 => self.primitive(PrimitiveType::U8, name, fqn, docs),
             Type::Bool => self.primitive(PrimitiveType::Bool, name, fqn, docs),
             unsupported => Err(Error::new(format!(
@@ -923,7 +990,7 @@ impl<'a> ModelBuilder<'a> {
     ) -> Result<MemoizedSchemaType> {
         let width = match primitive {
             PrimitiveType::U64 => 2,
-            PrimitiveType::U32 | PrimitiveType::U8 | PrimitiveType::Bool => 1,
+            PrimitiveType::U32 | PrimitiveType::U16 | PrimitiveType::U8 | PrimitiveType::Bool => 1,
         };
         Ok(MemoizedSchemaType {
             ty: Arc::new(SchemaType {

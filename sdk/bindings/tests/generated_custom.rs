@@ -132,3 +132,39 @@ interface note-storage {
         value.validate().unwrap();
     }
 }
+
+/// Bindings with `u16` fields, which `miden-field-repr` does not encode.
+mod small_counts {
+    use miden_bindings::{Felt, NoteStorage};
+
+    miden_bindings::from_wit_text!(
+        r#"
+package example:small-counts-schema;
+
+interface note-storage {
+    record small-counts {
+        count: u16,
+        maybe: option<u16>,
+    }
+
+    type storage = small-counts;
+}
+"#
+    );
+
+    #[test]
+    fn u16_fields_round_trip_through_one_range_checked_felt() {
+        let value = SmallCounts {
+            count: u16::MAX,
+            maybe: Some(7),
+        };
+        let storage = value.to_note_storage().unwrap();
+        assert_eq!(storage.items(), &[Felt::from_u32(65535), Felt::ONE, Felt::from_u32(7)]);
+        assert_eq!(SmallCounts::from_note_storage(&storage).unwrap(), value);
+        value.validate().unwrap();
+
+        let too_large = NoteStorage::new(vec![Felt::from_u32(65536), Felt::ZERO]).unwrap();
+        let error = SmallCounts::from_note_storage(&too_large).unwrap_err().to_string();
+        assert!(error.contains("u16"), "{error}");
+    }
+}

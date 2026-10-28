@@ -265,9 +265,30 @@ fn decode_primitive(primitive: PrimitiveType, input: &[Felt]) -> Result<(Decoded
     match primitive {
         PrimitiveType::U64 => read_primitive::<u64>(input),
         PrimitiveType::U32 => read_primitive::<u32>(input),
+        PrimitiveType::U16 => read_u16(input),
         PrimitiveType::U8 => read_primitive::<u8>(input),
         PrimitiveType::Bool => read_primitive::<bool>(input),
     }
+}
+
+/// Decodes and displays one `u16` value.
+///
+/// `miden-field-repr` has no `u16` encoding, so the felt is read as a `u32` and range-checked.
+fn read_u16(input: &[Felt]) -> Result<(DecodedValueKind, usize)> {
+    let mut reader = FeltReader::new(input);
+    let value = reader
+        .read_u32()
+        .map_err(|err| Error::new(format!("invalid primitive representation: {err}")))?;
+    let value = u16::try_from(value).map_err(|_| {
+        Error::new(format!("invalid primitive representation: value {value} does not fit in u16"))
+    })?;
+    Ok((
+        DecodedValueKind::Leaf {
+            felts: input[..reader.pos()].to_vec(),
+            display: value.to_string(),
+        },
+        reader.pos(),
+    ))
 }
 
 /// Decodes and displays one primitive value.

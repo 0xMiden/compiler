@@ -222,6 +222,10 @@ name = "miden-note-schema"
 unit = "sdk"
 
 [[packages]]
+name = "miden-account-storage-schema"
+unit = "sdk"
+
+[[packages]]
 name = "miden-schema"
 unit = "sdk"
 

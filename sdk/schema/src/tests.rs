@@ -425,6 +425,24 @@ fn decoder_rejects_invalid_option_and_variant_tags() {
 }
 
 #[test]
+fn u16_is_one_range_checked_felt() {
+    let schema = note_schema(
+        "package example:small; interface note-storage { record storage { count: u16 } }",
+    )
+    .unwrap();
+    assert_eq!(schema.layout().fixed_width(), Some(1));
+
+    let felts = schema.builder().set("count", "65535").unwrap().build().unwrap();
+    assert_eq!(felts, [Felt::from_u32(65535)]);
+    assert_eq!(schema.decode(&felts).unwrap().field("count").unwrap().to_string(), "65535");
+
+    let range = schema.builder().set("count", "65536").unwrap().build().unwrap_err().to_string();
+    assert!(range.contains("u16 value `65536` is out of range"), "{range}");
+    let decode = schema.decode(&[Felt::from_u32(65536)]).unwrap_err().to_string();
+    assert!(decode.contains("does not fit in u16"), "{decode}");
+}
+
+#[test]
 fn u64_layout_uses_shared_low_then_high_limb_encoding() {
     let value = 0x1234_5678_90ab_cdefu64;
     assert_eq!(value.to_felt_repr(), [Felt::from_u32(0x90ab_cdef), Felt::from_u32(0x1234_5678)]);

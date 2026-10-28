@@ -15,9 +15,9 @@
 //!
 //! The layout is structural over the resolved WIT type tree. The record
 //! `miden:base/core-types@1.0.0.felt` is one felt. A `u64` uses two felts in low-then-high
-//! `u32` limb order. A `u32`, `u8`, or `bool` uses one range-checked felt. An `option<T>` uses one
-//! tag felt followed by its payload when present. A variant uses one declaration-ordinal tag felt
-//! followed by the selected case payload. Record fields concatenate in declaration order.
+//! `u32` limb order. A `u32`, `u16`, `u8`, or `bool` uses one range-checked felt. An `option<T>`
+//! uses one tag felt followed by its payload when present. A variant uses one declaration-ordinal
+//! tag felt followed by the selected case payload. Record fields concatenate in declaration order.
 //!
 //! Encoding and decoding use [`miden_field_repr::FeltReader`] and
 //! [`miden_field_repr::FeltWriter`]. Codecs only parse, display, and validate values. They do not
@@ -70,8 +70,9 @@ pub use codec_structure::{
 pub use error::{CodecFailure, Error, Result};
 pub use miden_field::Felt;
 pub use schema::{
-    FeltLayout, PrimitiveType, Schema, SchemaCase, SchemaField, SchemaLimits, SchemaProfile,
-    SchemaType, SchemaTypeKind,
+    FeltLayout, PrimitiveType, ResolvedSchema, Schema, SchemaCase, SchemaField, SchemaLimits,
+    SchemaProfile, SchemaType, SchemaTypeKind, build_model_type, read_schema_section,
+    resolve_schema_package,
 };
 pub use standard_leaf::{ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, FELT_FQN, StandardLeaf, WORD_FQN};
 #[cfg(feature = "protocol")]

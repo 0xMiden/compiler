@@ -3072,6 +3072,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-account-storage-schema"
+version = "0.15.0"
+dependencies = [
+ "miden-mast-package",
+ "miden-protocol",
+ "miden-schema",
+ "midenc-frontend-wasm-metadata",
+ "wit-parser 0.259.0",
+]
+
+[[package]]
 name = "miden-ace-codegen"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4301,6 +4312,7 @@ dependencies = [
  "cargo_metadata 0.23.1",
  "clap",
  "log",
+ "miden-account-storage-schema",
  "miden-assembly",
  "miden-assembly-syntax",
  "miden-codec-wit",
@@ -4680,6 +4692,7 @@ dependencies = [
  "libc",
  "libloading",
  "log",
+ "miden-account-storage-schema",
  "miden-assembly",
  "miden-core",
  "miden-core-lib",

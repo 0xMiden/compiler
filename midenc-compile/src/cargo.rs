@@ -355,19 +355,22 @@ pub(crate) fn has_project_codec(metadata: &miden_project::MetadataSet) -> bool {
 }
 
 /// Builds the optional codec component declared by a project package.
+///
+/// `package` is the assembled package of the project's note or account component target, with
+/// its schema section attached; the codec crate reads that schema when it expands.
 pub(crate) fn build_project_codec(
     project_package: &miden_project::Package,
     project_manifest_path: &Path,
-    note_project_dir: &Path,
-    note_package: &MastPackage,
+    project_dir: &Path,
+    package: &MastPackage,
 ) -> CompilerResult<Option<Vec<u8>>> {
     let Some(codec_crate_dir) =
-        codec_crate_dir(project_package.metadata(), project_manifest_path, note_project_dir)?
+        codec_crate_dir(project_package.metadata(), project_manifest_path, project_dir)?
     else {
         return Ok(None);
     };
 
-    build_codec_component(&codec_crate_dir, note_package).map(Some)
+    build_codec_component(&codec_crate_dir, package).map(Some)
 }
 
 /// Reads the optional codec crate path from Miden project metadata.
@@ -444,10 +447,7 @@ fn codec_crate_dir(
 /// build does not use the session target directory. It never shares a build lock with the outer
 /// build. This layout matches the VM event handler plugin. That plugin uses `<guest
 /// crate>/target/midenc.event-handlers`.
-fn build_codec_component(
-    codec_crate_dir: &Path,
-    note_package: &MastPackage,
-) -> CompilerResult<Vec<u8>> {
+fn build_codec_component(codec_crate_dir: &Path, package: &MastPackage) -> CompilerResult<Vec<u8>> {
     // Check the manifest before staging, or a mis-pointed `crate` path creates a work directory
     // in a directory that is not a crate.
     let manifest_path = codec_crate_dir.join("Cargo.toml");
@@ -458,7 +458,7 @@ fn build_codec_component(
         )));
     }
     let work_dir = codec_crate_dir.join("target").join(CODEC_TABLE_NAME);
-    let staged_package = stage_package(&work_dir, codec_crate_dir, note_package)?;
+    let staged_package = stage_package(&work_dir, codec_crate_dir, package)?;
 
     let cargo_env = env::var_os("CARGO").map(PathBuf::from);
     let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
@@ -578,9 +578,9 @@ fn codec_cargo_command(
 fn stage_package(
     work_dir: &Path,
     codec_crate_dir: &Path,
-    note_package: &MastPackage,
+    package: &MastPackage,
 ) -> CompilerResult<StagedPackage> {
-    let package_bytes = note_package.to_bytes();
+    let package_bytes = package.to_bytes();
     let mut hasher = Sha256::new();
     hasher.update(&package_bytes);
     // Separate the variable-length package bytes from the codec-crate path in the build key.
@@ -591,7 +591,7 @@ fn stage_package(
         write!(&mut build_key, "{byte:02x}").expect("writing to a string cannot fail");
     }
     let cache_dir = work_dir.join("package-cache").join(&build_key);
-    let package_path = cache_dir.join(package_cache::package_file_name(&note_package.name));
+    let package_path = cache_dir.join(package_cache::package_file_name(&package.name));
 
     if package_path.is_file() {
         let staged_bytes = fs::read(&package_path).map_err(|error| {
@@ -602,7 +602,7 @@ fn stage_package(
         })?;
         if staged_bytes != package_bytes {
             return Err(Report::msg(format!(
-                "content-addressed note package path '{}' contains different bytes",
+                "content-addressed package path '{}' contains different bytes",
                 package_path.display()
             )));
         }
@@ -610,10 +610,10 @@ fn stage_package(
         // could remove an actively used entry that was staged long ago.
         touch_file(&package_path);
     } else {
-        write_package_atomic(note_package, &cache_dir).map_err(|error| {
+        write_package_atomic(package, &cache_dir).map_err(|error| {
             Report::msg(format!(
-                "failed to stage note package {}@{} for codec generation: {error}",
-                note_package.name, note_package.version
+                "failed to stage package {}@{} for codec generation: {error}",
+                package.name, package.version
             ))
         })?;
     }

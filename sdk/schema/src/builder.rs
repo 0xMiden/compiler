@@ -305,6 +305,12 @@ fn encode_primitive(primitive: PrimitiveType, value: &str) -> Result<Vec<Felt>> 
                 .map_err(|_| Error::new(format!("u32 value `{value}` is out of range")))?;
             Ok(write_repr(&value))
         }
+        PrimitiveType::U16 => {
+            let value = u16::try_from(parse_unsigned(value, "u16")?)
+                .map_err(|_| Error::new(format!("u16 value `{value}` is out of range")))?;
+            // `miden-field-repr` has no `u16` encoding; the felt is the `u32` of the same value.
+            Ok(write_repr(&u32::from(value)))
+        }
         PrimitiveType::U8 => {
             let value = u8::try_from(parse_unsigned(value, "u8")?)
                 .map_err(|_| Error::new(format!("u8 value `{value}` is out of range")))?;

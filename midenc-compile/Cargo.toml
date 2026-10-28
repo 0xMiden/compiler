@@ -25,6 +25,7 @@ std = [
     "midenc-session/std",
     "dep:cargo_metadata",
     "dep:clap",
+    "dep:miden-account-storage-schema",
     "dep:miden-codec-wit",
     "dep:miden-note-schema",
     "dep:miden-schema",
@@ -43,6 +44,7 @@ midenc-codegen-masm.workspace = true
 miden-assembly.workspace = true
 miden-assembly-syntax.workspace = true
 miden-mast-package.workspace = true
+miden-account-storage-schema = { workspace = true, optional = true }
 miden-codec-wit = { workspace = true, optional = true }
 miden-note-schema = { workspace = true, optional = true }
 miden-schema = { workspace = true, optional = true }
