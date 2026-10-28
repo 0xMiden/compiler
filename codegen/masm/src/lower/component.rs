@@ -737,15 +737,29 @@ fn world_body_to_masm_component(
 
     let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
-    let mut stub_namespaces = Vec::new();
-    // The world defines no component, so every component in it is a declaration-only stub.
-    for op in world.body().entry().body().iter() {
-        if let Some(stub) = op.downcast_ref::<builtin::Component>() {
+    // A component-less world is published at its target's namespace, which must not sit at or
+    // under the namespace of one of its declaration-only components: its procedures would be
+    // published under that dependency's name. The world defines no component, so every component
+    // in it is such a stub.
+    if let EmissionNamespace::Target(target) = namespace
+        && !target.is_executable()
+    {
+        let namespace = target.namespace.inner();
+        for op in world.body().entry().body().iter() {
+            let Some(stub) = op.downcast_ref::<builtin::Component>() else {
+                continue;
+            };
             let path = stub.namespace_path().to_library_path();
-            let path = path
+            let stub = path
                 .to_absolute()
                 .map_err(|err| Report::msg(format!("unable to canonicalize '{}': {err}", path)))?;
-            stub_namespaces.push(Arc::from(path.into_owned().into_boxed_path()));
+            if namespace.strip_prefix(&*stub).is_some() {
+                return Err(Report::msg(format!(
+                    "refusing to root a world that defines no component at '{namespace}', at or \
+                     under '{stub}', the namespace of one of its declaration-only components: its \
+                     procedures would be published under that dependency's name"
+                )));
+            }
         }
     }
     let mut masm_component = MasmComponent {
@@ -767,7 +781,6 @@ fn world_body_to_masm_component(
         heap_base,
         stack_pointer,
         modules,
-        stub_namespaces,
     };
     let builder = MasmComponentBuilder {
         analysis_manager,
@@ -940,7 +953,6 @@ fn component_to_masm_component(
         heap_base,
         stack_pointer,
         modules,
-        stub_namespaces: Vec::new(),
     };
     let builder = MasmComponentBuilder {
         analysis_manager,
