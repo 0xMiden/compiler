@@ -1,4 +1,8 @@
-use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+    vec::Vec,
+};
 use core::cell::RefCell;
 use std::path::Path;
 
@@ -20,7 +24,7 @@ use midenc_hir::{
             attributes::{LocalVariable, Signature},
         },
         debuginfo::{
-            DIBuilder,
+            DIBuilder, DebugDeclare, DebugKill, DebugValue,
             attributes::{
                 CompileUnitAttr, Expression, ExpressionOp, INLINE_CALL_CHAIN_ATTR_NAME,
                 InlineCallChain, InlineCallChainAttr, InlineCallFrame, SubprogramAttr,
@@ -48,11 +52,14 @@ pub struct FunctionBuilderContext {
     debug_blocks: FxHashMap<BlockRef, DebugBlockOffsets>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct DebugBlockOffsets {
     entry: u64,
     exit: u64,
     span: SourceSpan,
+    has_instructions: bool,
+    /// Bindings already overwritten by scheduled records before the first instruction.
+    entry_bindings: BTreeSet<usize>,
 }
 
 impl FunctionBuilderContext {
@@ -136,14 +143,25 @@ impl Listener for SSABuilderListener {
 
         let block = op.parent().expect("inserted operation has no parent block");
         if let Some(offset) = builder.debug_offset {
+            let is_record =
+                op.is::<DebugValue>() || op.is::<DebugDeclare>() || op.is::<DebugKill>();
             builder
                 .debug_blocks
                 .entry(block)
-                .and_modify(|block| block.exit = offset)
+                .and_modify(|block| {
+                    if !block.has_instructions {
+                        block.entry = offset;
+                        block.span = op.span();
+                    }
+                    block.exit = offset;
+                    block.has_instructions |= !is_record;
+                })
                 .or_insert(DebugBlockOffsets {
                     entry: offset,
                     exit: offset,
                     span: op.span(),
+                    has_instructions: !is_record,
+                    entry_bindings: BTreeSet::new(),
                 });
         }
         if builder.is_pristine(&block) {
@@ -223,7 +241,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         &self,
         index: usize,
         span: SourceSpan,
-    ) -> Option<(DebugVariable, Option<Expression>, bool)> {
+    ) -> Option<(DebugVariable, Option<Expression>, bool, Vec<InlineCallFrame>)> {
         let fallback = self.span_to_location(span);
         let info = self.debug_info.as_ref()?;
         let mut info = info.borrow_mut();
@@ -235,7 +253,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             local.attr.clone(),
             local.expression.clone(),
             local.scope.is_some() || !local.locations.is_empty(),
+            local.inline_calls.clone(),
         ))
+    }
+
+    fn with_debug_binding_owner<T>(
+        &mut self,
+        owner: Vec<InlineCallFrame>,
+        emit: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let instruction_context = self.active_inline_calls.replace(owner);
+        let result = emit(self);
+        self.active_inline_calls.replace(instruction_context);
+        result
     }
 
     pub fn set_inline_calls(&mut self, inline_calls: Vec<InlineCallFrame>) {
@@ -244,7 +274,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
 
     pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
         let idx = var.index();
-        let Some((attr, expr_opt, schedule_only)) = self.local_debug_metadata(idx, span) else {
+        let Some((attr, expr_opt, schedule_only, owner)) = self.local_debug_metadata(idx, span)
+        else {
             return;
         };
         if schedule_only {
@@ -259,9 +290,9 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             Some(Expression::with_ops(ops))
         });
 
-        if let Err(err) =
-            DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
-        {
+        if let Err(err) = self.with_debug_binding_owner(owner, |builder| {
+            DIBuilder::builder_mut(builder).debug_value_with_expr(value, attr, expr, span)
+        }) {
             warn!("failed to emit dbg.value for local {idx}: {err:?}");
         }
     }
@@ -342,7 +373,15 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         };
 
         for entry in updates {
-            self.emit_scheduled_dbg_value(entry, span, wasm_stack);
+            let var_index = entry.var_index;
+            if self.emit_scheduled_dbg_value(entry, span, wasm_stack) {
+                let block = self.current_block();
+                if let Some(offsets) = self.func_ctx.borrow_mut().debug_blocks.get_mut(&block)
+                    && !offsets.has_instructions
+                {
+                    offsets.entry_bindings.insert(var_index);
+                }
+            }
         }
     }
 
@@ -351,43 +390,34 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         entry: LocationScheduleEntry,
         span: SourceSpan,
         wasm_stack: &[ValueRef],
-    ) {
+    ) -> bool {
         let idx = entry.var_index;
-        let Some((attr, ..)) = self.local_debug_metadata(idx, span) else {
-            return;
+        let Some((attr, _, _, owner)) = self.local_debug_metadata(idx, span) else {
+            return false;
         };
-
-        let Some(storage) = entry.storage else {
-            if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
-                warn!("failed to emit scheduled dbg.kill for local {idx}: {err:?}");
-            }
-            return;
-        };
-        if storage.is_empty() {
-            return;
+        if entry.storage.as_ref().is_some_and(Expression::is_empty) {
+            return false;
         }
-
-        if let Some(value) = operand_stack_value_from_expression(&storage, wasm_stack) {
-            if let Err(err) =
-                DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, None, span)
-            {
-                warn!("failed to emit scheduled stack dbg.value for local {idx}: {err:?}");
+        let result = self.with_debug_binding_owner(owner, |builder| {
+            let builder = DIBuilder::builder_mut(builder);
+            match entry.storage {
+                None => builder.debug_kill(attr, span).map(|op| op.as_operation_ref()),
+                Some(storage) => {
+                    if let Some(value) = operand_stack_value_from_expression(&storage, wasm_stack) {
+                        builder
+                            .debug_value_with_expr(value, attr, None, span)
+                            .map(|op| op.as_operation_ref())
+                    } else {
+                        builder.debug_declare(attr, storage, span).map(|op| op.as_operation_ref())
+                    }
+                }
             }
-            return;
-        }
-
-        self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
-    }
-
-    fn emit_scheduled_dbg_declare_with_attr(
-        &mut self,
-        idx: usize,
-        attr: midenc_hir::dialects::debuginfo::attributes::Variable,
-        expression: Expression,
-        span: SourceSpan,
-    ) {
-        if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, expression, span) {
-            warn!("failed to emit scheduled dbg.declare for local {idx}: {err:?}");
+        });
+        if let Err(err) = result {
+            warn!("failed to emit scheduled debug record for local {idx}: {err:?}");
+            false
+        } else {
+            true
         }
     }
 
@@ -416,8 +446,11 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
                     for repair in
                         index.repairs(source, offsets.entry, &info.location_schedule, &info.locals)
                     {
-                        let name = info.locals[repair.var_index].as_ref().unwrap().attr.name;
-                        repairs.insert(name, repair);
+                        // Every entry-prefix record overwrites this binding before any
+                        // instruction executes, including events flushed after a skipped range.
+                        if !offsets.entry_bindings.contains(&repair.var_index) {
+                            repairs.insert((repair.storage.is_some(), repair.var_index), repair);
+                        }
                     }
                 }
                 if !repairs.is_empty() {
@@ -431,23 +464,23 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             plans
         };
         for (block, span, repairs) in plans {
-            let inline_calls = block
-                .borrow()
-                .body()
-                .front()
-                .get()
-                .and_then(|operation| operation.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME));
             let mut builder = OpBuilder::new(self.inner.builder().context_rc());
             builder.set_insertion_point_to_start(block);
             for repair in repairs {
-                let Some((attr, ..)) = self.local_debug_metadata(repair.var_index, span) else {
+                let Some((attr, _, _, owner)) = self.local_debug_metadata(repair.var_index, span)
+                else {
                     continue;
                 };
                 let mut operation = match repair.storage {
                     Some(storage) => builder.debug_declare(attr, storage, span)?.as_operation_ref(),
                     None => builder.debug_kill(attr, span)?.as_operation_ref(),
                 };
-                if let Some(inline_calls) = inline_calls {
+                builder.set_insertion_point_after(operation);
+                if !owner.is_empty() {
+                    let inline_calls = builder
+                        .context_rc()
+                        .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(owner))
+                        .as_attribute_ref();
                     operation.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, inline_calls);
                 }
             }
@@ -1019,3 +1052,6 @@ pub enum DefVariableError {
     )]
     DefinedBeforeDeclared(Variable),
 }
+
+#[cfg(test)]
+mod tests;

@@ -9,7 +9,7 @@ use log::debug;
 use midenc_hir::{
     FxHashMap, FxHashSet, SourceSpan,
     dialects::debuginfo::attributes::{
-        CompileUnit, Expression, ExpressionOp, FrameBase, Subprogram, Variable,
+        CompileUnit, Expression, ExpressionOp, FrameBase, InlineCallFrame, Subprogram, Variable,
     },
     hashbrown::hash_map::Entry,
     interner::Symbol,
@@ -42,6 +42,10 @@ pub struct LocationDescriptor {
 
 #[derive(Clone)]
 pub struct LocalDebugInfo {
+    /// The inline frame that owns this binding, independent of the emitting instruction.
+    /// Collection currently skips inlined-subroutine children, so collected locals belong
+    /// to the physical caller and have an empty chain.
+    pub(crate) inline_calls: Vec<InlineCallFrame>,
     pub attr: Variable,
     pub locations: Vec<LocationDescriptor>,
     pub expression: Option<Expression>,
@@ -324,6 +328,7 @@ fn build_local_debug_info(
         let expression = fixed_location_expression(&locations);
 
         locals[param_idx] = Some(LocalDebugInfo {
+            inline_calls: Vec::new(),
             attr,
             locations,
             expression,
@@ -382,6 +387,7 @@ fn build_local_debug_info(
             let expression = fixed_location_expression(&locations);
 
             locals[next_local_index] = Some(LocalDebugInfo {
+                inline_calls: Vec::new(),
                 attr,
                 locations,
                 expression,
@@ -412,6 +418,7 @@ fn build_local_debug_info(
                 attr.ty = local_types.get(*index as usize).cloned().flatten();
             }
             locals.push(Some(LocalDebugInfo {
+                inline_calls: Vec::new(),
                 attr,
                 locations: var.locations.clone(),
                 expression,
@@ -1200,6 +1207,7 @@ mod tests {
             },
         ];
         let mut locals = vec![Some(LocalDebugInfo {
+            inline_calls: Vec::new(),
             attr: variable,
             locations,
             expression: None,
@@ -1825,6 +1833,7 @@ mod tests {
                 .iter()
                 .map(|variable| {
                     Some(LocalDebugInfo {
+                        inline_calls: Vec::new(),
                         attr: Variable::new(
                             variable.name.unwrap(),
                             Symbol::intern("scope.rs"),

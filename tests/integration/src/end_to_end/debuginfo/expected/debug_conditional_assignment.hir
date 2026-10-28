@@ -81,7 +81,6 @@ builtin.component private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392
 
         ^block13:
             di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
-            di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
             %83 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
             %84 = hir.bitcast %83 <{ ty = #builtin.type<u32> }>;
             %85 = arith.constant 8 : u32;

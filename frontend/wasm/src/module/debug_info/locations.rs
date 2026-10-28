@@ -243,8 +243,17 @@ impl LocationIndex {
         for name in names {
             let mut desired = self.state(name, target, schedule);
             let transient = desired.storage.as_ref().is_some_and(is_transient);
-            let changed = source.is_none_or(|source| {
-                let current = self.state(name, source, schedule);
+            let current = source.map(|source| self.state(name, source, schedule));
+            if let Some(current) = &current
+                && current.var_index != desired.var_index
+            {
+                repairs.push(LocationScheduleEntry {
+                    offset: target,
+                    var_index: current.var_index,
+                    storage: None,
+                });
+            }
+            let changed = current.is_none_or(|current| {
                 current.storage != desired.storage
                     || (desired.storage.is_some() && current.var_index != desired.var_index)
             });
@@ -281,6 +290,7 @@ mod tests {
 
     fn binding(scope: Rc<VariableScope>, value: Option<u64>) -> Option<LocalDebugInfo> {
         Some(LocalDebugInfo {
+            inline_calls: Vec::new(),
             attr: Variable::new(Symbol::intern("x"), Symbol::intern("scope.rs"), 1, None),
             locations: value
                 .map(|value| LocationDescriptor {
@@ -390,6 +400,7 @@ mod tests {
         let storage =
             Expression::with_ops(vec![ExpressionOp::OperandStackSlot(0), ExpressionOp::StackValue]);
         let mut locals = vec![Some(LocalDebugInfo {
+            inline_calls: Vec::new(),
             attr: Variable::new(Symbol::intern("x"), Symbol::intern("stack.rs"), 1, None),
             locations: vec![
                 LocationDescriptor {
@@ -441,6 +452,22 @@ mod tests {
     }
 
     #[test]
+    fn edge_repairs_kill_the_departing_binding_when_crossing_a_shadow_boundary() {
+        let outer = scope(0, 100, None);
+        let inner = scope(20, 40, Some(outer.clone()));
+        let mut locals = vec![binding(outer, Some(7)), binding(inner, Some(7))];
+        locals[1].as_mut().unwrap().attr.line = 2;
+        let schedule = build_location_schedule(&mut locals);
+        let index = LocationIndex::new(&schedule, &locals);
+        for (source, target, expected) in
+            [(30, 50, vec![(1, false), (0, true)]), (50, 30, vec![(0, false), (1, true)])]
+        {
+            let repairs = index.repairs(Some(source), target, &schedule, &locals);
+            assert_eq!(values_at(&repairs, target), expected);
+        }
+    }
+
+    #[test]
     fn stable_locations_are_not_repeated_on_every_cfg_edge() {
         let mut locals = vec![binding(scope(0, 100, None), Some(7))];
         let schedule = build_location_schedule(&mut locals);
@@ -452,6 +479,7 @@ mod tests {
     #[test]
     fn joins_do_not_reuse_captured_operand_stack_values() {
         let mut locals = vec![Some(LocalDebugInfo {
+            inline_calls: Vec::new(),
             attr: Variable::new(Symbol::intern("x"), Symbol::intern("stack.rs"), 1, None),
             locations: vec![LocationDescriptor {
                 start: 0,
