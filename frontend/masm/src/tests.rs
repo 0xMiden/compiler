@@ -3590,6 +3590,194 @@ end
 }
 
 #[test]
+fn advice_taint_uses_comparison_result_ranges_at_arithmetic_and_public_returns() -> Result<()> {
+    for comparison in ["push.0 eq", "push.10 lt"] {
+        let context = Rc::new(Context::default());
+        let source = format!(
+            "pub proc entry() -> u32\n    adv_push\n    {comparison}\n    push.1\n    \
+             u32wrapping_add\nend"
+        );
+        let output = disassemble_source(&source, "test", &DisassemblerConfig::default(), context)?;
+        let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+        let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+        assert!(analysis.findings().is_empty(), "{comparison}: {:#?}", analysis.findings());
+        assert!(
+            analysis.exit_findings().is_empty(),
+            "{comparison}: {:#?}",
+            analysis.exit_findings()
+        );
+        assert!(analysis.external_call_findings().is_empty());
+        let diagnostics =
+            analysis.diagnostics(&output.module.borrow().as_operation().context().source_manager());
+        assert!(diagnostics.is_empty(), "{comparison}: {diagnostics:#?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn advice_taint_uses_comparison_result_ranges_in_private_callees() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc increment(value: u32) -> u32
+    push.1
+    u32wrapping_add
+end
+
+pub proc entry() -> u32
+    adv_push
+    push.0
+    eq
+    exec.increment
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+    assert!(analysis.exit_findings().is_empty(), "{:#?}", analysis.exit_findings());
+    assert!(analysis.external_call_findings().is_empty());
+    let diagnostics =
+        analysis.diagnostics(&output.module.borrow().as_operation().context().source_manager());
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    Ok(())
+}
+
+#[test]
+fn advice_taint_uses_joined_branch_result_ranges() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry(cond: felt) -> u32
+    adv_push
+    push.0
+    eq
+    swap
+    if.true
+        drop
+        push.7
+    end
+    push.1
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+    assert!(analysis.exit_findings().is_empty(), "{:#?}", analysis.exit_findings());
+    assert!(analysis.external_call_findings().is_empty());
+    let diagnostics =
+        analysis.diagnostics(&output.module.borrow().as_operation().context().source_manager());
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    Ok(())
+}
+
+#[test]
+fn advice_taint_uses_loop_carried_result_ranges() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+    adv_push
+    push.0
+    eq
+    push.1
+    while.true
+        push.1
+        u32wrapping_add
+        dup.0
+        push.100
+        u32lt
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+    assert!(analysis.exit_findings().is_empty(), "{:#?}", analysis.exit_findings());
+    assert!(analysis.external_call_findings().is_empty());
+    let diagnostics =
+        analysis.diagnostics(&output.module.borrow().as_operation().context().source_manager());
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    Ok(())
+}
+
+#[test]
+fn advice_taint_uses_comparison_result_ranges_at_external_calls() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures
+        .insert(ast::Path::new("::dep::consume").into(), masm_signature([Type::U32], []));
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub proc entry()
+    adv_push
+    push.10
+    lt
+    exec.::dep::consume
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+    assert!(analysis.exit_findings().is_empty(), "{:#?}", analysis.exit_findings());
+    assert!(
+        analysis.external_call_findings().is_empty(),
+        "{:#?}",
+        analysis.external_call_findings()
+    );
+    let diagnostics =
+        analysis.diagnostics(&output.module.borrow().as_operation().context().source_manager());
+    assert!(diagnostics.is_empty(), "{diagnostics:#?}");
+    Ok(())
+}
+
+#[test]
+fn advice_taint_keeps_raw_advice_unconstrained_at_typed_public_returns() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> u32
+    adv_push
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+    assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+    assert_eq!(analysis.exit_findings().len(), 1, "{:#?}", analysis.exit_findings());
+    assert!(analysis.external_call_findings().is_empty());
+    let diagnostics =
+        analysis.diagnostics(&output.module.borrow().as_operation().context().source_manager());
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
+    assert!(
+        diagnostics[0]
+            .message()
+            .contains("returns unconstrained advice value as result #0")
+    );
+    Ok(())
+}
+
+#[test]
 fn advice_taint_reports_raw_advice_used_by_u32_arithmetic() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(

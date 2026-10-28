@@ -21,6 +21,7 @@ use midenc_hir::{
     diagnostics::SourceManager,
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
+    traits::ValueRangeConstraint,
 };
 use midenc_hir_analysis::{DataFlowConfig, DataFlowSolver, LatticeLike};
 
@@ -156,7 +157,7 @@ impl AdviceTaintAnalysis {
 
     fn collect_analysis_results(&mut self, op: &Operation) {
         self.findings = collect_findings(op, &self.solver, &self.ranges);
-        self.exit_findings = collect_exit_findings(op, &self.solver);
+        self.exit_findings = collect_exit_findings(op, &self.solver, &self.ranges);
         self.external_call_findings =
             collect_external_call_findings(op, &self.solver, &self.ranges);
     }
@@ -293,7 +294,11 @@ fn collect_public_exposure(op: &Operation) -> FxHashMap<OperationRef, Vec<Span<S
     exposed
 }
 
-fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintExitFinding> {
+fn collect_exit_findings(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    ranges: &RangeFacts,
+) -> Vec<AdviceTaintExitFinding> {
     let exposed = collect_public_exposure(op);
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
@@ -313,6 +318,14 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
         let return_span = operation.span();
         for (result_index, operand) in ret.values().iter().enumerate() {
             let value = operand.borrow().as_value_ref();
+            // The signature defines the public contract; a lifted carrier type may differ.
+            // Unconstrained results (including felt/word) retain their escape diagnostics.
+            if let Some(result) = function.get_signature().results().get(result_index)
+                && let Some(constraint) = ValueRangeConstraint::from_type(&result.ty)
+                && ranges.satisfies(value, &constraint)
+            {
+                continue;
+            }
             let taint = value_taint(value, solver);
             if taint.is_clean() || !taint.has_unreported_origin() {
                 continue;
@@ -520,6 +533,53 @@ mod tests {
     type ExitResults = (Vec<AdviceTaintExitFinding>, Vec<AdviceTaintDiagnostic>);
 
     #[test]
+    fn public_returns_require_proven_bounds_for_the_declared_result() -> Result<(), Report> {
+        use midenc_dialect_arith::ArithOpBuilder;
+        use midenc_hir::{Type, dialects::builtin::BuiltinOpBuilder};
+
+        use crate::HirOpBuilder;
+
+        // Unchecked representation casts preserve the raw range. A nominally narrow
+        // carrier must not discharge the result contract, nor should a wider carrier
+        // prevent a valid proof from satisfying it.
+        for (result_type, carrier_type, increment, expected_exits) in [
+            (Type::U32, Type::Felt, 0, 0),
+            (Type::U8, Type::U32, 0, 0),
+            (Type::U8, Type::U8, 256, 1),
+            (Type::Felt, Type::Felt, 0, 1),
+        ] {
+            let mut test =
+                Test::new("public_return_range", &[], core::slice::from_ref(&result_type));
+            let span = SourceSpan::UNKNOWN;
+            {
+                let mut builder = test.function_builder();
+                let raw = builder.advice_pop(span)?;
+                let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+                let boolean = builder.eq(raw, zero, span)?;
+                let mut value = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+                if increment != 0 {
+                    let amount = builder.u32(increment, span);
+                    value = builder.add_unchecked(value, amount, span)?;
+                }
+                let value =
+                    builder.unrealized_conversion_cast(value, carrier_type.clone(), span)?;
+                builder.ret([value], span)?;
+            }
+            let root = test.function().as_operation_ref();
+            let analysis =
+                AnalysisManager::new(root, None).get_analysis::<AdviceTaintAnalysis>()?;
+            assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+            assert_eq!(
+                analysis.exit_findings().len(),
+                expected_exits,
+                "declared {result_type}, carrier {carrier_type}: {:#?}",
+                analysis.exit_findings()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
     fn exhausted_range_phase_retains_static_sink_and_external_call_checks() -> Result<(), Report> {
         use midenc_dialect_arith::ArithOpBuilder;
         use midenc_hir::{
@@ -546,7 +606,7 @@ mod tests {
             let product = builder.mul(arg, two, span)?;
             builder.ret([product], span)?;
         }
-        let entry = test.define_function("entry", &[], &[Type::U32]);
+        let entry = test.define_function("entry", &[], &[Type::U32, Type::U32]);
         {
             let signature = Signature::new(&test.context_rc(), [Type::U32], []);
             let helper_signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
@@ -559,7 +619,7 @@ mod tests {
             builder.exec(helper, helper_signature, [value], span)?;
             let one = builder.u32(1, span);
             let sum = builder.add(value, one, span)?;
-            builder.ret([sum], span)?;
+            builder.ret([sum, value], span)?;
         }
         let root = test.module().as_operation_ref();
         let manager = AnalysisManager::new(root, None);
@@ -588,6 +648,8 @@ mod tests {
         ));
         assert_eq!(analysis.findings().len(), 2);
         assert_eq!(analysis.external_call_findings().len(), 1);
+        assert_eq!(analysis.exit_findings().len(), 1);
+        assert_eq!(analysis.exit_findings()[0].result_index, 1);
         let complete = AdviceTaintAnalysis::run_with_config(
             &root.borrow(),
             AnalysisManager::new(root, None),
@@ -596,6 +658,7 @@ mod tests {
         assert_eq!(complete.range_analysis_status(), &super::RangeAnalysisStatus::Complete);
         assert!(complete.findings().is_empty());
         assert!(complete.external_call_findings().is_empty());
+        assert!(complete.exit_findings().is_empty());
         Ok(())
     }
 

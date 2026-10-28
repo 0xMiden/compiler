@@ -1,0 +1,59 @@
+# RUN: midenc -Zlint -Canalyze-only %s > %t 2>&1
+# RUN: test ! -s %t
+
+namespace advice_range
+
+pub proc equality() -> u32
+    adv_push
+    push.0
+    eq
+    push.1
+    u32wrapping_add
+end
+
+pub proc comparison() -> u32
+    adv_push
+    push.10
+    lt
+    push.1
+    u32wrapping_add
+end
+
+proc increment(value: u32) -> u32
+    push.1
+    u32wrapping_add
+end
+
+pub proc helper() -> u32
+    adv_push
+    push.0
+    eq
+    exec.increment
+end
+
+pub proc branch(cond: felt) -> u32
+    adv_push
+    push.0
+    eq
+    swap
+    if.true
+        drop
+        push.7
+    end
+    push.1
+    u32wrapping_add
+end
+
+pub proc loop() -> u32
+    adv_push
+    push.0
+    eq
+    push.1
+    while.true
+        push.1
+        u32wrapping_add
+        dup.0
+        push.100
+        u32lt
+    end
+end

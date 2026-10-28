@@ -19,11 +19,22 @@ use crate::ControlFlowDialect;
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(
+        BranchOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter,
+    )
 )]
 pub struct Br {
     #[successor]
     target: Successor,
+}
+
+impl OperandRangeRequirementOpInterface for Br {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
 }
 
 impl Canonicalizable for Br {
@@ -51,7 +62,12 @@ impl BranchOpInterface for Br {
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(
+        BranchOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter,
+    )
 )]
 pub struct CondBr {
     #[operand]
@@ -60,6 +76,15 @@ pub struct CondBr {
     then_dest: Successor,
     #[successor]
     else_dest: Successor,
+}
+
+impl OperandRangeRequirementOpInterface for CondBr {
+    fn operand_range_requirement(&self, operand_index: usize) -> OperandRangeRequirement {
+        match operand_index {
+            0 => OperandRangeRequirement::Required(ValueRangeConstraint::Type(Type::I1)),
+            _ => OperandRangeRequirement::None,
+        }
+    }
 }
 
 impl Canonicalizable for CondBr {
@@ -103,7 +128,12 @@ impl BranchOpInterface for CondBr {
 #[operation(
     dialect = ControlFlowDialect,
     traits(Terminator),
-    implements(BranchOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(
+        BranchOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter,
+    )
 )]
 pub struct Switch {
     #[operand]
@@ -112,6 +142,15 @@ pub struct Switch {
     cases: SwitchCase,
     #[successor]
     fallback: Successor,
+}
+
+impl OperandRangeRequirementOpInterface for Switch {
+    fn operand_range_requirement(&self, operand_index: usize) -> OperandRangeRequirement {
+        match operand_index {
+            0 => OperandRangeRequirement::Required(ValueRangeConstraint::Type(Type::U32)),
+            _ => OperandRangeRequirement::None,
+        }
+    }
 }
 
 impl Canonicalizable for Switch {
@@ -374,6 +413,60 @@ mod tests {
 
     use super::*;
     use crate::ControlFlowOpBuilder;
+
+    #[test]
+    fn branch_range_requirements_allow_forwarded_values() {
+        let mut test = Test::new("forward", &[Type::U32], &[]);
+        let value = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let target = builder.create_block();
+        builder.append_block_param(target, Type::U32, SourceSpan::UNKNOWN);
+        let branch = builder.br(target, [value], SourceSpan::UNKNOWN).unwrap();
+        assert_eq!(operation_operand_range_requirement(branch.borrow().as_operation(), 0), None);
+    }
+
+    #[test]
+    fn conditional_branch_range_requirements_check_only_the_condition() {
+        let mut test = Test::new("forward", &[Type::I1, Type::U32], &[]);
+        let entry = test.function().borrow().entry_block();
+        let condition = entry.borrow().arguments()[0] as ValueRef;
+        let value = entry.borrow().arguments()[1] as ValueRef;
+        let mut builder = test.function_builder();
+        let target = builder.create_block();
+        builder.append_block_param(target, Type::U32, SourceSpan::UNKNOWN);
+        let branch = builder
+            .cond_br(condition, target, [value], target, [value], SourceSpan::UNKNOWN)
+            .unwrap();
+        let branch = branch.borrow();
+        assert_eq!(branch.num_operands(), 3);
+        assert_eq!(
+            operation_operand_range_requirement(branch.as_operation(), 0),
+            Some(ValueRangeConstraint::Type(Type::I1))
+        );
+        assert_eq!(operation_operand_range_requirement(branch.as_operation(), 1), None);
+        assert_eq!(operation_operand_range_requirement(branch.as_operation(), 2), None);
+    }
+
+    #[test]
+    fn switch_range_requirements_check_only_the_selector() {
+        let mut test = Test::new("forward", &[Type::U32], &[]);
+        let selector = test.function().borrow().entry_block().borrow().arguments()[0] as ValueRef;
+        let mut builder = test.function_builder();
+        let target = builder.create_block();
+        builder.append_block_param(target, Type::U32, SourceSpan::UNKNOWN);
+        let cases = [SwitchCase::create(1, target, vec![selector])];
+        let switch = builder
+            .switch(selector, cases, target, [selector], SourceSpan::UNKNOWN)
+            .unwrap();
+        let switch = switch.borrow();
+        assert_eq!(switch.num_operands(), 3);
+        assert_eq!(
+            operation_operand_range_requirement(switch.as_operation(), 0),
+            Some(ValueRangeConstraint::Type(Type::U32))
+        );
+        assert_eq!(operation_operand_range_requirement(switch.as_operation(), 1), None);
+        assert_eq!(operation_operand_range_requirement(switch.as_operation(), 2), None);
+    }
 
     #[test]
     fn switch_building() {
