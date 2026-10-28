@@ -1,0 +1,16 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=simplify-aggressive}))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=simplify-aggressive}))' | filecheck %s
+
+builtin.module public @debug_aggressive_region {
+    // CHECK: @entrypoint(%[[COND:\d+]]: i1, %[[INPUT:\d+]]: u32)
+    // CHECK: cf.cond_br
+    // CHECK-NOT: ^{{.*}}(%{{.*}}: u32)
+    // CHECK: di.debug_value %[[INPUT]] {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret %[[INPUT]]
+    builtin.function public extern("C") @entrypoint(%condition: i1, %input: u32) -> u32 {
+        cf.cond_br %condition ^merge(%input : u32), ^merge(%input : u32) : (i1);
+    ^merge(%value: u32):
+        di.debug_value %value <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %value : (u32);
+    };
+};

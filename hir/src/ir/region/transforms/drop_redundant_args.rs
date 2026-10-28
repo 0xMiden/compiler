@@ -3,7 +3,7 @@ use smallvec::SmallVec;
 use super::RegionTransformFailed;
 use crate::{
     BlockArgumentRef, BlockRef, Region, RegionRef, Rewriter, SuccessorOperands, Usable,
-    traits::BranchOpInterface,
+    dialects::debuginfo::DebugInfoUpdate, traits::BranchOpInterface,
 };
 
 impl Region {
@@ -85,16 +85,16 @@ impl Region {
         let mut args_to_erase = SmallVec::<[usize; 4]>::default();
 
         // Go through the arguments of the block.
-        let mut block_mut = block.borrow_mut();
-        let block_args =
-            SmallVec::<[BlockArgumentRef; 2]>::from_iter(block_mut.arguments().iter().cloned());
+        let block_args = SmallVec::<[BlockArgumentRef; 2]>::from_iter(
+            block.borrow().arguments().iter().cloned(),
+        );
         for (arg_index, block_arg) in block_args.into_iter().enumerate() {
             let mut same_arg = true;
             let mut common_value = None;
 
             // Go through the block predecessor and flag if they pass to the block different values
             // for the same argument.
-            for pred in block_mut.predecessors() {
+            for pred in block.borrow().predecessors() {
                 let pred_op = pred.owner.borrow();
                 if let Some(branch_op) = pred_op.as_trait::<dyn BranchOpInterface>() {
                     let succ_index = pred.index as usize;
@@ -122,12 +122,17 @@ impl Region {
                 args_to_erase.push(arg_index);
 
                 // Remove the argument from the block.
-                rewriter.replace_all_uses_of_value_with(block_arg, common_value);
+                rewriter.replace_value_with_debug(
+                    block_arg as crate::ValueRef,
+                    common_value,
+                    DebugInfoUpdate::Equivalent,
+                );
             }
         }
 
         // Remove the arguments.
         // Erasing an argument reindexes every argument and forwarded operand after it.
+        let mut block_mut = block.borrow_mut();
         for arg_index in args_to_erase.iter().rev().copied() {
             block_mut.erase_argument(arg_index);
 

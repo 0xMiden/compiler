@@ -1,7 +1,7 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_hir::{
     Builder, BuilderExt, EntityMut, Forward, Op, OperationName, OperationRef, ProgramPoint,
-    RawWalk, Report, Rewriter, Spanned, ValueRef,
+    RawWalk, Region, Report, Rewriter, Spanned, ValueRef,
     dialects::{
         builtin::Function,
         debuginfo::{
@@ -10,7 +10,7 @@ use midenc_hir::{
         },
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
-    patterns::{NoopRewriterListener, RewriterImpl},
+    patterns::{NoopRewriterListener, RegionSimplificationLevel, RewriterImpl},
 };
 
 /// Deliberately correct and incorrect mutations for testing the pass-manager debug contract.
@@ -55,7 +55,15 @@ impl Pass for TestDebugInfoMutation {
         let root = function.as_operation_ref();
         let context = function.as_operation().context_rc();
         let entry = function.entry_block();
+        let body = function.body().as_region_ref();
         drop(function);
+        if self.action == "simplify-aggressive" {
+            let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(context);
+            Region::simplify_all(&[body], &mut rewriter, RegionSimplificationLevel::Aggressive)
+                .map_err(|_| Report::msg("test requires an aggressively simplifiable region"))?;
+            state.set_post_pass_status(PostPassStatus::Changed);
+            return Ok(());
+        }
         let arguments = entry.borrow().arguments().to_vec();
         let replacement = arguments[1] as ValueRef;
         let mut record = None;
@@ -179,6 +187,21 @@ impl Pass for TestDebugInfoMutation {
             "discard-record" => {
                 let _update = DebugInfoMutation::new(record, DebugInfoUpdate::DiscardUnreachable);
                 record.borrow_mut().erase();
+            }
+            "discard-dependency-preserve"
+            | "discard-dependency-rewrite"
+            | "discard-dependency-erase" => {
+                let _update =
+                    DebugInfoMutation::new(store.unwrap(), DebugInfoUpdate::DiscardUnreachable);
+                if self.action == "discard-dependency-rewrite" {
+                    record
+                        .borrow_mut()
+                        .downcast_mut::<DebugDeclare>()
+                        .unwrap()
+                        .set_expression(Expression::with_ops(vec![ExpressionOp::LocalSlot(1)]));
+                } else if self.action == "discard-dependency-erase" {
+                    record.borrow_mut().erase();
+                }
             }
             "salvage-unavailable" => {
                 let value =

@@ -564,7 +564,9 @@ impl Drop for DebugInfoMutation {
         for (&op, before) in &self.records {
             let after = is_under(op, root).then(|| Record::read(op)).flatten();
             let valid = match (&after, self.update) {
-                (Some(after), DebugInfoUpdate::Preserve) => before == after,
+                (Some(after), DebugInfoUpdate::Preserve | DebugInfoUpdate::DiscardUnreachable) => {
+                    before == after
+                }
                 (Some(after), DebugInfoUpdate::Equivalent) => {
                     before.same_binding(after)
                         && before.expression == after.expression

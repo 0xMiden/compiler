@@ -264,16 +264,20 @@ fn build_local_debug_info(
     }
     let has_dwarf_locals = dwarf_locals.is_some_and(|locals| !locals.is_empty())
         || scheduled_vars.is_some_and(|locals| !locals.is_empty());
-    let mut scheduled_names = FxHashSet::default();
-    let mut scheduled_slots = FxHashSet::default();
-    for variable in scheduled_vars.into_iter().flatten() {
+    let mut dwarf_names = FxHashSet::default();
+    let mut dwarf_slots = FxHashSet::default();
+    for variable in dwarf_locals
+        .into_iter()
+        .flat_map(|locals| locals.values())
+        .chain(scheduled_vars.into_iter().flatten())
+    {
         if let Some(name) = variable.name {
-            scheduled_names.insert(name);
+            dwarf_names.insert(name);
         }
         for location in &variable.locations {
             for operation in &location.storage.operations {
                 if let ExpressionOp::LocalSlot(index) = operation {
-                    scheduled_slots.insert(*index);
+                    dwarf_slots.insert(*index);
                 }
             }
         }
@@ -286,7 +290,7 @@ fn build_local_debug_info(
             .local_name(func_index, index_u32)
             .unwrap_or_else(|| Symbol::intern(format!("arg{param_idx}")));
         if dwarf_entry.is_none()
-            && (scheduled_slots.contains(&index_u32) || scheduled_names.contains(&name_symbol))
+            && (dwarf_slots.contains(&index_u32) || dwarf_names.contains(&name_symbol))
         {
             continue;
         }
@@ -334,8 +338,8 @@ fn build_local_debug_info(
             let dwarf_entry = dwarf_locals.and_then(|map| map.get(&index_u32));
             let local_name = module.local_name(func_index, index_u32);
             if dwarf_entry.is_none()
-                && (scheduled_slots.contains(&index_u32)
-                    || local_name.is_some_and(|name| scheduled_names.contains(&name)))
+                && (dwarf_slots.contains(&index_u32)
+                    || local_name.is_some_and(|name| dwarf_names.contains(&name)))
             {
                 next_local_index += 1;
                 continue;
@@ -1547,6 +1551,19 @@ mod tests {
             let module = wasmprinter::print_bytes(&wasm).unwrap();
             std::fs::write(path, format!("{header}{}\n", module.trim_end())).unwrap();
         }
+        for (name, separate_storage_name) in [
+            ("formal-parameter-named-storage", false),
+            ("formal-parameter-aliased-storage", true),
+        ] {
+            let wasm = formal_parameter_named_storage_fixture(separate_storage_name);
+            let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tests/lit/debug")
+                .join(format!("{name}.wat"));
+            let fixture = std::fs::read_to_string(&path).unwrap();
+            let header = fixture.split_once("(module").unwrap().0;
+            let module = wasmprinter::print_bytes(&wasm).unwrap();
+            std::fs::write(path, format!("{header}{}\n", module.trim_end())).unwrap();
+        }
     }
 
     #[test]
@@ -1697,9 +1714,11 @@ mod tests {
             )
             .unwrap();
             let context = Rc::new(midenc_hir::Context::new(Rc::new(session)));
-            let output =
-                crate::translate(&wasm, &crate::WasmTranslationConfig::default(), context.clone())
-                    .unwrap();
+            let config = crate::WasmTranslationConfig {
+                generate_native_debuginfo: true,
+                ..Default::default()
+            };
+            let output = crate::translate(&wasm, &config, context.clone()).unwrap();
             let mut declarations = 0;
             let mut kills = 0;
             output.component.borrow().as_operation().prewalk_all(
@@ -1872,6 +1891,111 @@ mod tests {
         assert_eq!(parameters.len(), 2);
         assert_eq!(parameters[&0].name, Some(Symbol::intern("first")));
         assert_eq!(parameters[&1].name, Some(Symbol::intern("second")));
+    }
+
+    fn formal_parameter_named_storage_fixture(separate_storage_name: bool) -> Vec<u8> {
+        let storage = if separate_storage_name {
+            "storage"
+        } else {
+            "shadowed"
+        };
+        let extra = if separate_storage_name {
+            "(local $shadowed i32)"
+        } else {
+            ""
+        };
+        let mut wasm = wat::parse_str(format!(
+            "(module (func $entrypoint (export \"entrypoint\") (param i32) (result i32) (local \
+             ${storage} i32) {extra} i32.const 7 local.set ${storage} i32.const 9 local.set \
+             $shadowed local.get ${storage}))"
+        ))
+        .unwrap();
+        let mut dwarf = dwarf_write::DwarfUnit::new(gimli::Encoding {
+            format: gimli::Format::Dwarf32,
+            version: 4,
+            address_size: 4,
+        });
+        let subprogram = dwarf.unit.add(dwarf.unit.root(), gimli::DW_TAG_subprogram);
+        dwarf
+            .unit
+            .get_mut(subprogram)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"entrypoint".to_vec()));
+        let parameter = dwarf.unit.add(subprogram, gimli::DW_TAG_formal_parameter);
+        dwarf
+            .unit
+            .get_mut(parameter)
+            .set(gimli::DW_AT_name, dwarf_write::AttributeValue::String(b"shadowed".to_vec()));
+        dwarf
+            .unit
+            .get_mut(parameter)
+            .set(gimli::DW_AT_decl_line, dwarf_write::AttributeValue::Udata(99));
+        dwarf.unit.get_mut(parameter).set(
+            gimli::DW_AT_location,
+            dwarf_write::AttributeValue::Exprloc(dwarf_write::Expression::raw(vec![
+                gimli::DW_OP_WASM_location.0,
+                0,
+                1,
+            ])),
+        );
+        append_custom_sections(&mut wasm, dwarf_sections(&mut dwarf));
+        wasm
+    }
+
+    #[test]
+    fn named_storage_fallback_cannot_override_a_dwarf_formal_parameter() {
+        use alloc::{boxed::Box, sync::Arc};
+
+        use midenc_hir::{
+            Op,
+            dialects::debuginfo::{DebugDeclare, DebugValue},
+        };
+        use midenc_session::{
+            DebugInfo, InputFile, Options, Session, diagnostics::DefaultSourceManager,
+        };
+
+        for separate_storage_name in [false, true] {
+            let wasm = formal_parameter_named_storage_fixture(separate_storage_name);
+            let options = Box::new(Options::default())
+                .with_output_types(Default::default(), None)
+                .with_debug_info(DebugInfo::Full);
+            let session = Session::new(
+                InputFile::empty(),
+                options,
+                None,
+                Arc::new(DefaultSourceManager::default()),
+            )
+            .unwrap();
+            let context = Rc::new(midenc_hir::Context::new(Rc::new(session)));
+            let config = crate::WasmTranslationConfig {
+                generate_native_debuginfo: true,
+                ..Default::default()
+            };
+            let output = crate::translate(&wasm, &config, context.clone()).unwrap();
+            let mut declarations = 0;
+            output.component.borrow().as_operation().prewalk_all(
+                |operation: &midenc_hir::Operation| {
+                    if let Some(value) = operation.downcast_ref::<DebugValue>() {
+                        assert!(
+                            !["shadowed", "storage"]
+                                .contains(&value.variable().as_value().name.as_str()),
+                            "competing fallback: {operation}"
+                        );
+                    }
+                    if let Some(declare) = operation.downcast_ref::<DebugDeclare>()
+                        && declare.variable().as_value().name == Symbol::intern("shadowed")
+                    {
+                        assert_eq!(declare.variable().as_value().arg_index, Some(0));
+                        assert_eq!(declare.variable().as_value().line, 99);
+                        assert_eq!(
+                            declare.expression().as_value().operations,
+                            [ExpressionOp::LocalSlot(1), ExpressionOp::Deref]
+                        );
+                        declarations += 1;
+                    }
+                },
+            );
+            assert!(declarations > 0);
+        }
     }
 
     #[test]

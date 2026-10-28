@@ -1,4 +1,5 @@
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer))' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(canonicalizer))' | filecheck %s
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer{enable-patterns=fold-redundant-yields}))' | filecheck %s --check-prefix=REDUNDANT
 
 builtin.module public @canonicalizer_debug_contracts {
@@ -59,6 +60,31 @@ builtin.module public @canonicalizer_debug_contracts {
         } : (u32);
         di.debug_value %result <{ variable = #di.variable<{ name = "result", file = "test.rs", line = 3 }>, expression = #di.expression<[]> }> : (u32);
         builtin.ret %result : (u32);
+    };
+
+    // CHECK-LABEL: @constant_switch_tracked_local
+    // CHECK: hir.store_local %[[INITIAL:\d+]]
+    // CHECK-NEXT: di.debug_declare {{.*}}name = "x"{{.*}}DI_OP_local_slot(0)
+    // CHECK-NOT: scf.index_switch
+    // CHECK-NOT: hir.store_local
+    // CHECK-NOT: name = "untaken"
+    // CHECK: hir.load_local
+    // CHECK: builtin.ret
+    builtin.function public extern("C") @constant_switch_tracked_local(%initial: u32, %other: u32) -> u32 {
+        hir.store_local %initial <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %selector = arith.constant 1 : u32;
+        %result = scf.index_switch %selector
+        case 1 {
+            scf.yield %initial : (u32);
+        }
+        default {
+            hir.store_local %other <{ local = #builtin.local_variable<0, u32> }> : (u32);
+            di.debug_value %other <{ variable = #di.variable<{ name = "untaken", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %other : (u32);
+        } : (u32);
+        %loaded = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        builtin.ret %loaded : (u32);
     };
 
     // CHECK-LABEL: @redundant_capture

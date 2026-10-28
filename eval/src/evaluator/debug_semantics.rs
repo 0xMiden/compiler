@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, collections::BTreeMap};
 
 use midenc_hir::{
-    EntityMut, Forward, Op, OperationName, ProgramPoint, RawWalk, Symbol as _, SymbolName,
+    EntityMut, Forward, Op, OperationName, ProgramPoint, RawWalk, Region, Symbol as _, SymbolName,
     SymbolTable,
     diagnostics::Uri,
     dialects::{
@@ -16,7 +16,7 @@ use midenc_hir::{
     },
     parse::{ParserConfig, parse},
     pass::{Nesting, OperationPass, Pass, PassExecutionState, PassManager, PostPassStatus},
-    patterns::{NoopRewriterListener, RewriterImpl},
+    patterns::{NoopRewriterListener, RegionSimplificationLevel, RewriterImpl},
     testing::Test,
 };
 use midenc_hir_transform::{
@@ -479,12 +479,13 @@ fn canonicalizer_contracts_preserve_values_and_explicit_kills() -> Result<(), Re
             &[],
         )?;
     }
-    for name in ["constant_switch", "switch_unused", "bool_not"] {
+    for name in ["constant_switch", "constant_switch_tracked_local", "switch_unused", "bool_not"] {
         let scenario = Scenario::new(source, name)?;
         let inputs = [0u32, 1, 7, u32::MAX - 1]
             .into_iter()
             .map(|value| match name {
                 "constant_switch" => vec![value.into()],
+                "constant_switch_tracked_local" => vec![value.into(), 7u32.into()],
                 "switch_unused" => vec![value.into(), 5u32.into(), value.into()],
                 _ => vec![value.into(), 7u32.into()],
             })
@@ -500,6 +501,51 @@ fn canonicalizer_contracts_preserve_values_and_explicit_kills() -> Result<(), Re
             },
         )?;
     }
+    Ok(())
+}
+
+struct AggressiveRegionSimplification;
+
+impl Pass for AggressiveRegionSimplification {
+    type Target = Function;
+
+    fn name(&self) -> &'static str {
+        "test-aggressive-region-simplification"
+    }
+
+    fn can_schedule_on(&self, _name: &OperationName) -> bool {
+        true
+    }
+
+    fn run_on_operation(
+        &mut self,
+        function: EntityMut<'_, Function>,
+        state: &mut PassExecutionState,
+    ) -> Result<(), Report> {
+        let context = function.as_operation().context_rc();
+        let region = function.body().as_region_ref();
+        drop(function);
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(context);
+        Region::simplify_all(&[region], &mut rewriter, RegionSimplificationLevel::Aggressive)
+            .map_err(|_| Report::msg("test requires an aggressively simplifiable region"))?;
+        state.set_post_pass_status(PostPassStatus::Changed);
+        Ok(())
+    }
+}
+
+#[test]
+fn aggressive_region_simplification_preserves_captured_arguments() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/debug-info-aggressive-region.hir");
+    let scenario = Scenario::new(source, "entrypoint")?;
+    let inputs = [false, true]
+        .into_iter()
+        .flat_map(|condition| {
+            [0u32, 7, u32::MAX]
+                .into_iter()
+                .map(move |value| vec![condition.into(), value.into()])
+        })
+        .collect::<Vec<_>>();
+    compare_rewrite(&scenario, &inputs, vec![Box::new(AggressiveRegionSimplification)], &[])?;
     Ok(())
 }
 
