@@ -33,6 +33,7 @@ pub use self::{
         AdviceTaintOrigin, AdviceTaintOriginKind, AdviceTaintValue, ContextualAdviceTaintValue,
     },
     propagation::AdviceTaintPropagation,
+    ranges::RangeAnalysisStatus,
 };
 use self::{
     lattice::value_taint,
@@ -69,6 +70,11 @@ pub struct AdviceTaintAnalysisResult {
 }
 
 impl AdviceTaintAnalysis {
+    /// Status of optional range inference, independent of taint coverage.
+    pub fn range_analysis_status(&self) -> &RangeAnalysisStatus {
+        self.ranges.status()
+    }
+
     pub fn findings(&self) -> &[AdviceTaintFinding] {
         &self.findings
     }
@@ -226,13 +232,8 @@ fn collect_findings(
 ) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
-        let operand_indices = ranges.unsatisfied_operands(operation);
-        if operand_indices.is_empty() {
-            return;
-        }
-
         let mut operand_taint = ContextualAdviceTaintValue::clean();
-        for operand_index in operand_indices {
+        for operand_index in ranges.unsatisfied_operands(operation) {
             let operand = &operation.operands()[operand_index];
             let value = operand.borrow().as_value_ref();
             operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver));
@@ -533,11 +534,17 @@ mod tests {
         let span = SourceSpan::UNKNOWN;
         let mut test = Test::named("range_budget_fallback").in_module("m");
         let external = test.define_function("external", &[Type::U32], &[]);
-        let helper = test.define_function("helper", &[Type::U32], &[Type::U32]);
+        let mut helper = test.define_function("helper", &[Type::U32], &[Type::U32]);
+        midenc_hir::Symbol::set_visibility(
+            &mut *helper.borrow_mut(),
+            midenc_hir::Visibility::Private,
+        );
         {
             let mut builder = FunctionBuilder::new(helper, test.builder_mut());
             let arg = builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
-            builder.ret([arg], span)?;
+            let two = builder.u32(2, span);
+            let product = builder.mul(arg, two, span)?;
+            builder.ret([product], span)?;
         }
         let entry = test.define_function("entry", &[], &[Type::U32]);
         {
@@ -560,10 +567,11 @@ mod tests {
         config.set_interprocedural(true);
         config.set_max_worklist_iterations(Some(0));
         let ranges = RangeFacts::analyze(&root.borrow(), manager.clone(), config.clone())?;
+        assert!(matches!(ranges.status(), super::RangeAnalysisStatus::BudgetExhausted { .. }));
         // Run the actual taint phase with a full budget after range inference has exhausted
         // its own. Even initialization-time boolean facts must not suppress static checks.
         config.set_max_worklist_iterations(None);
-        let mut solver = DataFlowSolver::new(config);
+        let mut solver = DataFlowSolver::new(config.clone());
         let propagation = AdviceTaintPropagation::with_ranges(&mut solver, ranges.clone());
         solver.load_with_strategy(propagation);
         solver.load::<super::storage::AdviceTaintStoragePropagation>();
@@ -574,8 +582,20 @@ mod tests {
             ..Default::default()
         };
         analysis.collect_analysis_results(&root.borrow());
-        assert_eq!(analysis.findings().len(), 1);
+        assert!(matches!(
+            analysis.range_analysis_status(),
+            super::RangeAnalysisStatus::BudgetExhausted { .. }
+        ));
+        assert_eq!(analysis.findings().len(), 2);
         assert_eq!(analysis.external_call_findings().len(), 1);
+        let complete = AdviceTaintAnalysis::run_with_config(
+            &root.borrow(),
+            AnalysisManager::new(root, None),
+            config,
+        )?;
+        assert_eq!(complete.range_analysis_status(), &super::RangeAnalysisStatus::Complete);
+        assert!(complete.findings().is_empty());
+        assert!(complete.external_call_findings().is_empty());
         Ok(())
     }
 

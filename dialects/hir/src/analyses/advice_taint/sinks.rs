@@ -58,18 +58,6 @@ pub(super) fn is_unconstrained_external_result_type(ty: &Type) -> bool {
     is_unconstrained_value_type(ty)
 }
 
-#[cfg(test)]
-use midenc_hir::traits::operation_operand_range_requirement;
-
-#[cfg(test)]
-pub(super) fn range_constrained_operand_indices(op: &Operation) -> Vec<usize> {
-    op.operands()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, _)| operation_operand_range_requirement(op, index).map(|_| index))
-        .collect()
-}
-
 pub(super) fn operation_result_has_advice_read_effect(
     op: &Operation,
     result: midenc_hir::ValueRef,
@@ -92,7 +80,7 @@ mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{Felt, SourceSpan, testing::Test};
 
-    use super::*;
+    use super::{super::ranges::RangeFacts, *};
     use crate::HirOpBuilder;
 
     #[test]
@@ -105,7 +93,7 @@ mod tests {
         let op = result.borrow().get_defining_op().unwrap();
         let op = op.borrow();
 
-        assert_eq!(range_constrained_operand_indices(&op), [0, 1]);
+        assert_eq!(RangeFacts::default().unsatisfied_operands(&op).collect::<Vec<_>>(), [0, 1]);
     }
 
     #[test]
@@ -118,7 +106,7 @@ mod tests {
         let op = result.borrow().get_defining_op().unwrap();
         let op = op.borrow();
 
-        assert!(range_constrained_operand_indices(&op).is_empty());
+        assert!(RangeFacts::default().unsatisfied_operands(&op).next().is_none());
 
         let lhs = builder.felt(Felt::new(3).unwrap(), SourceSpan::UNKNOWN);
         let rhs = builder.felt(Felt::new(2).unwrap(), SourceSpan::UNKNOWN);
@@ -126,7 +114,7 @@ mod tests {
         let op = result.borrow().get_defining_op().unwrap();
         let op = op.borrow();
 
-        assert_eq!(range_constrained_operand_indices(&op), [1]);
+        assert_eq!(RangeFacts::default().unsatisfied_operands(&op).collect::<Vec<_>>(), [1]);
     }
 
     #[test]

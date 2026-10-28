@@ -69,7 +69,6 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         let range_constrained_operand_taint = ContextualAdviceTaintValue::join_all(
             self.ranges
                 .unsatisfied_operands(op)
-                .into_iter()
                 .filter_map(|index| operands.get(index).map(|operand| operand.value())),
         );
         transfer_results(op, operand_taint, range_constrained_operand_taint, results)

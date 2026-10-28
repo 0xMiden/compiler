@@ -1,7 +1,10 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{
+    rc::Rc,
+    string::{String, ToString},
+};
 
 use midenc_hir::{
-    Operation, Report, ValueRef,
+    ConstantIntRange, FxHashMap, Operation, Report, ValueRef,
     pass::AnalysisManager,
     traits::{ValueRangeConstraint, operation_operand_range_requirement},
 };
@@ -10,13 +13,29 @@ use midenc_hir_analysis::{
     analyses::{IntegerRangeAnalysis, integer_range::value_range},
 };
 
-/// Immutable range facts shared by taint propagation and diagnostic collection.
+/// Whether optional integer range inference completed before advice taint propagation.
 ///
-/// A partially solved range can still widen when another predecessor arrives. Using it to
-/// decide whether an origin has been reported would make taint transfer non-monotone.
-/// Only a completed range solve can discharge a requirement; absent facts keep every check.
+/// Exhaustion reduces precision: static checks still cover every constrained use. It does not
+/// imply incomplete taint coverage, which is reported separately by the taint solver.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub enum RangeAnalysisStatus {
+    #[default]
+    NotRun,
+    Complete,
+    BudgetExhausted {
+        reason: String,
+    },
+}
+
+/// Immutable proven bounds shared by taint propagation and diagnostic collection.
+///
+/// Only a completed range solve can discharge a requirement. Partial facts are discarded;
+/// successful solves retain just the proven ranges of values used by the analysis root.
 #[derive(Clone, Default)]
-pub(super) struct RangeFacts(Option<Rc<DataFlowSolver>>);
+pub(super) struct RangeFacts {
+    proven: Rc<FxHashMap<ValueRef, ConstantIntRange>>,
+    status: RangeAnalysisStatus,
+}
 
 impl RangeFacts {
     pub fn analyze(
@@ -27,34 +46,49 @@ impl RangeFacts {
         let mut solver = DataFlowSolver::new(config);
         solver.load::<IntegerRangeAnalysis>();
         match solver.initialize_and_run(op, analysis_manager) {
-            Ok(()) => Ok(Self(Some(Rc::new(solver)))),
-            Err(err) if super::is_dataflow_budget_exhaustion(&err) => {
-                log::debug!(
-                    "integer range budget exhausted; retaining static advice checks: {err}"
-                );
-                Ok(Self::default())
+            Ok(()) => {
+                let mut proven = FxHashMap::default();
+                op.prewalk_all(|operation| {
+                    for operand in operation.operands().iter() {
+                        let value = operand.borrow().as_value_ref();
+                        if let Some(range) =
+                            value_range(&solver, value).filter(|range| range.is_proven())
+                            && let Some(range) = range.range().copied()
+                        {
+                            proven.insert(value, range);
+                        }
+                    }
+                });
+                Ok(Self {
+                    proven: Rc::new(proven),
+                    status: RangeAnalysisStatus::Complete,
+                })
             }
+            Err(err) if super::is_dataflow_budget_exhaustion(&err) => Ok(Self {
+                status: RangeAnalysisStatus::BudgetExhausted {
+                    reason: err.to_string(),
+                },
+                ..Self::default()
+            }),
             Err(err) => Err(err),
         }
     }
 
-    pub fn satisfies(&self, value: ValueRef, constraint: &ValueRangeConstraint) -> bool {
-        self.0
-            .as_ref()
-            .and_then(|solver| value_range(solver, value))
-            .is_some_and(|range| {
-                range.is_proven() && range.range().is_some_and(|range| range.satisfies(constraint))
-            })
+    pub fn status(&self) -> &RangeAnalysisStatus {
+        &self.status
     }
 
-    pub fn unsatisfied_operands(&self, op: &Operation) -> Vec<usize> {
-        op.operands()
-            .iter()
-            .enumerate()
-            .filter_map(|(index, operand)| {
-                let constraint = operation_operand_range_requirement(op, index)?;
-                (!self.satisfies(operand.borrow().as_value_ref(), &constraint)).then_some(index)
-            })
-            .collect()
+    pub fn satisfies(&self, value: ValueRef, constraint: &ValueRangeConstraint) -> bool {
+        self.proven.get(&value).is_some_and(|range| range.satisfies(constraint))
+    }
+
+    pub fn unsatisfied_operands<'a>(
+        &'a self,
+        op: &'a Operation,
+    ) -> impl Iterator<Item = usize> + 'a {
+        op.operands().iter().enumerate().filter_map(move |(index, operand)| {
+            let constraint = operation_operand_range_requirement(op, index)?;
+            (!self.satisfies(operand.borrow().as_value_ref(), &constraint)).then_some(index)
+        })
     }
 }

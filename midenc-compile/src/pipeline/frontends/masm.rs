@@ -361,6 +361,9 @@ impl MasmProjectFrontend {
         for diagnostic in analysis_result.analysis.diagnostics(&source_manager) {
             session.diagnostics.emit(diagnostic);
         }
+        if analysis_result.incomplete_reason.is_none() {
+            report_range_precision(analysis_result.analysis.range_analysis_status(), &session);
+        }
         if let Some(reason) = analysis_result.incomplete_reason {
             session
                 .diagnostics
@@ -373,6 +376,26 @@ impl MasmProjectFrontend {
         }
 
         Ok(world)
+    }
+}
+
+/// Precision fallback is advisory; only an unfinished taint solve represents incomplete coverage.
+fn report_range_precision(
+    status: &midenc_dialect_hir::analyses::RangeAnalysisStatus,
+    session: &Session,
+) {
+    if matches!(
+        status,
+        midenc_dialect_hir::analyses::RangeAnalysisStatus::BudgetExhausted { .. }
+    ) {
+        session
+            .diagnostics
+            .diagnostic(Severity::Advice)
+            .with_message(
+                "Integer range analysis exceeded its worklist budget; advice taint analysis used \
+                 static range checks and may report additional warnings",
+            )
+            .emit();
     }
 }
 
@@ -1135,6 +1158,26 @@ end
              function 'initialized_finding'"
         );
         assert!(warnings[1].starts_with(incomplete_prefix), "{warnings:?}");
+    }
+
+    #[test]
+    fn range_precision_advice_is_visible_without_failing_warnings_as_errors() {
+        use midenc_dialect_hir::analyses::RangeAnalysisStatus;
+        use midenc_session::Warnings;
+
+        let project = budget_project("masm_range_precision_advice");
+        let (context, diagnostics) = capturing_context(&project, |options| {
+            options.diagnostics.warnings = Warnings::Error;
+        });
+        let status = RangeAnalysisStatus::BudgetExhausted {
+            reason: "range worklist budget exhausted".into(),
+        };
+        super::report_range_precision(&status, context.session());
+        let captured = diagnostics.captured();
+        assert!(captured.contains("static range checks"), "{captured}");
+        assert!(!captured.contains("analysis incomplete"), "{captured}");
+        assert!(!context.session().diagnostics.has_errors());
+        assert!(warning_messages(&captured).is_empty());
     }
 
     /// Coverage warnings use the session diagnostics policy and fail under `-Dwarnings`.
