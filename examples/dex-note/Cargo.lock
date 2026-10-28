@@ -1715,6 +1715,7 @@ name = "miden-base"
 version = "0.15.0"
 dependencies = [
  "miden-base-sys",
+ "miden-field-repr",
  "miden-stdlib-sys",
 ]
 

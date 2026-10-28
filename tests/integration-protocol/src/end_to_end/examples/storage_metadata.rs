@@ -41,6 +41,19 @@ fn storage_example() {
         type = "word"
 
         [[storage.slots]]
+        name = "miden::storage_example::foo::holdings"
+        description = "holdings by asset"
+
+        [storage.slots.type]
+        key = "word"
+        value = "word"
+
+        [[storage.slots]]
+        name = "miden::storage_example::foo::limits"
+        description = "holding limits"
+        type = "word"
+
+        [[storage.slots]]
         name = "miden::storage_example::foo::asset_qty_map"
         description = "asset quantity map"
 

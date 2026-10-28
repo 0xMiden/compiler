@@ -1,0 +1,28 @@
+[package]
+name = "miden-schema-codegen"
+description = "Rust code generator for Miden package schemas"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+heck.workspace = true
+miden-schema = { workspace = true, features = ["protocol"] }
+proc-macro2.workspace = true
+quote.workspace = true
+
+[dev-dependencies]
+miden-note-schema = { workspace = true, features = ["protocol"] }
+prettyplease = { workspace = true }
+syn.workspace = true

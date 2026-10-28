@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{
     FrontendMetadata, PackageSections, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
-    WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
-    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, count_top_level_wit_packages, decode_section,
-    trim_trailing_nuls,
+    WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+    WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME, WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+    count_top_level_wit_packages, decode_section, trim_trailing_nuls,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
@@ -99,6 +99,8 @@ pub struct ParsedModule<'data> {
     pub component_wit_bytes: Option<&'data [u8]>,
     /// The note storage schema emitted by the `#[note]` macro.
     pub note_storage_schema_bytes: Option<&'data [u8]>,
+    /// The account storage schema emitted by the `#[component_storage]` macro.
+    pub account_storage_schema_bytes: Option<&'data [u8]>,
     /// Frontend-only component metadata entries emitted by SDK macros (empty when none present).
     pub component_frontend_metadata: Vec<FrontendMetadata>,
 }
@@ -153,6 +155,7 @@ pub(crate) fn collect_package_sections<'a, 'data: 'a>(
     let mut account_component_metadata = None;
     let mut component_wit = None;
     let mut note_storage_schema = None;
+    let mut account_storage_schema = None;
     for module in modules {
         merge_section_payload(
             &mut account_component_metadata,
@@ -172,11 +175,18 @@ pub(crate) fn collect_package_sections<'a, 'data: 'a>(
             WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
             diagnostics,
         )?;
+        merge_section_payload(
+            &mut account_storage_schema,
+            module.account_storage_schema_bytes,
+            WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+            diagnostics,
+        )?;
     }
     Ok(PackageSections {
         account_component_metadata: account_component_metadata.map(<[u8]>::to_vec),
         component_wit: component_wit.map(<[u8]>::to_vec),
         note_storage_schema: note_storage_schema.map(<[u8]>::to_vec),
+        account_storage_schema: account_storage_schema.map(<[u8]>::to_vec),
     })
 }
 
@@ -442,6 +452,28 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         .with_message(format!(
                             "wasm error: multiple \
                              '{WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}' custom sections \
+                             were found; only one is allowed per core Wasm module"
+                        ))
+                        .into_report());
+                }
+            }
+            Payload::CustomSection(s)
+                if s.name() == WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME =>
+            {
+                core::str::from_utf8(trim_trailing_nuls(s.data())).map_err(|err| {
+                    diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "failed to parse account storage schema section as UTF-8: {err}"
+                        ))
+                        .into_report()
+                })?;
+                if self.result.account_storage_schema_bytes.replace(s.data()).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "wasm error: multiple \
+                             '{WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}' custom sections \
                              were found; only one is allowed per core Wasm module"
                         ))
                         .into_report());

@@ -1,10 +1,10 @@
 //! Author-side codecs for the DEX note storage schema.
 
-use miden_note_codec::AuthorTypeCodec;
+use miden_codec::AuthorTypeCodec;
 
-miden_note_codec::from_project!("../dex-note");
+miden_codec::from_project!("../dex-note");
 
-#[miden_note_codec::note_codec]
+#[miden_codec::codec]
 impl AuthorTypeCodec for LimitPrice {
     fn parse(value: &str) -> Result<Self, String> {
         parse_limit_price(value)
@@ -23,7 +23,7 @@ impl AuthorTypeCodec for LimitPrice {
     }
 }
 
-miden_note_codec::export_codecs!();
+miden_codec::export_codecs!();
 
 /// Parses a fraction or finite decimal limit price.
 fn parse_limit_price(value: &str) -> Result<LimitPrice, String> {

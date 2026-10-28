@@ -1,0 +1,44 @@
+[package]
+name = "miden-schema"
+description = "Schema model, codec registry and codec component loader for Miden package schemas"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["protocol"]
+# Values of protocol types: the value builder and decoder, and the standard codecs.
+# The schema model and the codec-component validation do not need it.
+protocol = ["dep:miden-protocol"]
+codec-component = ["protocol", "dep:wasmtime"]
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-field.workspace = true
+miden-field-repr.workspace = true
+miden-mast-package = { workspace = true, features = ["std"] }
+miden-protocol = { workspace = true, features = ["std"], optional = true }
+midenc-frontend-wasm-metadata.workspace = true
+toml.workspace = true
+wasmparser.workspace = true
+# This reader accepts package-supplied WIT. Version 0.258 bounds recursive syntax parsing
+# before the schema model's own depth checks can run.
+wit-parser.workspace = true
+wasmtime = { workspace = true, optional = true }
+
+[dev-dependencies]
+miden-core.workspace = true
+miden-codec-wit.workspace = true
+midenc-integration-test-support.workspace = true
+tempfile.workspace = true
+wat.workspace = true

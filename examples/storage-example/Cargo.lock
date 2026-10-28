@@ -1706,6 +1706,7 @@ name = "miden-base"
 version = "0.15.0"
 dependencies = [
  "miden-base-sys",
+ "miden-field-repr",
  "miden-stdlib-sys",
 ]
 
@@ -3508,6 +3509,7 @@ name = "storage-example"
 version = "0.1.0"
 dependencies = [
  "miden",
+ "miden-field-repr",
  "miden-sdk-build-script-support",
 ]
 

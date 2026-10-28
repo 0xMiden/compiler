@@ -1,0 +1,377 @@
+//! String-path value builder.
+
+use std::collections::BTreeMap;
+
+use miden_field_repr::FeltWriter;
+
+use crate::{
+    CodecRegistry, Error, Felt, PrimitiveType, Result, Schema, SchemaField, SchemaType,
+    SchemaTypeKind,
+    codec::{parse_felt, parse_unsigned, write_repr},
+    schema::normalize_name,
+    value::validate_encoding,
+};
+
+/// Builds the felt encoding of a schema root from normalized dotted string paths.
+pub struct ValueBuilder<'a> {
+    root: &'a SchemaType,
+    kind: &'a str,
+    registry: &'a CodecRegistry,
+    values: BTreeMap<String, String>,
+}
+
+impl<'a> ValueBuilder<'a> {
+    /// Creates an empty builder for a schema and codec registry.
+    pub(crate) fn new(schema: &'a Schema, registry: &'a CodecRegistry) -> Self {
+        Self::for_type(schema.root(), schema.profile().name, registry)
+    }
+
+    /// Creates an empty builder for one type that is not a schema root.
+    ///
+    /// A schema kind whose values are several types, such as the slots of account storage,
+    /// builds each one with its own builder. Paths name the fields of `root`, so it must be a
+    /// record; [`encode_text_value`] encodes a whole value from one text. `kind` names the value
+    /// in diagnostics.
+    pub fn for_type(root: &'a SchemaType, kind: &'a str, registry: &'a CodecRegistry) -> Self {
+        Self {
+            root,
+            kind,
+            registry,
+            values: BTreeMap::new(),
+        }
+    }
+
+    /// Sets a leaf value by kebab-case or snake_case dotted path.
+    ///
+    /// Options accept `none` or `some(<value>)`. Variants accept a case name or
+    /// `case-name(<value>)` when the selected case has a payload.
+    pub fn set(mut self, path: &str, value: impl AsRef<str>) -> Result<Self> {
+        let segments = normalize_path(path, self.kind)?;
+        let normalized = segments.join(".");
+        let ty = resolve_path(self.root, &segments)?;
+        let value = value.as_ref();
+        reject_unsupported_constructor_path(ty, &normalized, value, self.registry)?;
+
+        if let Some(conflict) = self.values.keys().find(|existing| {
+            *existing == &normalized
+                || existing.starts_with(&format!("{normalized}."))
+                || normalized.starts_with(&format!("{existing}."))
+        }) {
+            return Err(Error::new(format!(
+                "path `{normalized}` conflicts with the existing value at `{conflict}`"
+            )));
+        }
+        self.values.insert(normalized, value.to_owned());
+        Ok(self)
+    }
+
+    /// Checks completeness and returns the felts in declaration order.
+    pub fn build(self) -> Result<Vec<Felt>> {
+        let kind = self.kind;
+        let mut felts = Vec::new();
+        encode_type(
+            self.root,
+            "",
+            &self.values,
+            self.registry,
+            kind,
+            &mut FeltWriter::new(&mut felts),
+        )?;
+        validate_encoding(self.root, &felts)
+            .map_err(|err| err.context(format!("built {kind} does not match its schema")))?;
+        Ok(felts)
+    }
+}
+
+/// Rejects structural constructor shapes that need nested record text parsing.
+fn reject_unsupported_constructor_path(
+    ty: &SchemaType,
+    path: &str,
+    value: &str,
+    registry: &CodecRegistry,
+) -> Result<()> {
+    if ty.fqn().is_some_and(|fqn| registry.contains(fqn)) {
+        return Ok(());
+    }
+    match ty.kind() {
+        SchemaTypeKind::Option(payload)
+            if matches!(payload.kind(), SchemaTypeKind::Record(_))
+                && value.trim() != "none"
+                && !payload.fqn().is_some_and(|fqn| registry.contains(fqn)) =>
+        {
+            Err(Error::new(format!(
+                "path `{path}` selects an option with record payload `{}`; the string builder \
+                 does not support nested record constructors without a codec for that payload",
+                payload.fqn().or(payload.name()).unwrap_or("<anonymous record>")
+            )))
+        }
+        SchemaTypeKind::Variant(cases) => {
+            let (case_name, _) = parse_constructor(value)?;
+            let case_name = normalize_name(case_name);
+            let unsupported = cases.iter().find(|case| case.name() == case_name).and_then(|case| {
+                let payload = case.payload()?;
+                (matches!(payload.kind(), SchemaTypeKind::Record(_))
+                    && !payload.fqn().is_some_and(|fqn| registry.contains(fqn)))
+                .then_some(case.name())
+            });
+            if let Some(case_name) = unsupported {
+                Err(Error::new(format!(
+                    "path `{path}` selects variant case `{case_name}` with a record payload; the \
+                     string builder does not support nested record constructors without a codec \
+                     for that payload"
+                )))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Normalizes and validates a dotted field path.
+fn normalize_path(path: &str, kind: &str) -> Result<Vec<String>> {
+    // `split` always yields one segment, so only an empty segment can fail here.
+    let segments = path.split('.').map(normalize_name).collect::<Vec<_>>();
+    if segments.iter().any(String::is_empty) {
+        return Err(Error::new(format!("invalid empty {kind} path `{path}`")));
+    }
+    Ok(segments)
+}
+
+/// Resolves a dotted path through structural record fields.
+fn resolve_path<'a>(mut ty: &'a SchemaType, segments: &[String]) -> Result<&'a SchemaType> {
+    let mut resolved = Vec::with_capacity(segments.len());
+    for segment in segments {
+        let SchemaTypeKind::Record(fields) = ty.kind() else {
+            return Err(Error::new(format!(
+                "path `{}` continues through non-record type `{}`",
+                resolved.join("."),
+                ty.fqn().or(ty.name()).unwrap_or("<anonymous>")
+            )));
+        };
+        let field = fields.iter().find(|field| field.name() == segment).ok_or_else(|| {
+            let prefix = if resolved.is_empty() {
+                "<root>".to_owned()
+            } else {
+                resolved.join(".")
+            };
+            Error::new(format!("record `{prefix}` has no field named `{segment}`"))
+        })?;
+        resolved.push(segment.clone());
+        ty = field.ty();
+    }
+    Ok(ty)
+}
+
+/// Encodes a schema type from complete path assignments.
+fn encode_type(
+    ty: &SchemaType,
+    path: &str,
+    values: &BTreeMap<String, String>,
+    registry: &CodecRegistry,
+    kind: &str,
+    writer: &mut FeltWriter<'_>,
+) -> Result<()> {
+    if let Some(value) = values.get(path) {
+        let felts = encode_text(ty, value, registry)
+            .map_err(|err| err.context(format!("value at `{path}`")))?;
+        for felt in felts {
+            writer.write(felt);
+        }
+        return Ok(());
+    }
+
+    if let SchemaTypeKind::Record(fields) = ty.kind() {
+        let Some((fqn, codec)) = ty.fqn().and_then(|fqn| Some((fqn, registry.codec(fqn)?))) else {
+            return encode_record_fields(fields, path, values, registry, kind, writer);
+        };
+        // A record assembled from child-path values must still satisfy its registered
+        // codec, or the builder would produce a value that the same registry rejects on
+        // decode. Encode the subtree separately so the codec can validate it as one value.
+        let mut subtree = Vec::new();
+        encode_record_fields(
+            fields,
+            path,
+            values,
+            registry,
+            kind,
+            &mut FeltWriter::new(&mut subtree),
+        )?;
+        codec.validate(&subtree).map_err(|err| {
+            err.context(format!(
+                "codec `{fqn}` validation failed for the values assigned under `{}`",
+                if path.is_empty() { "<root>" } else { path }
+            ))
+        })?;
+        for felt in subtree {
+            writer.write(felt);
+        }
+        return Ok(());
+    }
+
+    Err(Error::new(format!(
+        "missing {kind} value for `{}`",
+        if path.is_empty() { "<root>" } else { path }
+    )))
+}
+
+/// Encodes every field of a record from complete path assignments.
+fn encode_record_fields(
+    fields: &[SchemaField],
+    path: &str,
+    values: &BTreeMap<String, String>,
+    registry: &CodecRegistry,
+    kind: &str,
+    writer: &mut FeltWriter<'_>,
+) -> Result<()> {
+    for field in fields {
+        let field_path = if path.is_empty() {
+            field.name().to_owned()
+        } else {
+            format!("{path}.{}", field.name())
+        };
+        encode_type(field.ty(), &field_path, values, registry, kind, writer)?;
+    }
+    Ok(())
+}
+
+/// Encodes one whole value of `ty` from text.
+///
+/// The text uses the syntax of [`ValueBuilder::set`]: a leaf value, `none` or `some(<value>)`
+/// for an option, and a case name or `case-name(<value>)` for a variant. A type with a codec in
+/// `registry` is parsed by that codec. A record without a codec has no text form; build it from
+/// its fields with a [`ValueBuilder`].
+pub fn encode_text_value(
+    ty: &SchemaType,
+    value: &str,
+    registry: &CodecRegistry,
+) -> Result<Vec<Felt>> {
+    let felts = encode_text(ty, value, registry)?;
+    validate_encoding(ty, &felts)?;
+    Ok(felts)
+}
+
+/// Encodes one direct string value.
+fn encode_text(ty: &SchemaType, value: &str, registry: &CodecRegistry) -> Result<Vec<Felt>> {
+    if let Some(fqn) = ty.fqn()
+        && let Some(codec) = registry.codec(fqn)
+    {
+        let felts = codec.parse(value)?;
+        codec
+            .validate(&felts)
+            .map_err(|err| err.context(format!("codec `{fqn}` validation failed")))?;
+        validate_encoding(ty, &felts)
+            .map_err(|err| err.context(format!("codec `{fqn}` changed the structural layout")))?;
+        return Ok(felts);
+    }
+
+    match ty.kind() {
+        SchemaTypeKind::Felt => Ok(write_repr(&parse_felt(value)?)),
+        SchemaTypeKind::Primitive(primitive) => encode_primitive(*primitive, value),
+        SchemaTypeKind::Option(payload) => encode_option(payload, value, registry),
+        SchemaTypeKind::Variant(cases) => {
+            let (case_name, payload_text) = parse_constructor(value)?;
+            let case_name = normalize_name(case_name);
+            let (ordinal, case) =
+                cases.iter().enumerate().find(|(_, case)| case.name() == case_name).ok_or_else(
+                    || {
+                        Error::new(format!(
+                            "variant `{}` has no case named `{case_name}`",
+                            ty.fqn().or(ty.name()).unwrap_or("<anonymous>")
+                        ))
+                    },
+                )?;
+            let ordinal = u32::try_from(ordinal)
+                .map_err(|_| Error::new("variant has more than u32::MAX cases"))?;
+            let mut felts = write_repr(&ordinal);
+            match (case.payload(), payload_text) {
+                (None, None) => {}
+                (None, Some(_)) => {
+                    return Err(Error::new(format!(
+                        "variant case `{case_name}` does not accept a payload"
+                    )));
+                }
+                (Some(_), None) => {
+                    return Err(Error::new(format!("variant case `{case_name}` needs a payload")));
+                }
+                (Some(payload), Some(payload_text)) => {
+                    felts.extend(encode_text(payload, payload_text, registry)?);
+                }
+            }
+            Ok(felts)
+        }
+        SchemaTypeKind::Record(_) => Err(Error::new(format!(
+            "type `{}` has no codec; set its leaf fields with dotted paths",
+            ty.fqn().or(ty.name()).unwrap_or("<anonymous record>")
+        ))),
+    }
+}
+
+/// Encodes an option tag and optional direct payload.
+fn encode_option(payload: &SchemaType, value: &str, registry: &CodecRegistry) -> Result<Vec<Felt>> {
+    let value = value.trim();
+    if value == "none" {
+        return Ok(write_repr(&0u32));
+    }
+    let (constructor, payload_text) = parse_constructor(value)?;
+    if normalize_name(constructor) != "some" {
+        return Err(Error::new("an option value must be `none` or `some(<value>)`"));
+    }
+    let payload_text =
+        payload_text.ok_or_else(|| Error::new("an option `some` value needs a payload"))?;
+    let mut felts = write_repr(&1u32);
+    felts.extend(encode_text(payload, payload_text, registry)?);
+    Ok(felts)
+}
+
+/// Encodes one supported primitive through `miden-field-repr`.
+fn encode_primitive(primitive: PrimitiveType, value: &str) -> Result<Vec<Felt>> {
+    match primitive {
+        PrimitiveType::U64 => Ok(write_repr(&parse_unsigned(value, "u64")?)),
+        PrimitiveType::U32 => {
+            let value = u32::try_from(parse_unsigned(value, "u32")?)
+                .map_err(|_| Error::new(format!("u32 value `{value}` is out of range")))?;
+            Ok(write_repr(&value))
+        }
+        PrimitiveType::U16 => {
+            let value = u16::try_from(parse_unsigned(value, "u16")?)
+                .map_err(|_| Error::new(format!("u16 value `{value}` is out of range")))?;
+            // `miden-field-repr` has no `u16` encoding; the felt is the `u32` of the same value.
+            Ok(write_repr(&u32::from(value)))
+        }
+        PrimitiveType::U8 => {
+            let value = u8::try_from(parse_unsigned(value, "u8")?)
+                .map_err(|_| Error::new(format!("u8 value `{value}` is out of range")))?;
+            Ok(write_repr(&value))
+        }
+        PrimitiveType::Bool => {
+            let value = match value.trim() {
+                "true" | "1" => true,
+                "false" | "0" => false,
+                value => {
+                    return Err(Error::new(format!(
+                        "invalid bool `{value}`; expected true, false, 1, or 0"
+                    )));
+                }
+            };
+            Ok(write_repr(&value))
+        }
+    }
+}
+
+/// Splits `name` or `name(payload)` text without interpreting the payload.
+fn parse_constructor(value: &str) -> Result<(&str, Option<&str>)> {
+    let value = value.trim();
+    let Some(open) = value.find('(') else {
+        return Ok((value, None));
+    };
+    if !value.ends_with(')') {
+        return Err(Error::new(format!("value `{value}` has an unclosed payload")));
+    }
+    let name = value[..open].trim();
+    let payload = value[open + 1..value.len() - 1].trim();
+    if name.is_empty() || payload.is_empty() {
+        return Err(Error::new(format!("value `{value}` has an empty constructor or payload")));
+    }
+    Ok((name, Some(payload)))
+}

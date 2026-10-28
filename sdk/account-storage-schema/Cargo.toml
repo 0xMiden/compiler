@@ -1,0 +1,35 @@
+[package]
+name = "miden-account-storage-schema"
+description = "Host-side reader for Miden account component storage schemas"
+version = "0.15.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[features]
+default = ["protocol"]
+# Values of protocol types. The schema reader does not need it.
+protocol = ["miden-schema/protocol", "dep:miden-protocol"]
+codec-component = ["protocol", "miden-schema/codec-component"]
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-mast-package = { workspace = true, features = ["std"] }
+miden-protocol = { workspace = true, features = ["std"], optional = true }
+miden-schema.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
+# This reader accepts package-supplied WIT; it walks the root record the schema model does not.
+wit-parser.workspace = true
+
+[dev-dependencies]
+midenc-integration-test-support.workspace = true
+tempfile.workspace = true

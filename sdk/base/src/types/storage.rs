@@ -1,12 +1,74 @@
+extern crate alloc;
+
+use alloc::vec::Vec;
+
 use miden_base_sys::bindings::{
     AssetAmount, StorageSlotId, felt_from_padded_word, padded_word_from_felt, storage,
 };
-use miden_stdlib_sys::{Digest, Felt, Word};
+use miden_field_repr::{FeltReader, FeltWriter, FromFeltRepr, ToFeltRepr};
+use miden_stdlib_sys::{Digest, Felt, Word, felt};
+
+/// Number of felts in one storage word.
+const WORD_FELTS: usize = 4;
+
+/// Encodes a felt-repr value as one storage word: its felts first, zero padding after.
+///
+/// This is the word form of every custom `#[export_type]` slot type. The value must encode to at
+/// most four felts; the schema of the component holds the same bound, so a wider type fails the
+/// build before it reaches this check at run time.
+pub fn padded_word_from_felt_repr<T: ToFeltRepr>(value: &T) -> Result<Word, &'static str> {
+    let mut felts = Vec::with_capacity(WORD_FELTS);
+    value.write_felt_repr(&mut FeltWriter::new(&mut felts));
+    if felts.len() > WORD_FELTS {
+        return Err("value encodes to more than the four felts of a storage word");
+    }
+    let mut word = [felt!(0); WORD_FELTS];
+    word[..felts.len()].copy_from_slice(&felts);
+    Ok(Word::new(word))
+}
+
+/// Decodes a felt-repr value from a storage word written by [`padded_word_from_felt_repr`].
+///
+/// The felts after the value must be zero, so a word that was written for another type, or by
+/// hand, cannot decode by accident.
+pub fn felt_repr_from_padded_word<T: FromFeltRepr>(word: Word) -> Result<T, &'static str> {
+    let felts = [word[0], word[1], word[2], word[3]];
+    let mut reader = FeltReader::new(&felts);
+    let value = T::from_felt_repr(&mut reader).map_err(|_| "storage word does not decode")?;
+    if felts[reader.pos()..].iter().any(|padding| *padding != felt!(0)) {
+        return Err("expected zero padding after the value in the storage word");
+    }
+    Ok(value)
+}
+
+/// Packs a small unsigned integer into the leading felt of a zero-padded word.
+#[inline]
+fn padded_word_from_u32(value: u32) -> Word {
+    padded_word_from_felt(Felt::from_u32(value))
+}
+
+/// Reads the leading felt of a zero-padded word as an integer no larger than `max`.
+#[inline]
+fn u32_from_padded_word(
+    word: Word,
+    max: u32,
+    too_large: &'static str,
+) -> Result<u32, &'static str> {
+    let value = felt_from_padded_word(word)?;
+    // Compared in the felt domain: one VM instruction, and no `u64` kept alive across the branch.
+    if value > Felt::from_u32(max) {
+        return Err(too_large);
+    }
+    Ok(value.as_canonical_u64() as u32)
+}
 
 /// A type that can be stored in (or loaded from) account storage.
 ///
 /// Storage slots and map items store a single [`Word`]. Implementations must define a reversible
 /// conversion between the Rust type and a [`Word`].
+///
+/// A custom `#[export_type]` record or enum that derives `ToFeltRepr` and `FromFeltRepr` gets
+/// this trait from the macro, encoded with [`padded_word_from_felt_repr`].
 pub trait WordValue: Sized {
     /// Converts the value into the single storage word used by the host.
     fn try_into_word(self) -> Result<Word, &'static str>;
@@ -32,6 +94,49 @@ impl WordValue for Felt {
 
     fn try_from_word(word: Word) -> Result<Self, &'static str> {
         felt_from_padded_word(word)
+    }
+}
+
+impl WordValue for u8 {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self as u32))
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        u32_from_padded_word(word, u8::MAX as u32, "storage word holds more than a u8")
+            .map(|value| value as u8)
+    }
+}
+
+impl WordValue for u16 {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self as u32))
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        u32_from_padded_word(word, u16::MAX as u32, "storage word holds more than a u16")
+            .map(|value| value as u16)
+    }
+}
+
+impl WordValue for u32 {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self))
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        u32_from_padded_word(word, u32::MAX, "storage word holds more than a u32")
+    }
+}
+
+impl WordValue for bool {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self as u32))
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        u32_from_padded_word(word, 1, "storage word holds a value other than 0 or 1")
+            .map(|value| value == 1)
     }
 }
 
@@ -114,6 +219,9 @@ impl WordValue for miden_base_sys::bindings::NoteType {
 ///
 /// Map keys are passed by value for lookups to avoid requiring `Clone` just to materialize a
 /// [`Word`] for the host call.
+///
+/// A custom `#[export_type]` type that derives `Copy` next to `ToFeltRepr` and `FromFeltRepr`
+/// gets this trait from the macro, encoded with [`padded_word_from_felt_repr`].
 pub trait WordKey: Copy {
     /// Converts the key into the single storage word passed to the host.
     fn try_into_word(self) -> Result<Word, &'static str>;
@@ -128,6 +236,30 @@ impl WordKey for Word {
 impl WordKey for Felt {
     fn try_into_word(self) -> Result<Word, &'static str> {
         Ok(padded_word_from_felt(self))
+    }
+}
+
+impl WordKey for u8 {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self as u32))
+    }
+}
+
+impl WordKey for u16 {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self as u32))
+    }
+}
+
+impl WordKey for u32 {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self))
+    }
+}
+
+impl WordKey for bool {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(padded_word_from_u32(self as u32))
     }
 }
 

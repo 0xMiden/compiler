@@ -1,0 +1,170 @@
+//! Type-checks and exercises bindings generated from custom WIT types.
+
+use std::collections::BTreeMap;
+
+use miden_bindings::{CodecRegistry, Felt, FromFeltRepr, ToFeltRepr};
+
+miden_bindings::from_wit_text!(
+    r#"
+package example:custom-schema;
+
+interface note-storage {
+    record limit-price {
+        numerator: u64,
+        denominator: u64,
+    }
+
+    variant order-kind {
+        market,
+        limit(limit-price),
+    }
+
+    record custom-note {
+        price: limit-price,
+        kind: order-kind,
+    }
+
+    type storage = custom-note;
+}
+"#
+);
+
+/// Requires a type to carry both native felt-repr traits.
+fn assert_native_felt_repr<T: ToFeltRepr + FromFeltRepr>() {}
+
+#[test]
+fn custom_types_have_native_repr_and_typed_round_trips() {
+    assert_native_felt_repr::<LimitPrice>();
+    assert_native_felt_repr::<OrderKind>();
+    assert_native_felt_repr::<CustomNote>();
+
+    let value = CustomNote {
+        price: LimitPrice {
+            numerator: 3,
+            denominator: 2,
+        },
+        kind: OrderKind::Limit(LimitPrice {
+            numerator: 5,
+            denominator: 4,
+        }),
+    };
+    let storage = value.to_note_storage().unwrap();
+    assert_eq!(
+        storage.items(),
+        &[
+            Felt::from_u32(3),
+            Felt::ZERO,
+            Felt::from_u32(2),
+            Felt::ZERO,
+            Felt::ONE,
+            Felt::from_u32(5),
+            Felt::ZERO,
+            Felt::from_u32(4),
+            Felt::ZERO,
+        ]
+    );
+    assert_eq!(CustomNote::from_note_storage(&storage).unwrap(), value);
+
+    let codecs = CodecRegistry::default();
+    value.validate_with(&codecs).unwrap();
+    assert_eq!(
+        value.display_with(&codecs).unwrap(),
+        "{price: {numerator: 3, denominator: 2}, kind: limit({numerator: 5, denominator: 4})}"
+    );
+    value.validate().unwrap();
+    assert_eq!(value.display().unwrap(), value.display_with(&codecs).unwrap());
+}
+
+#[test]
+fn custom_record_string_paths_use_the_registry_parameter() {
+    let mut values = BTreeMap::new();
+    values.insert("price.numerator".to_owned(), "7".to_owned());
+    values.insert("price.denominator".to_owned(), "6".to_owned());
+    values.insert("kind".to_owned(), "market".to_owned());
+
+    let value = CustomNote::from_str_values_with(&values, &CodecRegistry::default()).unwrap();
+    assert_eq!(
+        value,
+        CustomNote {
+            price: LimitPrice {
+                numerator: 7,
+                denominator: 6,
+            },
+            kind: OrderKind::Market,
+        }
+    );
+}
+
+/// Bindings whose WIT type and field names collide with Rust prelude names.
+///
+/// The generated items shadow the prelude inside the generated module, so the test only compiles
+/// when every prelude name in the generated code is fully qualified.
+mod prelude_names {
+    miden_bindings::from_wit_text!(
+        r#"
+package example:prelude-schema;
+
+interface note-storage {
+    record %option {
+        %string: u64,
+    }
+
+    record %vec {
+        %string: u32,
+        %result: %option,
+        maybe: option<u32>,
+    }
+
+    type storage = %vec;
+}
+"#
+    );
+
+    #[test]
+    fn prelude_named_types_round_trip() {
+        let value = Vec {
+            string: 9,
+            result: Option { string: 4 },
+            maybe: ::core::option::Option::Some(1),
+        };
+        let storage = value.to_note_storage().unwrap();
+        assert_eq!(Vec::from_note_storage(&storage).unwrap(), value);
+        value.validate().unwrap();
+    }
+}
+
+/// Bindings with `u16` fields, which `miden-field-repr` does not encode.
+mod small_counts {
+    use miden_bindings::{Felt, NoteStorage};
+
+    miden_bindings::from_wit_text!(
+        r#"
+package example:small-counts-schema;
+
+interface note-storage {
+    record small-counts {
+        count: u16,
+        maybe: option<u16>,
+    }
+
+    type storage = small-counts;
+}
+"#
+    );
+
+    #[test]
+    fn u16_fields_round_trip_through_one_range_checked_felt() {
+        let value = SmallCounts {
+            count: u16::MAX,
+            maybe: Some(7),
+        };
+        let storage = value.to_note_storage().unwrap();
+        assert_eq!(storage.items(), &[Felt::from_u32(65535), Felt::ONE, Felt::from_u32(7)]);
+        assert_eq!(SmallCounts::from_note_storage(&storage).unwrap(), value);
+        value.validate().unwrap();
+
+        let too_large = NoteStorage::new(vec![Felt::from_u32(65536), Felt::ZERO]).unwrap();
+        let error = SmallCounts::from_note_storage(&too_large).unwrap_err().to_string();
+        assert!(error.contains("u16"), "{error}");
+    }
+}

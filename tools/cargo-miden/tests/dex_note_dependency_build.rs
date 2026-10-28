@@ -11,7 +11,7 @@ use std::{env, fs, path::Path};
 use cargo_miden::run;
 use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
-    package_note_codec_section_id, package_note_storage_schema_section_id,
+    package_codec_section_id, package_note_storage_schema_section_id,
 };
 use midenc_integration_test_support::{
     example_build_lock, wasm_target_is_installed, workspace_root,
@@ -78,7 +78,7 @@ fn dex_note_built_as_a_dependency_has_the_schema_but_no_codec() {
         package.sections.iter().any(|section| section.id == schema_id),
         "the dex-note dependency package has no note storage schema section"
     );
-    let codec_id = package_note_codec_section_id();
+    let codec_id = package_codec_section_id();
     assert!(
         !package.sections.iter().any(|section| section.id == codec_id),
         "the dex-note dependency package must carry no note codec section"

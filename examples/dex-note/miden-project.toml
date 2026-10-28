@@ -13,5 +13,5 @@ miden-protocol = "*"
 basic-wallet = { path = "../basic-wallet" }
 
 # The `midenc` namespace table groups compiler plugin configuration.
-[package.metadata.midenc.note-codec]
+[package.metadata.midenc.codec]
 crate = "../dex-note-codec"

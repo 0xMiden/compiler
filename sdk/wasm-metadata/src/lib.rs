@@ -90,21 +90,36 @@ pub fn package_note_storage_schema_section_id() -> miden_mast_package::SectionId
         .expect("the note storage schema section id must be a valid custom section id")
 }
 
-/// Name of the Miden package section that stores a note codec.
-pub const PACKAGE_NOTE_CODEC_SECTION_ID: &str = "note_codec";
+/// Name of the Wasm custom section that stores an account storage schema.
+pub const WASM_ACCOUNT_STORAGE_SCHEMA_CUSTOM_SECTION_NAME: &str =
+    "rodata,miden_account_storage_schema";
 
-/// Returns the Miden package section id that stores a note codec.
+/// Name of the Miden package section that stores an account storage schema.
+pub const PACKAGE_ACCOUNT_STORAGE_SCHEMA_SECTION_ID: &str = "account_storage_schema";
+
+/// Returns the Miden package section id that stores an account storage schema.
 ///
 /// One accessor keeps every producer and consumer on the same section contract.
-pub fn package_note_codec_section_id() -> miden_mast_package::SectionId {
-    miden_mast_package::SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID)
-        .expect("the note codec section id must be a valid custom section id")
+pub fn package_account_storage_schema_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_ACCOUNT_STORAGE_SCHEMA_SECTION_ID)
+        .expect("the account storage schema section id must be a valid custom section id")
+}
+
+/// Name of the Miden package section that stores an author codec component.
+pub const PACKAGE_CODEC_SECTION_ID: &str = "codec";
+
+/// Returns the Miden package section id that stores an author codec component.
+///
+/// One accessor keeps every producer and consumer on the same section contract.
+pub fn package_codec_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_CODEC_SECTION_ID)
+        .expect("the codec section id must be a valid custom section id")
 }
 
 /// Pads metadata bytes with NUL bytes to the 16-byte link-section alignment.
 ///
-/// Account-component-metadata link sections use this 16-byte padding. Note storage schema link
-/// sections use the same contract.
+/// Account-component-metadata link sections use this 16-byte padding. Note and account storage
+/// schema link sections use the same contract.
 pub fn pad_to_link_section_alignment(mut bytes: Vec<u8>) -> Vec<u8> {
     let padded_len = bytes.len().div_ceil(16) * 16;
     bytes.resize(padded_len, 0);
@@ -336,6 +351,8 @@ pub struct PackageSections {
     pub component_wit: Option<Vec<u8>>,
     /// The note storage schema.
     pub note_storage_schema: Option<Vec<u8>>,
+    /// The account storage schema.
+    pub account_storage_schema: Option<Vec<u8>>,
 }
 
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.

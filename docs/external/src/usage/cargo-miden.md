@@ -182,6 +182,56 @@ namespace; exports under different parents are an error, and a component that ex
 an error unless a namespace is given. If a namespace is given (by the manifest or `--name`) and
 does not match the exports, compilation fails.
 
+## Custom storage slot types
+
+A storage slot of an account component holds one word, and a map slot holds words keyed by words.
+Besides the SDK types (`Word`, `Felt`, `AssetAmount`, `AccountId`, `u8`, `u16`, `u32`, `bool`, ...),
+a slot can hold an `#[export_type]` record or enum that derives `ToFeltRepr` and `FromFeltRepr`;
+with `Copy` it can also be a map key. The value is stored as its felts followed by zero padding,
+so the type must encode to at most four felts. Write `#[export_type]` above the derives: the macro
+reads the derive list.
+
+```rust
+use miden::{AssetAmount, StorageMap, StorageValue, Word, component_storage, export_type};
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
+
+/// Limits applied to every holding.
+#[export_type]
+#[derive(Clone, Copy, FromFeltRepr, ToFeltRepr)]
+pub struct Limits {
+    pub max_qty: AssetAmount,
+    pub paused: bool,
+}
+
+#[component_storage]
+struct MyAccount {
+    #[storage(description = "holding limits")]
+    limits: StorageValue<Limits>,
+    #[storage(description = "holdings by asset")]
+    holdings: StorageMap<Word, Limits>,
+}
+```
+
+`#[component_storage]` also writes a WIT document describing the slots and their types into the
+package's `account_storage_schema` section (see `examples/storage-example`), next to the protocol
+metadata, where a custom-typed slot is a `word`. Off-chain code reads that schema instead of
+guessing the layout:
+
+- `miden_bindings::from_project!("../my-account")` generates the slot types and a `Storage`
+  struct with one field per slot, `Storage::to_init_storage_data()` for creating the account, and
+  `Storage::decode_<slot>(word)` / `Storage::decode_<slot>_entry(key, value)` for reading it back;
+- `miden_account_storage_schema::AccountStorageSchema::from_package(&package)` does the same
+  dynamically from string values (`init_builder().set("limits", "100 paused")`) and decodes slot
+  words into displayable values.
+
+A project can bundle a codec that parses and displays its custom types as text, the same way a
+note project does: point `[package.metadata.midenc.codec] crate = "../my-account-codec"` in
+`miden-project.toml` at a crate that uses `miden_codec::from_project!`, implements
+`AuthorTypeCodec` for each type under `#[miden_codec::codec]`, and ends with
+`miden_codec::export_codecs!()`. The build compiles it to a Wasm component and stores it in the
+package's `codec` section; `CodecRegistry::load_from_package(&package, &schema)` loads it on the
+host. See `examples/storage-example-codec`.
+
 ## Running a compiled Miden VM program
 
 Use `miden-debug` to execute the compiled package. See [Debugging programs](../guides/debugger.md)

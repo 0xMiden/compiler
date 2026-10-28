@@ -818,7 +818,7 @@ dependencies = [
 name = "dex-note-codec"
 version = "0.1.0"
 dependencies = [
- "miden-note-codec",
+ "miden-codec",
 ]
 
 [[package]]
@@ -1614,6 +1614,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "miden-account-storage-schema"
+version = "0.15.0"
+dependencies = [
+ "miden-mast-package",
+ "miden-schema",
+ "midenc-frontend-wasm-metadata",
+ "wit-parser",
+]
+
+[[package]]
 name = "miden-ace-codegen"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1692,6 +1702,38 @@ dependencies = [
  "miden-rowan",
  "miden-utils-diagnostics",
 ]
+
+[[package]]
+name = "miden-codec"
+version = "0.15.0"
+dependencies = [
+ "miden-codec-macros",
+ "miden-codec-wit",
+ "miden-field",
+ "miden-field-repr",
+ "miden-protocol",
+ "wit-bindgen 0.62.0",
+]
+
+[[package]]
+name = "miden-codec-macros"
+version = "0.15.0"
+dependencies = [
+ "miden-account-storage-schema",
+ "miden-codec-wit",
+ "miden-note-schema",
+ "miden-schema",
+ "miden-schema-codegen",
+ "midenc-frontend-wasm-metadata",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "miden-codec-wit"
+version = "0.15.0"
 
 [[package]]
 name = "miden-constraint-compiler"
@@ -1961,57 +2003,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-note-codec"
-version = "0.15.0"
-dependencies = [
- "miden-field",
- "miden-field-repr",
- "miden-note-codec-macros",
- "miden-note-codec-wit",
- "miden-protocol",
- "wit-bindgen 0.62.0",
-]
-
-[[package]]
-name = "miden-note-codec-macros"
-version = "0.15.0"
-dependencies = [
- "miden-note-codec-wit",
- "miden-note-schema",
- "miden-note-schema-codegen",
- "midenc-frontend-wasm-metadata",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
-
-[[package]]
-name = "miden-note-codec-wit"
-version = "0.15.0"
-
-[[package]]
 name = "miden-note-schema"
 version = "0.15.0"
 dependencies = [
- "miden-field",
- "miden-field-repr",
  "miden-mast-package",
  "miden-protocol",
+ "miden-schema",
  "midenc-frontend-wasm-metadata",
- "toml",
- "wasmparser",
- "wit-parser",
-]
-
-[[package]]
-name = "miden-note-schema-codegen"
-version = "0.15.0"
-dependencies = [
- "heck",
- "miden-note-schema",
- "proc-macro2",
- "quote",
 ]
 
 [[package]]
@@ -2168,6 +2166,30 @@ checksum = "c13695bf99aabaa21d6572b807c66bb26251aa3d9b75e828b3c99b97a3b1ce7e"
 dependencies = [
  "hashbrown 0.17.1",
  "rustc-hash",
+]
+
+[[package]]
+name = "miden-schema"
+version = "0.15.0"
+dependencies = [
+ "miden-field",
+ "miden-field-repr",
+ "miden-mast-package",
+ "miden-protocol",
+ "midenc-frontend-wasm-metadata",
+ "toml",
+ "wasmparser",
+ "wit-parser",
+]
+
+[[package]]
+name = "miden-schema-codegen"
+version = "0.15.0"
+dependencies = [
+ "heck",
+ "miden-schema",
+ "proc-macro2",
+ "quote",
 ]
 
 [[package]]

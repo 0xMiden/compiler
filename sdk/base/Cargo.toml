@@ -17,6 +17,7 @@ doctest = false
 
 [dependencies]
 miden-base-sys.workspace = true
+miden-field-repr.workspace = true
 miden-stdlib-sys.workspace = true
 
 [features]

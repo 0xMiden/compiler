@@ -16,3 +16,7 @@ miden-protocol = "*"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
+
+# The `midenc` namespace table groups compiler plugin configuration.
+[package.metadata.midenc.codec]
+crate = "../storage-example-codec"

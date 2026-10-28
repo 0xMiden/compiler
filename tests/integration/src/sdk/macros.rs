@@ -395,6 +395,16 @@ impl MyNote {
 /// Builds a generated account-component project with the `[lib].namespace`
 /// `miden::<name>::test_component`.
 fn account_component_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
+    account_component_project_with_dependencies(name, lib_rs, "")
+}
+
+/// Builds a generated account-component project like [`account_component_project`] with extra
+/// `[dependencies]` lines appended to its `Cargo.toml`.
+fn account_component_project_with_dependencies(
+    name: &str,
+    lib_rs: &str,
+    extra_dependencies: &str,
+) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
     let namespace = base::account_component_namespace(name, "test-component");
     let component_package = format!("miden:{}", name.replace('_', "-"));
@@ -427,7 +437,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = {{ path = "{sdk_path}" }}
-
+{extra_dependencies}
 [package.metadata.component]
 package = "{component_package}"
 
@@ -1700,6 +1710,122 @@ struct TestComponentStorage<T> {
 
     assert!(
         stderr.contains("component storage structs cannot be generic"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+/// The `[dependencies]` line for the felt-repr crate, whose derives make an exported type storable.
+fn felt_repr_dependency() -> String {
+    let path = sdk_crate_path().join("../field-repr/repr");
+    format!("miden-field-repr = {{ path = \"{}\" }}\n", path.display())
+}
+
+#[test]
+fn component_storage_accepts_exported_types_in_slots() {
+    // `#[export_type]` with the felt-repr derives implements `WordValue`, and with `Copy` also
+    // `WordKey`: a two-felt record as a map key, a two-felt record as a map value, and a non-Copy
+    // three-felt record as a value slot, each padded to one word.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, export_type, AccountId, Felt, StorageMap, StorageValue};
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
+
+/// A balance with a lock flag.
+#[export_type]
+#[derive(Clone, Copy, FromFeltRepr, ToFeltRepr)]
+pub struct Balance {
+    pub amount: Felt,
+    pub locked: bool,
+}
+
+/// A map key made of two integers.
+#[export_type]
+#[derive(Clone, Copy, FromFeltRepr, ToFeltRepr)]
+pub struct Pair {
+    pub left: u32,
+    pub right: u32,
+}
+
+/// The owner: not `Copy`, so a slot value but never a map key.
+#[export_type]
+#[derive(Clone, FromFeltRepr, ToFeltRepr)]
+pub struct Owner {
+    pub id: AccountId,
+    pub level: u8,
+}
+
+#[component_storage]
+pub struct TestComponentStorage {
+    #[storage(description = "owner")]
+    owner: StorageValue<Owner>,
+    #[storage(description = "balances")]
+    balances: StorageMap<Pair, Balance>,
+}
+
+#[component]
+pub trait TestComponent {
+    #[account_procedure]
+    fn credit(&mut self, left: u32, right: u32, amount: Felt) -> bool;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn credit(&mut self, left: u32, right: u32, amount: Felt) -> bool {
+        let owner = self.owner.get();
+        let key = Pair { left, right };
+        let previous = self.balances.set(key, Balance { amount, locked: owner.level == 0 });
+        previous.locked
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_dependencies(
+        "component_storage_accepts_exported_types_in_slots",
+        lib_rs,
+        &felt_repr_dependency(),
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "expected exported slot types to compile: {stderr}");
+}
+
+#[test]
+fn component_storage_rejects_an_exported_type_wider_than_a_word() {
+    // Five felts do not fit the one word a slot holds; the macro's width assertion names the type.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, export_type, Felt, StorageValue};
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
+
+#[export_type]
+#[derive(Clone, Copy, FromFeltRepr, ToFeltRepr)]
+pub struct Wide {
+    pub a: Felt,
+    pub b: Felt,
+    pub c: Felt,
+    pub d: Felt,
+    pub e: Felt,
+}
+
+#[component_storage]
+pub struct TestComponentStorage {
+    #[storage(description = "wide")]
+    wide: StorageValue<Wide>,
+}
+"#;
+
+    let cargo_proj = account_component_project_with_dependencies(
+        "component_storage_rejects_an_exported_type_wider_than_a_word",
+        lib_rs,
+        &felt_repr_dependency(),
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected a five-felt slot type to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`Wide` is wider than one storage word"),
         "unexpected stderr: {stderr}"
     );
 }
