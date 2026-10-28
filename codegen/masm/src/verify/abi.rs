@@ -271,6 +271,7 @@ impl Verifier<'_> {
                 }
             }
             state.stack.splice(..effect.arguments as usize, results.iter().copied());
+            padding.floor(state.stack.len());
             state.padding = padding;
         }
         let mut publications = alloc::collections::BTreeSet::new();

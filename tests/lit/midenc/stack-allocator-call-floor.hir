@@ -1,0 +1,27 @@
+// RUN: midenc %s --emit=masm=- | filecheck %s
+// CHECK-LABEL: proc call_before_loop
+// CHECK: exec.{{.*}}consume
+// CHECK: while.true
+// CHECK: if.true
+
+builtin.world {
+    builtin.module public @call_floor {
+        builtin.function private extern("C") @consume(%left: felt, %right: felt) -> felt {
+            %sum = arith.add %left, %right <{ overflow = #builtin.overflow<wrapping> }>;
+            builtin.ret %sum : (felt);
+        };
+
+        builtin.function public extern("C") @call_before_loop(%go: i1, %initial: felt, %increment: felt) -> felt {
+            %seed = hir.exec ::@call_floor::@consume(%initial, %increment) : extern("C") (felt, felt) -> felt;
+            %result = scf.while %seed before {
+            ^before(%value: felt):
+                scf.condition %go, %value : (i1, felt);
+            } after {
+            ^after(%next: felt):
+                %updated = arith.add %next, %next <{ overflow = #builtin.overflow<wrapping> }>;
+                scf.yield %updated : (felt);
+            } : (felt) -> felt;
+            builtin.ret %result : (felt);
+        };
+    };
+};
