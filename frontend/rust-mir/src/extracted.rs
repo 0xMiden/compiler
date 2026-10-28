@@ -22,7 +22,7 @@ pub(crate) struct ExtractedCrate {
 /// One function body with a single basic block that ends with `return`.
 #[derive(Debug)]
 pub(crate) struct ExtractedFunction {
-    /// The Miden IR symbol of the function.
+    /// The Miden IR symbol of the function. It is unique in the crate.
     pub symbol: String,
     /// The types of the parameters.
     pub params: Vec<Type>,

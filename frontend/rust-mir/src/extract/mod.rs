@@ -14,9 +14,11 @@ mod statement;
 mod terminator;
 mod types;
 
+use std::collections::HashMap;
+
 use rustc_public::{CrateDef, ItemKind, mir::mono::Instance};
 
-use crate::extracted::ExtractedCrate;
+use crate::extracted::{ExtractedCrate, ExtractedFunction};
 
 /// The result of an extraction step. The error describes the problem.
 type ExtractResult<T> = Result<T, String>;
@@ -44,6 +46,7 @@ pub(crate) fn extract_crate() -> ExtractResult<ExtractedCrate> {
         let symbol = function_symbol(&item.name(), &crate_name);
         functions.push(body::extract_function(symbol, &mir_body)?);
     }
+    disambiguate_symbols(&mut functions);
 
     Ok(ExtractedCrate { functions })
 }
@@ -52,10 +55,40 @@ pub(crate) fn extract_crate() -> ExtractResult<ExtractedCrate> {
 ///
 /// The symbol keeps the module path, thus functions with the same name in different modules
 /// get different symbols. The leading crate name is removed, because the Miden IR module of the
-/// crate already has that name.
+/// crate already has that name. This symbol is not always unique. [disambiguate_symbols] makes
+/// it unique.
 fn function_symbol(path: &str, crate_name: &str) -> String {
     match path.strip_prefix(crate_name).and_then(|rest| rest.strip_prefix("::")) {
         Some(rest) => rest.to_string(),
         None => path.to_string(),
+    }
+}
+
+/// Makes the symbols of the extracted functions unique.
+///
+/// The symbol of a function is its display path. The display path of an item that is nameable
+/// from outside its scope is unique, because Rust does not allow two such items with the same
+/// path. Items in anonymous scopes, such as function bodies and blocks, can have the same display
+/// path. Thus only these items can have the same symbol.
+///
+/// When two or more functions have the same symbol, each of them gets the suffix `#<ordinal>`.
+/// The ordinal starts at 0 and follows the order of the functions. For example, two block-local
+/// functions `helper` in `outer` get `outer::helper#0` and `outer::helper#1`. A unique symbol
+/// does not change. The same functions in the same order always get the same symbols.
+fn disambiguate_symbols(functions: &mut [ExtractedFunction]) {
+    let mut group_sizes = HashMap::<String, usize>::new();
+    for function in functions.iter() {
+        *group_sizes.entry(function.symbol.clone()).or_default() += 1;
+    }
+
+    // Rust display paths can contain `#`, but under this driver a function's display path never
+    // ends in an unbraced `#<decimal>` suffix, so the generated symbols cannot collide with one.
+    let mut next_ordinals = HashMap::<String, usize>::new();
+    for function in functions.iter_mut() {
+        if group_sizes[&function.symbol] > 1 {
+            let ordinal = next_ordinals.entry(function.symbol.clone()).or_default();
+            function.symbol = format!("{}#{ordinal}", function.symbol);
+            *ordinal += 1;
+        }
     }
 }

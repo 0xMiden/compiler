@@ -66,11 +66,23 @@ fn function_by_symbol(component: &builtin::ComponentRef, symbol: &str) -> builti
 ///
 /// The interpreter receives 1 and 2 and returns the single result of the function.
 fn eval_function(component: &builtin::ComponentRef, symbol: &str, context: Rc<Context>) -> Value {
+    eval_function_with_args(component, symbol, [1u32.into(), 2u32.into()], context)
+}
+
+/// Evaluates a function of a component with the HIR interpreter.
+///
+/// The interpreter receives the given arguments and returns the single result of the function.
+fn eval_function_with_args(
+    component: &builtin::ComponentRef,
+    symbol: &str,
+    args: impl IntoIterator<Item = Value>,
+    context: Rc<Context>,
+) -> Value {
     let function = function_by_symbol(component, symbol);
     let mut evaluator = HirEvaluator::new(context);
     let callable = function.borrow();
     let results = evaluator
-        .eval_callable(&*callable, [1u32.into(), 2u32.into()])
+        .eval_callable(&*callable, args)
         .map_err(|err| midenc_session::diagnostics::PrintDiagnostic::new(err).to_string())
         .unwrap();
 
@@ -118,6 +130,33 @@ fn same_name_in_two_modules() {
         Value::Immediate(3u32.into())
     );
     assert_eq!(eval_function(&component, "m2::add", context), Value::Immediate(13u32.into()));
+}
+
+/// Block-local functions with the same display path get different symbols.
+#[test]
+fn same_name_in_two_blocks() {
+    let context = Rc::new(Context::default());
+    let component = translate_fixture("same_name_blocks.rs", context.clone());
+
+    let mut symbols: Vec<String> = functions(&component)
+        .iter()
+        .map(|function| function.borrow().name().as_str().to_string())
+        .collect();
+    symbols.sort();
+    assert_eq!(symbols, ["outer", "outer::helper#0", "outer::helper#1"]);
+
+    assert_eq!(
+        eval_function_with_args(&component, "outer::helper#0", [], context.clone()),
+        Value::Immediate(1u32.into())
+    );
+    assert_eq!(
+        eval_function_with_args(&component, "outer::helper#1", [], context.clone()),
+        Value::Immediate(2u32.into())
+    );
+    assert_eq!(
+        eval_function_with_args(&component, "outer", [5u32.into()], context),
+        Value::Immediate(5u32.into())
+    );
 }
 
 #[test]
