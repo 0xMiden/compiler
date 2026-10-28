@@ -28,6 +28,7 @@ mod mem_cpy;
 mod mem_move;
 mod mem_set;
 mod regressions;
+mod store_over_felt;
 mod store_qw;
 mod store_u16;
 mod store_u32_unaligned;

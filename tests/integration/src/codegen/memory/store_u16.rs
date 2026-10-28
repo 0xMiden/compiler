@@ -328,17 +328,26 @@ fn public_store_u16_touches_only_requested_cells() {
             false,
         );
     }
-    for offset in 0..=3 {
+    // A cell may still hold a felt above 2^32 from an earlier store (a reused stack slot). The
+    // store keeps the low 32 bits of such a cell instead of trapping (#1482): 2^40 + 7 -> 7.
+    for offset in 0..=2 {
+        let expected = (7u32 & !(0xffff << (offset * 8))) | (0x5678 << (offset * 8));
         check_u16_intrinsic(
             &format!(
                 "push.1099511627783 mem_store.16 push.22136.{offset}.16 \
-                 exec.::intrinsics::mem::store_u16"
+                 exec.::intrinsics::mem::store_u16 mem_load.16 push.{expected} assert_eq"
             ),
-            false,
+            true,
         );
     }
     check_u16_intrinsic(
-        "push.1099511627783 mem_store.17 push.22136.3.16 exec.::intrinsics::mem::store_u16",
-        false,
+        "push.1099511627783 mem_store.16 push.22136.3.16 exec.::intrinsics::mem::store_u16 \
+         mem_load.16 push.2013265927 assert_eq mem_load.17 push.86 assert_eq",
+        true,
+    );
+    check_u16_intrinsic(
+        "push.1099511627783 mem_store.17 push.22136.3.16 exec.::intrinsics::mem::store_u16 \
+         mem_load.16 push.2013265920 assert_eq mem_load.17 push.86 assert_eq",
+        true,
     );
 }

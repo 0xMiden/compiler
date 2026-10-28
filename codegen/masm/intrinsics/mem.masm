@@ -199,6 +199,39 @@ pub proc load_sw # [addr, offset]
     end
 end
 
+# Load the 32-bit window that starts at an unaligned native pointer tuple, for a store that merges
+# a narrower value into it and writes it back with `store_sw`.
+#
+# Unlike `load_sw`, each cell is truncated to its low 32 bits first: a cell may still hold a felt
+# above 2^32 from an earlier store (a reused stack slot), and a store must never trap on it. The
+# bytes of the window the caller does not overwrite are dead from the program's point of view.
+#
+# The byte offset must be in 1..=3; an aligned window never needs merging across cells.
+#
+# Stack transition: [addr, offset] -> [window]
+pub proc load_rmw_window # [addr, offset]
+    dup.1 push.4 u32lt assert  # [addr, offset]
+    dup.1 neq.0 assert         # [addr, offset]
+    # convert the byte offset to a bit offset
+    swap.1 push.8 u32wrapping_mul swap.1   # [addr, bit_offset]
+    # load both cells, keeping only their u32 representation
+    dup.0 mem_load u32cast     # [e0, addr, bit_offset]
+    swap.1                     # [addr, e0, bit_offset]
+    push.1 u32overflowing_add  # [overflowed, addr + 1, e0, bit_offset]
+    assertz mem_load u32cast   # [e1, e0, bit_offset]
+    # Reconstruct the window exactly as `load_sw` does: `e0` contributes the low part after
+    # shifting right, and `e1` the high part after shifting left into the vacated bits.
+    swap.1              # [e0, e1, bit_offset]
+    dup.2               # [bit_offset, e0, e1, bit_offset]
+    u32shr              # [lo, e1, bit_offset]
+    movup.2             # [bit_offset, lo, e1]
+    push.32 swap.1      # [bit_offset, 32, lo, e1]
+    u32overflowing_sub assertz # [32 - bit_offset, lo, e1]
+    movup.2 swap.1      # [32 - bit_offset, e1, lo]
+    u32shl              # [hi, lo]
+    u32or               # [window]
+end
+
 # Load a 16-bit integer from the given native pointer tuple.
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
@@ -494,9 +527,10 @@ pub proc store_sw # [addr, offset, value]
 
         # the store is across an element boundary
         #
-        # load the current value of the two elements involved
-        dup.0 push.1 u32overflowing_add assertz mem_load # [e1, addr, bit_offset, value]
-        dup.1 mem_load    # [e0, e1, addr, bit_offset, value]
+        # load the current value of the two elements involved, keeping only their u32
+        # representation: either cell may still hold a felt above 2^32 from an earlier store
+        dup.0 push.1 u32overflowing_add assertz mem_load u32cast # [e1, addr, bit_offset, value]
+        dup.1 mem_load u32cast # [e0, e1, addr, bit_offset, value]
 
         # compute the bit shift
         push.32 dup.4 sub # [32 - bit_offset, e0, e1, addr, bit_offset, value]
@@ -545,8 +579,9 @@ pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
     dup.1 eq.3
     if.true
         # Load the current 32-bit window at the destination, keep its upper half, then overwrite the
-        # target two bytes before delegating the write-back to `store_sw`.
-        dup.1 dup.1 exec.load_sw     # [window, addr, offset, value]
+        # target two bytes before delegating the write-back to `store_sw`. The window helper
+        # truncates stale felts in either cell, so the merge cannot trap.
+        dup.1 dup.1 exec.load_rmw_window # [window, addr, offset, value]
         push.4294901760              # 0xffff0000
         u32and                       # [masked_window, addr, offset, value]
         movup.3                      # [value, masked_window, addr, offset]
@@ -556,9 +591,10 @@ pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
         swap.2 swap.1                # [addr, offset, combined]
         exec.store_sw
     else
-        # Merge the halfword directly into its one touched cell.
+        # Merge the halfword directly into its one touched cell, keeping only the u32
+        # representation of the old content (it may be a stale felt above 2^32).
         swap.1 push.8 u32wrapping_mul  # [bits, addr, value]
-        dup.1 mem_load                # [old, bits, addr, value]
+        dup.1 mem_load u32cast        # [old, bits, addr, value]
         push.65535 dup.2 u32shl u32not
         u32and                        # [preserved, bits, addr, value]
         movup.3 push.65535 u32and      # [value16, preserved, bits, addr]
@@ -604,13 +640,15 @@ pub proc store_dw # [addr, offset, value_lo, value_hi]
 
         # combine the bits of the hi and lo chunks with their corresponding elements, so that we
         # do not overwrite memory that is out of bounds of the actual value being stored.
+        # Both boundary cells are truncated to their u32 representation first: either may still
+        # hold a felt above 2^32 from an earlier store.
         #
         # 1. load e2 (hi)
-        dup.5 push.2 u32overflowing_add assertz mem_load
+        dup.5 push.2 u32overflowing_add assertz mem_load u32cast
         # 2. mask e2 (hi)
         u32and                       # [e2_masked, mask_lo, hi, mid, lo, addr]
         # 3. load e0 (lo)
-        dup.5 mem_load               # [e0, e2_masked, mask_lo, hi, mid, lo, addr]
+        dup.5 mem_load u32cast       # [e0, e2_masked, mask_lo, hi, mid, lo, addr]
         # 4. mask e0 (lo)
         movup.2 u32and               # [e0_masked, e2_masked, hi, mid, lo, addr]
         # 5. combine e2 & hi
@@ -660,9 +698,10 @@ pub proc store_qw # [addr, offset, value_0, value_1, value_2, value_3]
         push.4294967295 dup.1 u32shr # [start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
         dup.0 u32not                  # [end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
 
-        # Load the two boundary elements whose unaffected bytes must be preserved.
-        dup.3 push.4 u32overflowing_add assertz mem_load # [old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
-        dup.4 mem_load                                   # [old0, old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        # Load the two boundary elements whose unaffected bytes must be preserved, keeping only
+        # their u32 representation: either may still hold a felt above 2^32 from an earlier store.
+        dup.3 push.4 u32overflowing_add assertz mem_load u32cast # [old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
+        dup.4 mem_load u32cast                                   # [old0, old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
 
         # c0 = (old0 & start_mask) | (value_0 << bit_offset)
         movup.3 u32and               # [old0_masked, old4, end_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]

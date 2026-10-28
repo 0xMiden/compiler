@@ -3358,13 +3358,14 @@ mod tests {
             &[Type::U8],
             |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.32
-            push.4294967040
-            u32and
-            swap.1
-            u32or
-            mem_store.32
-        "#]],
+                mem_load.32
+                u32cast
+                push.4294967040
+                u32and
+                swap.1
+                u32or
+                mem_store.32
+            "#]],
         );
     }
 
@@ -3375,14 +3376,15 @@ mod tests {
             &[Type::U8],
             |emitter| emitter.store_imm(129, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.32
-            push.4294902015
-            u32and
-            swap.1
-            u32shl.8
-            u32or
-            mem_store.32
-        "#]],
+                mem_load.32
+                u32cast
+                push.4294902015
+                u32and
+                swap.1
+                u32shl.8
+                u32or
+                mem_store.32
+            "#]],
         );
     }
 
@@ -3393,13 +3395,14 @@ mod tests {
             &[Type::U16],
             |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.32
-            push.4294901760
-            u32and
-            swap.1
-            u32or
-            mem_store.32
-        "#]],
+                mem_load.32
+                u32cast
+                push.4294901760
+                u32and
+                swap.1
+                u32or
+                mem_store.32
+            "#]],
         );
     }
 
@@ -3410,13 +3413,14 @@ mod tests {
             &[Type::I1],
             |emitter| emitter.store_imm(0, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.0
-            push.4294967294
-            u32and
-            swap.1
-            u32or
-            mem_store.0
-        "#]],
+                mem_load.0
+                u32cast
+                push.4294967294
+                u32and
+                swap.1
+                u32or
+                mem_store.0
+            "#]],
         );
     }
 

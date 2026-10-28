@@ -571,7 +571,7 @@ fn access_contract(
                 p.push(CallPath::Then(ControlId(*next)));
                 *next += 1;
                 return Ok(vec![
-                    call("::intrinsics::mem::load_sw", 2, 1, &p)?,
+                    call("::intrinsics::mem::load_rmw_window", 2, 1, &p)?,
                     call("::intrinsics::mem::store_sw", 3, 0, &p)?,
                 ]);
             }

@@ -134,10 +134,12 @@ pub(crate) fn store_small(type_size: u32, span: masm::SourceSpan) -> Vec<masm::O
     let mut b = Builder::new(span);
 
     // Stack: [addr, offset, value]
-    // Load the current aligned value
+    // Load the current aligned value. The cell may still hold a felt above 2^32 from an earlier
+    // store (a reused stack slot); keep its low 32 bits so the merge below does not trap.
     b.emit_all([
         masm::Instruction::Dup0,    // [addr, addr, offset, value]
         masm::Instruction::MemLoad, // [prev, addr, offset, value]
+        masm::Instruction::U32Cast, // [prev_lo32, addr, offset, value]
     ]);
 
     // Calculate bit offset and create mask
