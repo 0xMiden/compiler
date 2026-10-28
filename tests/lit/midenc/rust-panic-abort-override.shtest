@@ -1,0 +1,13 @@
+# RUN: input="%S/../../fixtures/standalone/array.rs"
+
+# Inherited abort must override the default without promoting warning to error.
+# RUN: env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="-Cpanic=abort" midenc "$input" --warn error --target-dir %t/target -o %t/joined.masp
+
+# Inherited immediate-abort must override CLI abort and fail under --warn error.
+# RUN: not env -u CARGO_ENCODED_RUSTFLAGS RUSTFLAGS="-Cpanic=immediate-abort" midenc "$input" -C panic=abort --warn error --target-dir %t/target -o %t/inherited-immediate-abort.masp > %t/unsupported.log 2>&1
+
+# The failure must come from the unsupported strategy and warning promotion.
+# RUN: filecheck %s --check-prefix=ERROR < %t/unsupported.log
+
+ERROR: ignoring panic=immediate-abort for direct rustc compilation
+ERROR: aborting due to a warning promoted to an error

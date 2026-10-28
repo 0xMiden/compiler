@@ -103,6 +103,33 @@ midenc --stop-after=transform --emit=hir=- foo.wasm
 
 `CHECKPOINT` is either an alias — `parse`, `analyze`, `transform`, `lower`, `assemble` — or a fully-qualified checkpoint id such as `hir.initial`. Which names are valid depends on the input: each frontend declares its own route, and a name that route does not reach is reported along with the names it does accept. A Miden Assembly input, for example, has no `transform` phase.
 
+### Rust panic strategy
+
+For Rust builds, `-C panic=STRATEGY` selects how panics terminate execution:
+
+- `immediate-abort` (the default) traps without invoking the crate's panic handler. It can reduce code size and execution cycles because the handler and its panic-formatting code can be omitted.
+- `abort` invokes the crate's panic handler. The handler can report the panic before trapping. It should terminate with `core::arch::wasm32::unreachable()`.
+
+`abort` can introduce call graph cycles, especially through panic formatting. Miden does not yet support these cycles, which is why `immediate-abort` remains the default. Fixes and workarounds are being explored in [#1486](https://github.com/0xMiden/compiler/issues/1486). Projects that avoid these cycles can already opt in to `abort` and print static panic messages:
+
+```bash
+cargo miden build --release -C panic=abort
+```
+
+The selected strategy is passed through Rust flags, which take precedence over Cargo profile
+panic settings. Both `midenc` and `cargo miden build` support inherited overrides through
+`RUSTFLAGS` (whitespace-separated) or `CARGO_ENCODED_RUSTFLAGS` (separated by ASCII 0x1f).
+These flags are appended after the selected strategy, and the last panic setting wins.
+`CARGO_ENCODED_RUSTFLAGS` takes precedence over `RUSTFLAGS` whenever it is set.
+
+Standalone Rust files built through a temporary Cargo project support both strategies.
+Files compiled directly with `rustc` use prebuilt standard libraries that are incompatible
+with `immediate-abort`. That route ignores a request for this strategy with a warning. Use a
+Cargo project to enable `immediate-abort` for those files.
+
+This option does not affect prebuilt WebAssembly input. Its panic behavior was determined
+when the module was compiled.
+
 ## Debugging
 
 See [Debugging Programs](../guides/debugger.md) for details on how to debug Miden programs using `miden-debug`.

@@ -1,0 +1,21 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "panic-handler-test"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../../sdk/sdk" }
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = true
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]
