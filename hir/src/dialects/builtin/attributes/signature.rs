@@ -408,12 +408,6 @@ impl Signature {
         AbiParam::felts_of(self.params())
     }
 
-    /// Returns the number of field elements the results occupy on the operand stack (see
-    /// [AbiParam::felts_of])
-    pub fn result_felts(&self) -> usize {
-        AbiParam::felts_of(self.results())
-    }
-
     /// Returns the parameter at `index`, if present
     #[inline]
     pub fn param(&self, index: usize) -> Option<&AbiParam> {
