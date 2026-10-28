@@ -93,7 +93,7 @@ pub fn std_basic_wallet_p2id_transfers_asset_with_rust_note_and_tx_script() {
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     expect!["3882"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["3949"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["3844"].assert_eq(single_note_cycles(&tx_measurements));
 
     let alice_account = chain.committed_account(alice_id).unwrap();
     assert_account_has_fungible_asset(alice_account, faucet_id, mint_amount);
@@ -112,7 +112,7 @@ pub fn std_basic_wallet_p2id_transfers_asset_with_rust_note_and_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["4893"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["4712"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -123,7 +123,7 @@ pub fn std_basic_wallet_p2id_transfers_asset_with_rust_note_and_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["3949"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["3844"].assert_eq(single_note_cycles(&tx_measurements));
 
     let bob_account = chain.committed_account(bob_id).unwrap();
     assert_account_has_fungible_asset(bob_account, faucet_id, transfer_amount);

@@ -86,7 +86,7 @@ pub fn std_faucet_get_token_config_returns_the_configured_fields() {
         .tx_script(transaction_script_from_package(&tx_script_package));
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["1759"].assert_eq(tx_script_processing_cycles(&measurements));
+    expect!["1768"].assert_eq(tx_script_processing_cycles(&measurements));
 }
 
 /// A Rust transaction script running on a wallet reads the four-field `token-config` record of a
@@ -124,7 +124,7 @@ pub fn std_faucet_get_token_config_through_fpi_returns_the_configured_fields() {
         .tx_script(transaction_script_from_package(&tx_script_package));
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["4976"].assert_eq(tx_script_processing_cycles(&measurements));
+    expect!["4932"].assert_eq(tx_script_processing_cycles(&measurements));
 }
 
 /// A Rust transaction script reads the owner of a standard `ownable2step` component as a
@@ -154,7 +154,7 @@ pub fn std_ownable2step_get_owner_returns_the_configured_owner() {
         .tx_script(transaction_script_from_package(&tx_script_package));
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["1458"].assert_eq(tx_script_processing_cycles(&measurements));
+    expect!["1472"].assert_eq(tx_script_processing_cycles(&measurements));
 }
 
 /// A Rust transaction script passes a `miden::AccountId` to the standard `rbac` component's
@@ -193,6 +193,6 @@ pub fn std_rbac_has_role_takes_an_account_id_parameter() {
     }
     let [member_cycles, non_member_cycles]: [String; 2] =
         cycles.try_into().expect("one measurement per query");
-    expect!["1365"].assert_eq(&member_cycles);
-    expect!["1270"].assert_eq(&non_member_cycles);
+    expect!["1393"].assert_eq(&member_cycles);
+    expect!["1298"].assert_eq(&non_member_cycles);
 }

@@ -194,7 +194,7 @@ fn user_masm_counter_is_updated_by_a_rust_note() {
     assert_count(&chain, account.id(), INITIAL_COUNT);
 
     let cycles = consume_note(&mut chain, &account, &note, &[]);
-    expect!["2233"].assert_eq(&cycles);
+    expect!["2262"].assert_eq(&cycles);
     assert_count(&chain, account.id(), (INITIAL_COUNT + 1) * 2 + 5);
 }
 
@@ -223,7 +223,7 @@ fn user_masm_counter_getters_are_read_by_a_rust_tx_script() {
     let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
     // Pinned at the cycles of the script's calls into the counter.
-    expect!["5939"].assert_eq(tx_script_processing_cycles(&measurements));
+    expect!["6028"].assert_eq(tx_script_processing_cycles(&measurements));
     assert_count(&chain, account.id(), INITIAL_COUNT);
 }
 
@@ -249,7 +249,7 @@ fn user_masm_counter_is_a_sibling_of_a_rust_component() {
     let mut chain = build_chain(builder);
 
     let cycles = consume_note(&mut chain, &account, &note, &[]);
-    expect!["3307"].assert_eq(&cycles);
+    expect!["3361"].assert_eq(&cycles);
     assert_count(&chain, account.id(), INITIAL_COUNT + 2);
 }
 
@@ -297,7 +297,7 @@ fn user_masm_counter_is_read_through_fpi_by_a_rust_note() {
 
     let cycles = consume_note(&mut chain, &wallet, &note, &[counter.id()]);
     // Pinned at the cycles of the note's two foreign calls into the counter.
-    expect!["4276"].assert_eq(&cycles);
+    expect!["4290"].assert_eq(&cycles);
     assert_count(&chain, counter.id(), INITIAL_COUNT);
 }
 

@@ -66,7 +66,7 @@ fn std_wallet_sibling() {
     let (mut chain, note) = mint_note(builder, faucet_id, &note_package, Vec::new());
 
     let cycles = consume_note(&mut chain, &account, faucet_id, &note);
-    expect!["6813"].assert_eq(&cycles);
+    expect!["6720"].assert_eq(&cycles);
 
     let committed = chain.committed_account(account.id()).unwrap();
     assert_account_has_fungible_asset(committed, faucet_id, MINT_AMOUNT);
@@ -98,7 +98,7 @@ fn std_multi_sibling() {
     let (mut chain, note) = mint_note(builder, faucet_id, &note_package, to_core_felts(&owner_id));
 
     let cycles = consume_note(&mut chain, &account, faucet_id, &note);
-    expect!["8083"].assert_eq(&cycles);
+    expect!["7958"].assert_eq(&cycles);
 
     let committed = chain.committed_account(account.id()).unwrap();
     assert_account_has_fungible_asset(committed, faucet_id, MINT_AMOUNT);

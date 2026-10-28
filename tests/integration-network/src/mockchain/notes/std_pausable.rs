@@ -44,5 +44,5 @@ pub fn std_pausable_and_manager_pause_the_account() {
         .build()
         .unwrap();
     let measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["2359"].assert_eq(tx_script_processing_cycles(&measurements));
+    expect!["2383"].assert_eq(tx_script_processing_cycles(&measurements));
 }
