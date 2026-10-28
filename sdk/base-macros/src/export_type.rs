@@ -29,6 +29,83 @@ fn export_type_identity_items(
     Ok(quote! { #guards #shape_const #assertions })
 }
 
+/// Collects the last path segment of every trait in the item's `#[derive(...)]` attributes.
+///
+/// Only the attributes written below `#[export_type]` are visible here: rustc strips a `derive`
+/// attribute that precedes an attribute macro before invoking it.
+fn derived_trait_names(attrs: &[syn::Attribute]) -> Vec<String> {
+    let mut names = Vec::new();
+    for attr in attrs.iter().filter(|attr| attr.path().is_ident("derive")) {
+        let Ok(paths) = attr.parse_args_with(
+            syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+        ) else {
+            continue;
+        };
+        names.extend(
+            paths
+                .iter()
+                .filter_map(|path| path.segments.last())
+                .map(|s| s.ident.to_string()),
+        );
+    }
+    names
+}
+
+/// Builds the account storage impls for an exported type that derives the felt-repr traits.
+///
+/// A type that derives both `ToFeltRepr` and `FromFeltRepr` is stored as one zero-padded word,
+/// so it gets `WordValue`; when it also derives `Copy` it can be a map key and gets `WordKey`.
+/// A type without the felt-repr derives gets nothing: it is a WIT interface type only.
+fn storage_impls(
+    ident: &syn::Ident,
+    generics: &syn::Generics,
+    attrs: &[syn::Attribute],
+) -> TokenStream2 {
+    let derives = derived_trait_names(attrs);
+    let has = |name: &str| derives.iter().any(|derive| derive == name);
+    if !generics.params.is_empty() || !has("ToFeltRepr") || !has("FromFeltRepr") {
+        return TokenStream2::new();
+    }
+    let width_message = format!(
+        "`{ident}` is wider than one storage word: an account storage slot type encodes to at \
+         most 4 felts"
+    );
+    let word_key = has("Copy").then(|| {
+        quote! {
+            impl ::miden::WordKey for #ident {
+                fn try_into_word(self) -> ::core::result::Result<::miden::Word, &'static str> {
+                    ::miden::padded_word_from_felt_repr(&self)
+                }
+            }
+        }
+    });
+    quote! {
+        // A variable-length encoding (`None`) is checked when the value is written; the
+        // component's storage schema bounds it at build time.
+        const _: () = assert!(
+            match <#ident as ::miden::felt_repr::FromFeltRepr>::FIXED_LEN {
+                ::core::option::Option::Some(width) => width <= 4,
+                ::core::option::Option::None => true,
+            },
+            #width_message
+        );
+
+        impl ::miden::WordValue for #ident {
+            fn try_into_word(self) -> ::core::result::Result<::miden::Word, &'static str> {
+                ::miden::padded_word_from_felt_repr(&self)
+            }
+
+            fn try_from_word(
+                word: ::miden::Word,
+            ) -> ::core::result::Result<Self, &'static str> {
+                ::miden::felt_repr_from_padded_word(word)
+            }
+        }
+
+        #word_key
+    }
+}
+
 /// Adds a derive so rustc filters conditional fields before type registration.
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
@@ -44,16 +121,25 @@ pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let derive_crate = base_macros_derive_path();
 
     match item {
-        Item::Struct(item_struct) => quote! {
-            #[derive(#derive_crate::__MidenExportType)]
-            #item_struct
+        Item::Struct(item_struct) => {
+            let storage =
+                storage_impls(&item_struct.ident, &item_struct.generics, &item_struct.attrs);
+            quote! {
+                #[derive(#derive_crate::__MidenExportType)]
+                #item_struct
+                #storage
+            }
+            .into()
         }
-        .into(),
-        Item::Enum(item_enum) => quote! {
-            #[derive(#derive_crate::__MidenExportType)]
-            #item_enum
+        Item::Enum(item_enum) => {
+            let storage = storage_impls(&item_enum.ident, &item_enum.generics, &item_enum.attrs);
+            quote! {
+                #[derive(#derive_crate::__MidenExportType)]
+                #item_enum
+                #storage
+            }
+            .into()
         }
-        .into(),
         other => {
             syn::Error::new_spanned(other, "#[export_type] may only be applied to structs or enums")
                 .into_compile_error()

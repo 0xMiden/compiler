@@ -302,6 +302,38 @@ The schema package that `#[note]` emits is no longer versioned: `miden:p2id-sche
 package, so rebuild note packages, and the codec and bindings crates generated from them, with
 this release.
 
+### Exported types can be account storage slot types
+
+An `#[export_type]` record or enum that derives `ToFeltRepr` and `FromFeltRepr` now implements
+`WordValue`, so it can be the type of a `StorageValue<T>` slot or of a `StorageMap<K, V>` value;
+when it also derives `Copy` it implements `WordKey` and can be a map key. The value is stored as
+one word: its felts first, zero padding after. A type that encodes to more than four felts is a
+compile error. `u8`, `u16`, `u32` and `bool` slot types are supported the same way.
+
+Write `#[export_type]` above `#[derive(...)]`: the macro reads the derive list, and rustc hides a
+derive attribute written above it. Nothing changes for exported types without the felt-repr
+derives.
+
+```rust
+use miden::{component_storage, export_type, Felt, StorageMap, StorageValue};
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
+
+#[export_type]
+#[derive(Clone, Copy, FromFeltRepr, ToFeltRepr)]
+pub struct Balance {
+    pub amount: Felt,
+    pub locked: bool,
+}
+
+#[component_storage]
+struct MyAccount {
+    #[storage(description = "balance per owner")]
+    balances: StorageMap<Felt, Balance>,
+    #[storage(description = "retry count")]
+    retries: StorageValue<u8>,
+}
+```
+
 ## 0.14.0 -> 0.15.0
 
 ### `compute_commitment` moved to `native_account` (protocol 0.17.0-rc.6)

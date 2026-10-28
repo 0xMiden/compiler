@@ -360,8 +360,18 @@ pub fn account_procedure(
 /// Generates an equivalent type in the WIT interface.
 ///
 /// Use this macro for every custom type in the public methods of an account component. Exported
-/// records and enums can also appear in note storage schemas. The macro emits a hidden shape
-/// constant that lets `#[note]` confirm the exact Rust type at compile time.
+/// records and enums can also appear in note storage schemas and in account storage slots. The
+/// macro emits a hidden shape constant that lets `#[note]` and `#[component_storage]` confirm the
+/// exact Rust type at compile time.
+///
+/// # Account storage
+///
+/// An exported type that derives `ToFeltRepr` and `FromFeltRepr` implements `WordValue`, so it
+/// can be the type of a `StorageValue<T>` slot or of a `StorageMap<K, V>` value. When it also
+/// derives `Copy` it implements `WordKey` and can be a map key. The value is stored as one word:
+/// its felts first, zero padding after, so the type must encode to at most four felts; a wider
+/// fixed-size type is a compile error. Write `#[export_type]` above `#[derive(...)]`: the macro
+/// reads the derive list, and rustc hides a derive attribute written above it.
 ///
 /// Intended to be used together with `#[component]` attribute macro.
 #[proc_macro_attribute]
