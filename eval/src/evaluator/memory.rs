@@ -52,7 +52,7 @@ pub enum WriteFailed {
         #[label]
         at: SourceSpan,
     },
-    #[error("byte access requires a u32 memory element, got {0}")]
+    #[error("a partial snapshot element must be a u32, got {0}")]
     #[diagnostic()]
     InvalidElement(u64),
     #[error("field element access requires an element-aligned pointer")]
@@ -207,32 +207,22 @@ pub(super) fn read_value(
     Ok(Value::Immediate(imm))
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
-enum WriteMode {
-    /// Bit operations inspect the old contents even when the requested range covers a whole cell.
-    Bytewise,
-    /// Typed stores can replace complete cells without inspecting their previous contents.
-    Typed,
+/// The 32-bit view of a cell for a write that keeps some of its bytes.
+///
+/// The cell may still hold a felt at or above 2^32 from an earlier store (a reused stack slot);
+/// like the MASM backend, a store keeps its low 32 bits instead of failing. Reads keep requiring a
+/// u32 cell (see [read_u32]).
+fn stored_u32(memory: &impl Cells, element: u32) -> u32 {
+    memory.get(element).as_canonical_u64() as u32
 }
 
-/// Write a byte window, preserving all bytes outside it. Byte operations require u32 cells.
-/// Validate the entire destination before mutating it.
-pub(super) fn write_bytes(
-    addr: MemoryAddress,
-    bytes: &[u8],
-    memory: &mut impl Cells,
-) -> Result<(), WriteFailed> {
-    write_window(addr, bytes, memory, WriteMode::Bytewise)
-}
-
-fn write_window(
-    addr: MemoryAddress,
-    bytes: &[u8],
-    memory: &mut impl Cells,
-    mode: WriteMode,
-) -> Result<(), WriteFailed> {
+/// Write a byte window, preserving the bytes outside it in every partially covered cell.
+///
+/// A fully covered cell is replaced without inspecting its previous content; a partially covered
+/// cell keeps the low 32 bits of it (see [stored_u32]). The caller has checked the address range.
+pub(super) fn write_bytes(addr: MemoryAddress, bytes: &[u8], memory: &mut impl Cells) {
     if bytes.is_empty() {
-        return Ok(());
+        return;
     }
     let first = addr.position();
     let end = first + bytes.len() as u64;
@@ -240,18 +230,10 @@ fn write_window(
     for element in u64::from(addr.element)..=last {
         let start = first.max(element * 4);
         let stop = end.min(element * 4 + 4);
-        if mode == WriteMode::Bytewise || stop - start != 4 {
-            let value = memory.get(element as u32).as_canonical_u64();
-            u32::try_from(value).map_err(|_| WriteFailed::InvalidElement(value))?;
-        }
-    }
-    for element in u64::from(addr.element)..=last {
-        let start = first.max(element * 4);
-        let stop = end.min(element * 4 + 4);
         let mut value = if stop - start == 4 {
             0
         } else {
-            memory.get(element as u32).as_canonical_u64() as u32
+            stored_u32(memory, element as u32)
         };
         for position in start..stop {
             let shift = (position % 4) as u32 * 8;
@@ -260,9 +242,12 @@ fn write_window(
         }
         memory.set(element as u32, Felt::from(value));
     }
-    Ok(())
 }
 
+/// Write an immediate at `addr` in its memory representation: integers and `f64` as little-endian
+/// bytes through [write_bytes], a boolean as one bit of its cell, a felt as a whole cell.
+///
+/// Only an unaligned felt fails; the caller has checked the address range.
 pub(super) fn write_value(
     addr: MemoryAddress,
     value: Value,
@@ -272,36 +257,27 @@ pub(super) fn write_value(
         Value::Poison { value, .. } | Value::Immediate(value) => value,
     };
     match imm {
-        Immediate::Felt(value) if addr.offset == 0 => {
-            memory.set(addr.element, value);
-            Ok(())
-        }
-        Immediate::Felt(_) => Err(WriteFailed::UnalignedElement),
+        Immediate::Felt(_) if addr.offset != 0 => return Err(WriteFailed::UnalignedElement),
+        Immediate::Felt(value) => memory.set(addr.element, value),
         Immediate::I1(value) => {
-            let previous = memory.get(addr.element).as_canonical_u64();
-            let previous =
-                u32::try_from(previous).map_err(|_| WriteFailed::InvalidElement(previous))?;
+            let previous = stored_u32(memory, addr.element);
             let shift = u32::from(addr.offset) * 8;
             memory.set(
                 addr.element,
                 Felt::from((previous & !(1 << shift)) | ((value as u32) << shift)),
             );
-            Ok(())
         }
-        Immediate::I8(value) => write_window(addr, &[value as u8], memory, WriteMode::Typed),
-        Immediate::U8(value) => write_window(addr, &[value], memory, WriteMode::Typed),
-        Immediate::I16(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
-        Immediate::U16(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
-        Immediate::I32(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
-        Immediate::U32(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
-        Immediate::I64(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
-        Immediate::U64(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
-        Immediate::I128(value) => {
-            write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed)
-        }
-        Immediate::U128(value) => {
-            write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed)
-        }
-        Immediate::F64(value) => write_window(addr, &value.to_le_bytes(), memory, WriteMode::Typed),
+        Immediate::I8(value) => write_bytes(addr, &[value as u8], memory),
+        Immediate::U8(value) => write_bytes(addr, &[value], memory),
+        Immediate::I16(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::U16(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::I32(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::U32(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::I64(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::U64(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::I128(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::U128(value) => write_bytes(addr, &value.to_le_bytes(), memory),
+        Immediate::F64(value) => write_bytes(addr, &value.to_le_bytes(), memory),
     }
+    Ok(())
 }

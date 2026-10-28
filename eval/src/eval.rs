@@ -806,7 +806,8 @@ fn eval_copy(
     evaluator.check_read_bounds(src, len as usize)?;
     evaluator.check_write_bounds(dst, len as usize)?;
     // Preserve complete cells wherever MASM does: its element/word intrinsics and aligned
-    // dynamic scalar loads/stores. Partial-cell operations use the checked byte view.
+    // dynamic scalar loads/stores. Partial-cell reads use the checked byte view; partial-cell
+    // writes keep the low 32 bits of the destination cell.
     let element_aligned = src.is_element_aligned() && dst.is_element_aligned();
     let raw_elements = match value_size {
         1 => element_aligned && len.is_multiple_of(4),
