@@ -4,7 +4,7 @@ use miden_debug::{DebugQuery, FromMidenRepr, ToMidenRepr};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Felt, Immediate, PointerType, SourceSpan, Type, ValueRef,
+    AddressSpace, Builder, Felt, Immediate, PointerType, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
 };
 use proptest::{
@@ -20,6 +20,7 @@ mod element_subword;
 mod load_bool;
 mod load_dw;
 mod load_qw;
+mod load_rmw_window;
 mod load_sw;
 mod load_u16;
 mod load_u64_unaligned;
@@ -43,6 +44,28 @@ pub fn random_word_aligned_addr() -> impl Strategy<Value = u32> {
     // Page 17..256, word offset 0..1024 within that page
     (17u32..256, 0u32..1024)
         .prop_map(|(page, word)| ((page * u16::MAX as u32) + (word * 4)).next_multiple_of(16))
+}
+
+/// The type of a pointer to `ty` in the element address space.
+pub(super) fn element_ptr(ty: Type) -> Type {
+    PointerType::new_with_address_space(ty, AddressSpace::Element).into()
+}
+
+/// Assembles `body` as a program linked against the production `::intrinsics` MASM modules and
+/// runs it, asserting that it succeeds or traps as `succeeds` says.
+pub(super) fn check_mem_intrinsic(body: &str, succeeds: bool) {
+    use miden_processor::{FastProcessor, StackInputs};
+
+    use crate::end_to_end::support::{assemble_test_program, default_host_with_core_package};
+
+    let program = assemble_test_program(body).unwrap_program();
+    let mut host = default_host_with_core_package();
+    let result = FastProcessor::new(StackInputs::default()).execute_sync(&program, &mut host);
+    if succeeds {
+        result.unwrap();
+    } else {
+        assert!(result.is_err(), "expected helper to trap");
+    }
 }
 
 /// Enables test helpers generic over 128 bit integer types.

@@ -1,10 +1,4 @@
-use midenc_hir::AddressSpace;
-
 use super::*;
-
-fn element_ptr(ty: Type) -> Type {
-    PointerType::new_with_address_space(ty, AddressSpace::Element).into()
-}
 
 /// Casting an element pointer to a smaller pointee still extracts only that pointee's bits.
 #[test]

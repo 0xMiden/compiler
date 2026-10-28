@@ -297,12 +297,14 @@ define_unaligned_16bit_store_tests!(
     store_unaligned_i16
 );
 
+/// The `::intrinsics::mem::store_u16` intrinsic merges the value into the cells it covers and
+/// leaves the neighbor cell untouched, traps on an out-of-range offset, and keeps the low 32 bits
+/// of a cell holding a felt at or above `2^32`.
 #[test]
 fn public_store_u16_touches_only_requested_cells() {
-    use super::load_u16::check_u16_intrinsic;
     for offset in 0..=2 {
         let expected = (0x1234_abcd_u32 & !(0xffff << (offset * 8))) | (0x5678 << (offset * 8));
-        check_u16_intrinsic(
+        check_mem_intrinsic(
             &format!(
                 "push.1099511627783 mem_store.17 push.305441741 mem_store.16 \
                  push.22136.{offset}.16 exec.::intrinsics::mem::store_u16 mem_load.16 \
@@ -311,28 +313,28 @@ fn public_store_u16_touches_only_requested_cells() {
             true,
         );
     }
-    check_u16_intrinsic(
+    check_mem_intrinsic(
         "push.305441741 mem_store.4294967295 push.22136.2.4294967295 \
          exec.::intrinsics::mem::store_u16 mem_load.4294967295 push.1450748877 assert_eq",
         true,
     );
-    check_u16_intrinsic(
+    check_mem_intrinsic(
         "push.305441741 mem_store.16 push.2864434397 mem_store.17 push.22136.3.16 \
          exec.::intrinsics::mem::store_u16 mem_load.16 push.2016717773 assert_eq mem_load.17 \
          push.2864434262 assert_eq",
         true,
     );
     for offset in [4, u32::MAX] {
-        check_u16_intrinsic(
+        check_mem_intrinsic(
             &format!("push.22136.{offset}.16 exec.::intrinsics::mem::store_u16"),
             false,
         );
     }
-    // A cell may still hold a felt above 2^32 from an earlier store (a reused stack slot). The
-    // store keeps the low 32 bits of such a cell instead of trapping (#1482): 2^40 + 7 -> 7.
+    // A cell may still hold a felt at or above 2^32 from an earlier store (a reused stack slot).
+    // The store keeps the low 32 bits of such a cell instead of trapping (#1482): 2^40 + 7 -> 7.
     for offset in 0..=2 {
         let expected = (7u32 & !(0xffff << (offset * 8))) | (0x5678 << (offset * 8));
-        check_u16_intrinsic(
+        check_mem_intrinsic(
             &format!(
                 "push.1099511627783 mem_store.16 push.22136.{offset}.16 \
                  exec.::intrinsics::mem::store_u16 mem_load.16 push.{expected} assert_eq"
@@ -340,12 +342,12 @@ fn public_store_u16_touches_only_requested_cells() {
             true,
         );
     }
-    check_u16_intrinsic(
+    check_mem_intrinsic(
         "push.1099511627783 mem_store.16 push.22136.3.16 exec.::intrinsics::mem::store_u16 \
          mem_load.16 push.2013265927 assert_eq mem_load.17 push.86 assert_eq",
         true,
     );
-    check_u16_intrinsic(
+    check_mem_intrinsic(
         "push.1099511627783 mem_store.17 push.22136.3.16 exec.::intrinsics::mem::store_u16 \
          mem_load.16 push.2013265920 assert_eq mem_load.17 push.86 assert_eq",
         true,

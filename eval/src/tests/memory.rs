@@ -49,7 +49,8 @@ fn integer_memory_is_little_endian() -> Result<(), Report> {
     Ok(())
 }
 
-/// A byte read from a cell holding a felt above 2^32 fails: the program never wrote those bytes.
+/// A byte read from a cell holding a felt at or above 2^32 fails: the program never wrote those
+/// bytes.
 #[test]
 fn byte_read_rejects_high_field_elements() -> Result<(), Report> {
     let mut test = EvalTest::default();
@@ -59,13 +60,19 @@ fn byte_read_rejects_high_field_elements() -> Result<(), Report> {
     Ok(())
 }
 
-/// A partial-cell write into a cell holding a felt above 2^32 keeps the low 32 bits of that felt,
-/// like the MASM backend does for a reused stack slot (#1482).
+/// A partial-cell write into a cell holding a felt at or above 2^32 keeps the low 32 bits of that
+/// felt, like the MASM backend does for a reused stack slot (#1482).
 #[test]
 fn byte_write_keeps_low_bits_of_high_field_elements() -> Result<(), Report> {
     let mut test = EvalTest::default();
-    test.evaluator
-        .write_memory(64, Immediate::Felt(Felt::new_unchecked((1u64 << 32) + 0xaabb_ccdd)))?;
+    let felt = Felt::new_unchecked((1u64 << 32) + 0xaabb_ccdd);
+    test.evaluator.write_memory(64, Immediate::Felt(felt))?;
+    // An empty write touches no cell, so it neither truncates the felt nor underflows at 0.
+    test.evaluator.write_memory_bytes(65, &[])?;
+    assert_eq!(test.evaluator.read_memory_elements(64.into(), 4)?, [felt]);
+    test.evaluator.write_memory(0, Immediate::Felt(felt))?;
+    test.evaluator.write_memory_bytes(0, &[])?;
+    assert_eq!(test.evaluator.read_memory_elements(0.into(), 4)?, [felt]);
     test.evaluator.write_memory_bytes(65, &[1])?;
     assert_eq!(
         test.evaluator.read_memory(64, &Type::U32)?,
@@ -76,6 +83,13 @@ fn byte_write_keeps_low_bits_of_high_field_elements() -> Result<(), Report> {
     test.evaluator.write_memory(68, Immediate::I1(true))?;
     assert_eq!(
         test.evaluator.read_memory(68, &Type::U32)?,
+        Value::Immediate(Immediate::U32(0x1122_ffff))
+    );
+    test.evaluator
+        .write_memory(76, Immediate::Felt(Felt::new_unchecked((1u64 << 56) + 0x1122_feff)))?;
+    test.evaluator.write_memory(77, Immediate::I1(true))?;
+    assert_eq!(
+        test.evaluator.read_memory(76, &Type::U32)?,
         Value::Immediate(Immediate::U32(0x1122_ffff))
     );
     test.evaluator
@@ -165,6 +179,16 @@ fn element_snapshots_preserve_partial_tail_bytes() -> Result<(), Report> {
     let elements = test.evaluator.read_memory_elements(64.into(), 6)?;
     test.evaluator.write_memory_elements(80.into(), 6, &elements)?;
     assert_eq!(test.evaluator.read_memory_bytes(80, 8)?, [1, 2, 3, 4, 5, 6, 9, 9]);
+    // A destination tail cell holding a felt at or above 2^32 keeps the low 32 bits of that felt
+    // around the two tail bytes.
+    test.evaluator
+        .write_memory(84, Immediate::Felt(Felt::new_unchecked((1u64 << 40) + 0x0908_0706)))?;
+    test.evaluator.write_memory_elements(80.into(), 6, &elements)?;
+    assert_eq!(
+        test.evaluator.read_memory(84, &Type::U32)?,
+        Value::Immediate(Immediate::U32(0x0908_0605))
+    );
+    assert_eq!(test.evaluator.read_memory_bytes(80, 8)?, [1, 2, 3, 4, 5, 6, 8, 9]);
     Ok(())
 }
 
@@ -178,7 +202,7 @@ fn invalid_snapshot_tail_leaves_the_destination_unchanged() -> Result<(), Report
     Ok(())
 }
 
-/// A byte write spanning two cells holding felts above 2^32 replaces the fully covered cell
+/// A byte write spanning two cells holding felts at or above 2^32 replaces the fully covered cell
 /// without inspecting it and keeps the low 32 bits of the partially covered one.
 #[test]
 fn byte_write_across_high_field_elements_keeps_their_low_bits() -> Result<(), Report> {
