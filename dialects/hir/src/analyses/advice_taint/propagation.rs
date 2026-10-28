@@ -12,25 +12,33 @@ use midenc_hir_analysis::{
 use super::{
     lattice::{AdviceTaintSparseLattice, CallContextFrame, ContextualAdviceTaintValue},
     layout::ADVICE_PIPE_RAW_RESULT_COUNT,
+    ranges::RangeFacts,
     sinks::{
-        external_call_result_has_unconstrained_advice_effect, is_range_constrained_sink,
+        external_call_result_has_unconstrained_advice_effect,
         is_unconstrained_external_result_type, operation_result_has_advice_read_effect,
-        range_constrained_operand_indices,
     },
 };
 use crate::AdvicePipe;
 
 /// Sparse propagation of unconstrained advice taint through SSA values.
 #[derive(Default)]
-pub struct AdviceTaintPropagation;
+pub struct AdviceTaintPropagation {
+    ranges: RangeFacts,
+}
 
 impl BuildableDataFlowAnalysis for AdviceTaintPropagation {
     type Strategy = SparseDataFlowAnalysis<Self, Forward>;
 
     fn new(solver: &mut DataFlowSolver) -> Self {
+        Self::with_ranges(solver, RangeFacts::default())
+    }
+}
+
+impl AdviceTaintPropagation {
+    pub(super) fn with_ranges(solver: &mut DataFlowSolver, ranges: RangeFacts) -> Self {
         solver.load::<DeadCodeAnalysis>();
         solver.load::<SparseConstantPropagation>();
-        Self
+        Self { ranges }
     }
 }
 
@@ -59,8 +67,8 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
         let operand_taint =
             ContextualAdviceTaintValue::join_all(operands.iter().map(|operand| operand.value()));
         let range_constrained_operand_taint = ContextualAdviceTaintValue::join_all(
-            range_constrained_operand_indices(op)
-                .into_iter()
+            self.ranges
+                .unsatisfied_operands(op)
                 .filter_map(|index| operands.get(index).map(|operand| operand.value())),
         );
         transfer_results(op, operand_taint, range_constrained_operand_taint, results)
@@ -124,8 +132,7 @@ fn transfer_results(
     range_constrained_operand_taint: ContextualAdviceTaintValue,
     results: &mut [AnalysisStateGuardMut<'_, AdviceTaintSparseLattice>],
 ) -> Result<(), Report> {
-    let transferred_operand_taint =
-        transfer_taint(op, operand_taint, range_constrained_operand_taint);
+    let transferred_operand_taint = transfer_taint(operand_taint, range_constrained_operand_taint);
     let op_results = op.results().all();
     for (index, result) in results.iter_mut().enumerate() {
         let result_value = op_results[index].borrow().as_value_ref();
@@ -159,11 +166,10 @@ fn join_advice_pipe_results(
 }
 
 fn transfer_taint(
-    op: &Operation,
     operand_taint: ContextualAdviceTaintValue,
     range_constrained_operand_taint: ContextualAdviceTaintValue,
 ) -> ContextualAdviceTaintValue {
-    if is_range_constrained_sink(op) && range_constrained_operand_taint.has_unreported_origin() {
+    if range_constrained_operand_taint.has_unreported_origin() {
         operand_taint.mark_origins_reported(range_constrained_operand_taint.unreported_origins())
     } else {
         operand_taint
@@ -175,8 +181,10 @@ mod tests {
     use alloc::vec::Vec;
 
     use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_scf::StructuredControlFlowOpBuilder;
     use midenc_hir::{
         ArrayType, Op, SourceSpan, Type, ValueRef,
+        diagnostics::SourceLanguage,
         dialects::builtin::{
             BuiltinOpBuilder, FunctionBuilder,
             attributes::{AdviceEffectDescriptor, AdviceResourceKind, Signature},
@@ -194,6 +202,145 @@ mod tests {
         },
     };
     use crate::HirOpBuilder;
+
+    #[test]
+    fn regression_unchecked_boolean_overflow_remains_a_tainted_sink()
+    -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::new("unchecked_boolean_overflow", &[], &[Type::I1]);
+        let source = test.context().source_manager().load(
+            SourceLanguage::Rust,
+            "/project/overflow.rs".into(),
+            "unchecked; checked;".into(),
+        );
+        let unchecked_span = SourceSpan::new(source.id(), 0..9);
+        let checked_span = SourceSpan::new(source.id(), 11..18);
+        {
+            let mut builder = test.function_builder();
+            let raw = builder.advice_pop(span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let unchecked = builder.add_unchecked(boolean, boolean, unchecked_span)?;
+            let checked = builder.add(unchecked, boolean, checked_span)?;
+            builder.ret([checked], span)?;
+        }
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(findings.len(), 1, "unchecked overflow must not discharge a later range check");
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+        assert_eq!(findings[0].sink_span, checked_span);
+        Ok(())
+    }
+
+    #[test]
+    fn loop_range_widening_preserves_first_sink_deduplication() -> Result<(), midenc_hir::Report> {
+        use midenc_hir_analysis::DataFlowConfig;
+
+        use super::super::RangeAnalysisStatus;
+
+        let mut test = Test::new("widening_taint", &[Type::I1], &[Type::U32]);
+        let source = test.context().source_manager().load(
+            SourceLanguage::Rust,
+            "/project/loop.rs".into(),
+            "advice; multiply; add;".into(),
+        );
+        let advice_span = SourceSpan::new(source.id(), 0..6);
+        let multiply_span = SourceSpan::new(source.id(), 8..16);
+        let add_span = SourceSpan::new(source.id(), 18..21);
+        let span = SourceSpan::UNKNOWN;
+        {
+            let cond = test.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            let mut builder = test.function_builder();
+            let entry = builder.current_block();
+            let raw = builder.advice_pop(advice_span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let branch = builder.r#if(cond, &[Type::U32], span)?;
+            let initial = branch.as_operation_ref().borrow().results()[0] as ValueRef;
+            let (then_region, else_region) = {
+                let branch = branch.borrow();
+                (branch.then_body().as_region_ref(), branch.else_body().as_region_ref())
+            };
+            let then_block = builder.create_block_in_region(then_region);
+            builder.switch_to_block(then_block);
+            let boolean = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+            builder.r#yield([boolean], span)?;
+            let else_block = builder.create_block_in_region(else_region);
+            builder.switch_to_block(else_block);
+            let zero = builder.u32(0, span);
+            builder.r#yield([zero], span)?;
+            builder.switch_to_block(entry);
+            // Joining the boolean with a u32 constant establishes a 32-bit [0, 1] range
+            // without clearing the advice origin carried by the boolean branch.
+            let loop_op = builder.r#while([initial], &[Type::U32], span)?;
+            let before = loop_op.borrow().before().entry().as_block_ref();
+            let after = loop_op.borrow().after().entry().as_block_ref();
+            builder.switch_to_block(before);
+            let current = before.borrow().arguments()[0].borrow().as_value_ref();
+            builder.condition(cond, [current], span)?;
+            builder.switch_to_block(after);
+            let current = after.borrow().arguments()[0].borrow().as_value_ref();
+            let narrow = builder.unrealized_conversion_cast(current, Type::U8, span)?;
+            let two = builder.u8(2, span);
+            let product = builder.mul(narrow, two, multiply_span)?;
+            let one = builder.u8(1, span);
+            builder.add(product, one, add_span)?;
+            let one = builder.u32(1, span);
+            let next = builder.add(current, one, span)?;
+            // Each backedge strictly increases the counter's upper bound until widening.
+            // The widened counter no longer fits u8, so the multiply becomes the first sink.
+            builder.r#yield([next], span)?;
+            builder.switch_to_block(entry);
+            let result = loop_op.borrow().results()[0].borrow().as_value_ref();
+            builder.ret([result], span)?;
+        }
+        let mut config = DataFlowConfig::new();
+        config.set_interprocedural(true);
+        config.set_max_worklist_iterations(Some(1024));
+        let root = test.function().as_operation_ref();
+        let analysis = AdviceTaintAnalysis::run_with_config(
+            &root.borrow(),
+            AnalysisManager::new(root, None),
+            config,
+        )?;
+        // Static fallback after range budget exhaustion would report the same first sink;
+        // requiring a completed range solve makes disabling widening fail this regression.
+        assert_eq!(analysis.range_analysis_status(), &RangeAnalysisStatus::Complete);
+        let findings = analysis.findings();
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(findings[0].sink_span, multiply_span);
+        assert_eq!(findings[0].advice_span, advice_span);
+        Ok(())
+    }
+
+    #[test]
+    fn discharged_sink_preserves_taint_for_later_unproven_result() -> Result<(), midenc_hir::Report>
+    {
+        let mut test = Test::new("discharged_sink", &[], &[Type::U32]);
+        let source = test.context().source_manager().load(
+            SourceLanguage::Rust,
+            "/project/discharged.rs".into(),
+            "multiply; add;".into(),
+        );
+        let multiply_span = SourceSpan::new(source.id(), 0..8);
+        let add_span = SourceSpan::new(source.id(), 10..13);
+        let span = SourceSpan::UNKNOWN;
+        {
+            let mut builder = test.function_builder();
+            let raw = builder.advice_pop(span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let value = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+            let two = builder.u32(2, span);
+            let product = builder.mul(value, two, multiply_span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(product, one, add_span)?;
+            builder.ret([sum], span)?;
+        }
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(findings.len(), 1, "{findings:#?}");
+        assert_eq!(findings[0].sink_span, add_span);
+        Ok(())
+    }
 
     #[test]
     fn checked_cast_sanitizes_raw_advice() -> Result<(), midenc_hir::Report> {
@@ -257,6 +404,47 @@ mod tests {
             let one = builder.u32(1, span);
             let sum = builder.add(cast, one, span)?;
             builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn unchecked_trunc_does_not_sanitize_raw_advice() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::new("unchecked_trunc", &[], &[Type::U32]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let truncated = builder.trunc(advice, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(truncated, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn comparison_without_assertion_does_not_sanitize_raw_advice() -> Result<(), midenc_hir::Report>
+    {
+        let mut test = Test::new("comparison_only", &[], &[Type::U32, Type::I1]);
+        {
+            let span = SourceSpan::UNKNOWN;
+            let mut builder = test.function_builder();
+            let advice = builder.advice_pop(span)?;
+            let limit = builder.felt(midenc_hir::Felt::new(10).unwrap(), span);
+            let is_small = builder.lt(advice, limit, span)?;
+            let cast = builder.unrealized_conversion_cast(advice, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum, is_small], span)?;
         }
 
         let findings = advice_taint_findings(&test)?;

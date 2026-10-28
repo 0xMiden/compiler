@@ -135,7 +135,7 @@ impl ValueRangeAssertionOpInterface for Assert {
         (asserted == result).then(|| ValueRangeRefinement {
             input: self.value().as_value_ref(),
             result: asserted,
-            constraint: ValueRangeConstraint::Type(Type::I1),
+            range: ConstantIntRange::exact_bool(self.result().ty(), true),
         })
     }
 }
@@ -162,7 +162,7 @@ impl ValueRangeAssertionOpInterface for Assertz {
         (asserted == result).then(|| ValueRangeRefinement {
             input: self.value().as_value_ref(),
             result: asserted,
-            constraint: ValueRangeConstraint::Type(Type::I1),
+            range: ConstantIntRange::exact_bool(self.result().ty(), false),
         })
     }
 }
@@ -188,7 +188,7 @@ impl ValueRangeAssertionOpInterface for AssertU32 {
         (asserted == result).then(|| ValueRangeRefinement {
             input: self.value().as_value_ref(),
             result: asserted,
-            constraint: ValueRangeConstraint::Type(Type::U32),
+            range: ConstantIntRange::max_for_type(&Type::U32),
         })
     }
 }

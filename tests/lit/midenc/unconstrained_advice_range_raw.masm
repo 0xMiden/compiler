@@ -1,0 +1,20 @@
+# RUN: midenc -Zlint -Canalyze-only %s > %t 2>&1
+# RUN: filecheck %s < %t
+
+namespace advice_range_raw
+
+# CHECK-NOT: unconstrained advice value
+# CHECK: unconstrained advice value reaches operation requiring a constrained value in function 'arithmetic'
+# CHECK-NOT: unconstrained advice value
+# CHECK: public function 'returned' returns unconstrained advice value as result #0
+# CHECK-NOT: unconstrained advice value
+
+pub proc arithmetic() -> u32
+    adv_push
+    push.1
+    u32wrapping_add
+end
+
+pub proc returned() -> u32
+    adv_push
+end

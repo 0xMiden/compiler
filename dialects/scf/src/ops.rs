@@ -164,7 +164,12 @@ impl RegionBranchOpInterface for If {
 #[operation(
     dialect = ScfDialect,
     traits(SingleBlock, HasRecursiveMemoryEffects),
-    implements(RegionBranchOpInterface, LoopLikeOpInterface, OpPrinter)
+    implements(
+        RegionBranchOpInterface,
+        LoopLikeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter,
+    )
 )]
 pub struct While {
     #[operands]
@@ -175,6 +180,13 @@ pub struct While {
     after: Region,
     #[results]
     returns: AnyType,
+}
+
+impl OperandRangeRequirementOpInterface for While {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        // Initial values are forwarded to the loop header without interpreting their range.
+        OperandRangeRequirement::None
+    }
 }
 
 impl While {
@@ -675,13 +687,27 @@ impl Canonicalizable for IndexSwitch {
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike),
-    implements(RegionBranchTerminatorOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(
+        RegionBranchTerminatorOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter,
+    )
 )]
 pub struct Condition {
     #[operand]
     condition: Bool,
     #[operands]
     forwarded: AnyType,
+}
+
+impl OperandRangeRequirementOpInterface for Condition {
+    fn operand_range_requirement(&self, operand_index: usize) -> OperandRangeRequirement {
+        match operand_index {
+            0 => OperandRangeRequirement::Required(ValueRangeConstraint::Type(Type::I1)),
+            _ => OperandRangeRequirement::None,
+        }
+    }
 }
 
 impl RegionBranchTerminatorOpInterface for Condition {
@@ -841,6 +867,37 @@ mod tests {
             .unwrap_or_else(|| {
                 panic!("expected a {} op in the function body", <T as OpRegistration>::full_name())
             })
+    }
+
+    #[test]
+    fn loop_range_requirements_distinguish_conditions_from_forwarded_values() -> Result<(), Report>
+    {
+        let context = Rc::new(Context::default());
+        let source = r#"
+builtin.function public extern("C") @forward(%condition: i1, %value: u32) -> u32 {
+    %result = scf.while %value before {
+    ^head(%current: u32):
+        scf.condition %condition, %current : (i1, u32);
+    } after {
+    ^body(%next: u32):
+        scf.yield %next : (u32);
+    } : (u32) -> u32;
+    builtin.ret %result : (u32);
+};"#;
+        let (function, _) =
+            parse_function_fixpoint(&context, "loop_range_requirements.hir", source)?;
+        let function = function.borrow();
+        let while_op = find_op::<While>(&function);
+        let while_op = while_op.borrow();
+        assert_eq!(operation_operand_range_requirement(while_op.as_operation(), 0), None);
+        let condition = while_op.condition_op();
+        let condition = condition.borrow();
+        assert_eq!(
+            operation_operand_range_requirement(condition.as_operation(), 0),
+            Some(ValueRangeConstraint::Type(Type::I1))
+        );
+        assert_eq!(operation_operand_range_requirement(condition.as_operation(), 1), None);
+        Ok(())
     }
 
     /// The regions of an operation with operands must parse with no pre-bound entry arguments:

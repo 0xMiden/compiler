@@ -2,6 +2,7 @@ mod diagnostics;
 mod lattice;
 mod layout;
 mod propagation;
+mod ranges;
 mod sinks;
 mod storage;
 #[cfg(test)]
@@ -20,6 +21,7 @@ use midenc_hir::{
     diagnostics::SourceManager,
     dialects::builtin,
     pass::{Analysis, AnalysisManager, PreservedAnalyses},
+    traits::ValueRangeConstraint,
 };
 use midenc_hir_analysis::{DataFlowConfig, DataFlowSolver, LatticeLike};
 
@@ -32,17 +34,19 @@ pub use self::{
         AdviceTaintOrigin, AdviceTaintOriginKind, AdviceTaintValue, ContextualAdviceTaintValue,
     },
     propagation::AdviceTaintPropagation,
+    ranges::RangeAnalysisStatus,
 };
 use self::{
     lattice::value_taint,
-    sinks::{
-        external_call_param_types, external_parameter_range_constraint, is_external_call,
-        is_range_constrained_sink, range_constrained_operand_indices,
-    },
+    ranges::RangeFacts,
+    sinks::{external_call_param_types, external_parameter_range_constraint, is_external_call},
     storage::AdviceTaintStoragePropagation,
 };
 
-/// Analysis wrapper that runs the sparse taint propagation and materializes diagnostics.
+/// Analysis wrapper that stabilizes integer ranges before propagating taint and diagnostics.
+///
+/// The worklist budget applies separately to ranges and taint. Exhausting the range budget
+/// retains the static operand requirements; taint still receives its full budget.
 ///
 /// # Analysis root
 ///
@@ -55,6 +59,7 @@ use self::{
 #[derive(Default)]
 pub struct AdviceTaintAnalysis {
     solver: DataFlowSolver,
+    ranges: RangeFacts,
     findings: Vec<AdviceTaintFinding>,
     exit_findings: Vec<AdviceTaintExitFinding>,
     external_call_findings: Vec<AdviceTaintExternalCallFinding>,
@@ -66,6 +71,11 @@ pub struct AdviceTaintAnalysisResult {
 }
 
 impl AdviceTaintAnalysis {
+    /// Status of optional range inference, independent of taint coverage.
+    pub fn range_analysis_status(&self) -> &RangeAnalysisStatus {
+        self.ranges.status()
+    }
+
     pub fn findings(&self) -> &[AdviceTaintFinding] {
         &self.findings
     }
@@ -136,16 +146,20 @@ impl AdviceTaintAnalysis {
         analysis_manager: AnalysisManager,
         config: DataFlowConfig,
     ) -> Result<(), Report> {
+        self.ranges = RangeFacts::analyze(op, analysis_manager.clone(), config.clone())?;
         self.solver = DataFlowSolver::new(config);
-        self.solver.load::<AdviceTaintPropagation>();
+        let propagation =
+            AdviceTaintPropagation::with_ranges(&mut self.solver, self.ranges.clone());
+        self.solver.load_with_strategy(propagation);
         self.solver.load::<AdviceTaintStoragePropagation>();
         self.solver.initialize_and_run(op, analysis_manager)
     }
 
     fn collect_analysis_results(&mut self, op: &Operation) {
-        self.findings = collect_findings(op, &self.solver);
-        self.exit_findings = collect_exit_findings(op, &self.solver);
-        self.external_call_findings = collect_external_call_findings(op, &self.solver);
+        self.findings = collect_findings(op, &self.solver, &self.ranges);
+        self.exit_findings = collect_exit_findings(op, &self.solver, &self.ranges);
+        self.external_call_findings =
+            collect_external_call_findings(op, &self.solver, &self.ranges);
     }
 
     pub fn run_with_config(
@@ -212,15 +226,15 @@ impl Analysis for AdviceTaintAnalysis {
     }
 }
 
-fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintFinding> {
+fn collect_findings(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    ranges: &RangeFacts,
+) -> Vec<AdviceTaintFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
-        if !is_range_constrained_sink(operation) {
-            return;
-        }
-
         let mut operand_taint = ContextualAdviceTaintValue::clean();
-        for operand_index in range_constrained_operand_indices(operation) {
+        for operand_index in ranges.unsatisfied_operands(operation) {
             let operand = &operation.operands()[operand_index];
             let value = operand.borrow().as_value_ref();
             operand_taint = LatticeLike::join(&operand_taint, &value_taint(value, solver));
@@ -280,7 +294,11 @@ fn collect_public_exposure(op: &Operation) -> FxHashMap<OperationRef, Vec<Span<S
     exposed
 }
 
-fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintExitFinding> {
+fn collect_exit_findings(
+    op: &Operation,
+    solver: &DataFlowSolver,
+    ranges: &RangeFacts,
+) -> Vec<AdviceTaintExitFinding> {
     let exposed = collect_public_exposure(op);
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
@@ -300,6 +318,14 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
         let return_span = operation.span();
         for (result_index, operand) in ret.values().iter().enumerate() {
             let value = operand.borrow().as_value_ref();
+            // The signature defines the public contract; a lifted carrier type may differ.
+            // Unconstrained results (including felt/word) retain their escape diagnostics.
+            if let Some(result) = function.get_signature().results().get(result_index)
+                && let Some(constraint) = ValueRangeConstraint::from_type(&result.ty)
+                && ranges.satisfies(value, &constraint)
+            {
+                continue;
+            }
             let taint = value_taint(value, solver);
             if taint.is_clean() || !taint.has_unreported_origin() {
                 continue;
@@ -328,6 +354,7 @@ fn collect_exit_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceT
 fn collect_external_call_findings(
     op: &Operation,
     solver: &DataFlowSolver,
+    ranges: &RangeFacts,
 ) -> Vec<AdviceTaintExternalCallFinding> {
     let mut findings = Vec::new();
     op.prewalk_all(|operation| {
@@ -348,11 +375,16 @@ fn collect_external_call_findings(
         for (argument_index, (argument, parameter_type)) in
             call.arguments().iter().zip(param_types).enumerate()
         {
-            if external_parameter_range_constraint(&parameter_type).is_none() {
+            let Some(constraint) = external_parameter_range_constraint(&parameter_type) else {
+                continue;
+            };
+
+            let argument = argument.borrow().as_value_ref();
+            if ranges.satisfies(argument, &constraint) {
                 continue;
             }
 
-            let taint = value_taint(argument.borrow().as_value_ref(), solver);
+            let taint = value_taint(argument, solver);
             if taint.is_clean() || !taint.has_unreported_origin() {
                 continue;
             }
@@ -499,6 +531,136 @@ mod tests {
     };
 
     type ExitResults = (Vec<AdviceTaintExitFinding>, Vec<AdviceTaintDiagnostic>);
+
+    #[test]
+    fn public_returns_require_proven_bounds_for_the_declared_result() -> Result<(), Report> {
+        use midenc_dialect_arith::ArithOpBuilder;
+        use midenc_hir::{Type, dialects::builtin::BuiltinOpBuilder};
+
+        use crate::HirOpBuilder;
+
+        // Unchecked representation casts preserve the raw range. A nominally narrow
+        // carrier must not discharge the result contract, nor should a wider carrier
+        // prevent a valid proof from satisfying it.
+        for (result_type, carrier_type, increment, expected_exits) in [
+            (Type::U32, Type::Felt, 0, 0),
+            (Type::U8, Type::U32, 0, 0),
+            (Type::U8, Type::U8, 256, 1),
+            (Type::Felt, Type::Felt, 0, 1),
+        ] {
+            let mut test =
+                Test::new("public_return_range", &[], core::slice::from_ref(&result_type));
+            let span = SourceSpan::UNKNOWN;
+            {
+                let mut builder = test.function_builder();
+                let raw = builder.advice_pop(span)?;
+                let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+                let boolean = builder.eq(raw, zero, span)?;
+                let mut value = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+                if increment != 0 {
+                    let amount = builder.u32(increment, span);
+                    value = builder.add_unchecked(value, amount, span)?;
+                }
+                let value =
+                    builder.unrealized_conversion_cast(value, carrier_type.clone(), span)?;
+                builder.ret([value], span)?;
+            }
+            let root = test.function().as_operation_ref();
+            let analysis =
+                AnalysisManager::new(root, None).get_analysis::<AdviceTaintAnalysis>()?;
+            assert!(analysis.findings().is_empty(), "{:#?}", analysis.findings());
+            assert_eq!(
+                analysis.exit_findings().len(),
+                expected_exits,
+                "declared {result_type}, carrier {carrier_type}: {:#?}",
+                analysis.exit_findings()
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn exhausted_range_phase_retains_static_sink_and_external_call_checks() -> Result<(), Report> {
+        use midenc_dialect_arith::ArithOpBuilder;
+        use midenc_hir::{
+            Type,
+            dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, attributes::Signature},
+        };
+        use midenc_hir_analysis::{DataFlowConfig, DataFlowSolver};
+
+        use super::{AdviceTaintPropagation, ranges::RangeFacts};
+        use crate::HirOpBuilder;
+
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("range_budget_fallback").in_module("m");
+        let external = test.define_function("external", &[Type::U32], &[]);
+        let mut helper = test.define_function("helper", &[Type::U32], &[Type::U32]);
+        midenc_hir::Symbol::set_visibility(
+            &mut *helper.borrow_mut(),
+            midenc_hir::Visibility::Private,
+        );
+        {
+            let mut builder = FunctionBuilder::new(helper, test.builder_mut());
+            let arg = builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+            let two = builder.u32(2, span);
+            let product = builder.mul(arg, two, span)?;
+            builder.ret([product], span)?;
+        }
+        let entry = test.define_function("entry", &[], &[Type::U32, Type::U32]);
+        {
+            let signature = Signature::new(&test.context_rc(), [Type::U32], []);
+            let helper_signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+            let mut builder = FunctionBuilder::new(entry, test.builder_mut());
+            let raw = builder.advice_pop(span)?;
+            let zero = builder.felt(midenc_hir::Felt::ZERO, span);
+            let boolean = builder.eq(raw, zero, span)?;
+            let value = builder.unrealized_conversion_cast(boolean, Type::U32, span)?;
+            builder.exec(external, signature, [value], span)?;
+            builder.exec(helper, helper_signature, [value], span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(value, one, span)?;
+            builder.ret([sum, value], span)?;
+        }
+        let root = test.module().as_operation_ref();
+        let manager = AnalysisManager::new(root, None);
+        let mut config = DataFlowConfig::new();
+        config.set_interprocedural(true);
+        config.set_max_worklist_iterations(Some(0));
+        let ranges = RangeFacts::analyze(&root.borrow(), manager.clone(), config.clone())?;
+        assert!(matches!(ranges.status(), super::RangeAnalysisStatus::BudgetExhausted { .. }));
+        // Run the actual taint phase with a full budget after range inference has exhausted
+        // its own. Even initialization-time boolean facts must not suppress static checks.
+        config.set_max_worklist_iterations(None);
+        let mut solver = DataFlowSolver::new(config.clone());
+        let propagation = AdviceTaintPropagation::with_ranges(&mut solver, ranges.clone());
+        solver.load_with_strategy(propagation);
+        solver.load::<super::storage::AdviceTaintStoragePropagation>();
+        solver.initialize_and_run(&root.borrow(), manager)?;
+        let mut analysis = AdviceTaintAnalysis {
+            solver,
+            ranges,
+            ..Default::default()
+        };
+        analysis.collect_analysis_results(&root.borrow());
+        assert!(matches!(
+            analysis.range_analysis_status(),
+            super::RangeAnalysisStatus::BudgetExhausted { .. }
+        ));
+        assert_eq!(analysis.findings().len(), 2);
+        assert_eq!(analysis.external_call_findings().len(), 1);
+        assert_eq!(analysis.exit_findings().len(), 1);
+        assert_eq!(analysis.exit_findings()[0].result_index, 1);
+        let complete = AdviceTaintAnalysis::run_with_config(
+            &root.borrow(),
+            AnalysisManager::new(root, None),
+            config,
+        )?;
+        assert_eq!(complete.range_analysis_status(), &super::RangeAnalysisStatus::Complete);
+        assert!(complete.findings().is_empty());
+        assert!(complete.external_call_findings().is_empty());
+        assert!(complete.exit_findings().is_empty());
+        Ok(())
+    }
 
     fn analyze_source(source: &str) -> Result<ExitResults, Report> {
         let test = Test::default();

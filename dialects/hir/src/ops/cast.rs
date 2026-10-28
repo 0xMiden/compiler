@@ -229,10 +229,26 @@ impl CheckedCastOpInterface for Cast {
             return None;
         }
 
+        let result = self.result();
+        let ty = result.ty();
+        let target = ConstantIntRange::max_for_type(ty);
+        if target.is_untracked() || ty == &Type::Felt {
+            return None;
+        }
+        // A felt's canonical value is non-negative. Checked signed casts reject the sign bit;
+        // wider targets can represent every canonical felt without extending the domain.
+        let max = if ty.is_signed_integer() && ty != &Type::I1 {
+            target.smax() as u128
+        } else {
+            target.umax()
+        };
+        let range =
+            ConstantIntRange::from_unsigned(target.width(), 0, max.min((Felt::ORDER - 1) as u128));
+
         Some(ValueRangeRefinement {
             input,
             result: cast_result,
-            constraint: ValueRangeConstraint::from_type(self.result().ty())?,
+            range,
         })
     }
 }
