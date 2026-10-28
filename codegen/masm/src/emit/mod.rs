@@ -3350,8 +3350,9 @@ mod tests {
         );
     }
 
-    /// An 8-bit store to the first byte of an element masks the byte out of the element, and ors
-    /// the value into it: `[v] => []`, with nothing left behind.
+    /// An 8-bit store to the first byte of an element truncates the element to its 32-bit view
+    /// (it may hold a stale felt), masks the byte out of it, and ors the value into it:
+    /// `[v] => []`, with nothing left behind.
     #[test]
     fn an_8_bit_store_to_a_constant_address_ors_the_value_into_its_element() {
         assert_emits(
@@ -3369,7 +3370,8 @@ mod tests {
         );
     }
 
-    /// An 8-bit store to the second byte of an element shifts the value into place first.
+    /// An 8-bit store to the second byte of an element truncates the element to its 32-bit view,
+    /// then shifts the value into place.
     #[test]
     fn an_8_bit_store_to_a_constant_byte_offset_shifts_the_value_into_place() {
         assert_emits(
@@ -3388,7 +3390,8 @@ mod tests {
         );
     }
 
-    /// A 16-bit store to the first byte of an element masks the low half out of the element.
+    /// A 16-bit store to the first byte of an element truncates the element to its 32-bit view and
+    /// masks the low half out of it.
     #[test]
     fn a_16_bit_store_to_a_constant_aligned_address_ors_the_value_into_its_element() {
         assert_emits(
@@ -3406,7 +3409,8 @@ mod tests {
         );
     }
 
-    /// A small store to address 0, which is aligned to every power of two, compiles.
+    /// A small store to address 0, which is aligned to every power of two, compiles and truncates
+    /// the element to its 32-bit view before the merge.
     #[test]
     fn a_small_store_to_address_zero_compiles() {
         assert_emits(

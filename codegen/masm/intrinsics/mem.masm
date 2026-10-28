@@ -203,8 +203,12 @@ end
 # a narrower value into it and writes it back with `store_sw`.
 #
 # Unlike `load_sw`, each cell is truncated to its low 32 bits first: a cell may still hold a felt
-# above 2^32 from an earlier store (a reused stack slot), and a store must never trap on it. The
-# bytes of the window the caller does not overwrite are dead from the program's point of view.
+# at or above 2^32 from an earlier store (a reused stack slot), and a store must never trap on it.
+# Only bits 32..63 of such a stale felt are dropped; a cell holding a u32 is read unchanged, and the
+# bytes of the window the caller does not overwrite are written back as they were.
+#
+# This repeats the crossing branch of `load_sw` on purpose: sharing the body through an `exec`
+# would add a call to every unaligned 32-bit load and to `load_u16` at offset 3.
 #
 # The byte offset must be in 1..=3; an aligned window never needs merging across cells.
 #
@@ -510,6 +514,9 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# An unaligned store merges into two cells; a cell holding a felt at or above 2^32 is truncated to
+# its low 32 bits before the merge instead of trapping.
 pub proc store_sw # [addr, offset, value]
     # check for alignment and offset validity
     dup.1 eq.0                # [offset == 0, addr, offset, value]
@@ -528,7 +535,7 @@ pub proc store_sw # [addr, offset, value]
         # the store is across an element boundary
         #
         # load the current value of the two elements involved, keeping only their u32
-        # representation: either cell may still hold a felt above 2^32 from an earlier store
+        # representation: either cell may still hold a felt at or above 2^32 from an earlier store
         dup.0 push.1 u32overflowing_add assertz mem_load u32cast # [e1, addr, bit_offset, value]
         dup.1 mem_load u32cast # [e0, e1, addr, bit_offset, value]
 
@@ -573,6 +580,9 @@ end
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
 #
+# The store merges into the touched cell(s); a cell holding a felt at or above 2^32 is truncated
+# to its low 32 bits before the merge instead of trapping.
+#
 # Stack transition: [addr, offset, value] -> []
 pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
     dup.1 push.4 u32lt assert
@@ -592,7 +602,7 @@ pub proc store_u16(addr: ptr<felt, addrspace(felt)>, offset: u8, value: u16)
         exec.store_sw
     else
         # Merge the halfword directly into its one touched cell, keeping only the u32
-        # representation of the old content (it may be a stale felt above 2^32).
+        # representation of the old content (it may be a stale felt at or above 2^32).
         swap.1 push.8 u32wrapping_mul  # [bits, addr, value]
         dup.1 mem_load u32cast        # [old, bits, addr, value]
         push.65535 dup.2 u32shl u32not
@@ -607,6 +617,9 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# An unaligned store merges into its two boundary cells; a boundary cell holding a felt at or
+# above 2^32 is truncated to its low 32 bits before the merge instead of trapping.
 pub proc store_dw # [addr, offset, value_lo, value_hi]
     # check for alignment and offset validity
     dup.1 eq.0   # [offset == 0, addr, offset]
@@ -641,7 +654,7 @@ pub proc store_dw # [addr, offset, value_lo, value_hi]
         # combine the bits of the hi and lo chunks with their corresponding elements, so that we
         # do not overwrite memory that is out of bounds of the actual value being stored.
         # Both boundary cells are truncated to their u32 representation first: either may still
-        # hold a felt above 2^32 from an earlier store.
+        # hold a felt at or above 2^32 from an earlier store.
         #
         # 1. load e2 (hi)
         dup.5 push.2 u32overflowing_add assertz mem_load u32cast
@@ -668,6 +681,9 @@ end
 #
 # A native pointer tuple consists of an element address where the data begins, and a byte offset,
 # which is the offset of the first byte, in the 32-bit representation of that element.
+#
+# An unaligned store merges into its two boundary cells; a boundary cell holding a felt at or
+# above 2^32 is truncated to its low 32 bits before the merge instead of trapping.
 pub proc store_qw # [addr, offset, value_0, value_1, value_2, value_3]
     # check for alignment and offset validity
     dup.1 eq.0                # [offset == 0, addr, offset, value_0, value_1, value_2, value_3]
@@ -699,7 +715,8 @@ pub proc store_qw # [addr, offset, value_0, value_1, value_2, value_3]
         dup.0 u32not                  # [end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
 
         # Load the two boundary elements whose unaffected bytes must be preserved, keeping only
-        # their u32 representation: either may still hold a felt above 2^32 from an earlier store.
+        # their u32 representation: either may still hold a felt at or above 2^32 from an earlier
+        # store.
         dup.3 push.4 u32overflowing_add assertz mem_load u32cast # [old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
         dup.4 mem_load u32cast                                   # [old0, old4, end_mask, start_mask, rshift, addr, bit_offset, value_0, value_1, value_2, value_3]
 

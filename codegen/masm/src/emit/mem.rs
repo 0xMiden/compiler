@@ -702,8 +702,8 @@ impl OpEmitter<'_> {
                     if value_ty.size_in_bits() < 32 {
                         // [addr, value] -> [prev, addr, value]
                         //
-                        // The cell may still hold a felt above 2^32 from an earlier store (a reused
-                        // stack slot); keep its low 32 bits so the merge below does not trap.
+                        // The cell may still hold a felt at or above 2^32 from an earlier store (a
+                        // reused stack slot); keep its low 32 bits so the merge below does not trap.
                         self.emit_all(
                             [
                                 masm::Instruction::Dup0,
@@ -1378,7 +1378,7 @@ impl OpEmitter<'_> {
     /// Store a sub-word value (u8, u16, etc.) to memory
     ///
     /// For sub-word stores, we need to:
-    /// 1. Load the current 32-bit word at the target address
+    /// 1. Load the touched element(s) and keep only their low 32 bits (they may hold a stale felt)
     /// 2. Mask out the bits where we'll place the new value
     /// 3. Shift the new value to the correct bit position
     /// 4. Combine with OR and store back
@@ -1389,8 +1389,8 @@ impl OpEmitter<'_> {
     /// - offset: The byte offset within the element (0-3)
     /// - value: The value to store (already truncated to the correct size)
     ///
-    /// The approach preserves other bytes in the same word while updating only
-    /// the target byte(s).
+    /// The approach preserves the other bytes of the 32-bit view of the touched element(s) while
+    /// updating only the target byte(s).
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
         let type_size = ty.size_in_bits();
         // Whole-cell values (including small wrappers) retain the word owner's existing
@@ -1459,10 +1459,12 @@ impl OpEmitter<'_> {
     ///
     /// This function stores sub-word values (u8, u16, etc.) to memory at a specific immediate address.
     /// It handles both aligned and unaligned addresses by:
-    /// 1. Loading the current 32-bit word at the element-aligned address
+    /// 1. Loading the current element and keeping only its low 32 bits (it may hold a stale felt)
     /// 2. Masking out the bits where the new value will be placed
     /// 3. Shifting the new value to the correct bit position based on the byte offset
     /// 4. Combining with OR and storing back
+    ///
+    /// Crossing stores and unaligned 16-bit stores delegate to [Self::store_small].
     ///
     /// # Stack Effects
     /// - Before: `[value]` (where value is already truncated to the correct size)
@@ -1483,8 +1485,8 @@ impl OpEmitter<'_> {
         // For immediate pointers, we always load from the element-aligned address
         // The offset determines which byte(s) within that element we're modifying
         //
-        // The cell may still hold a felt above 2^32 from an earlier store (a reused stack slot);
-        // keep its low 32 bits so the merge below does not trap.
+        // The cell may still hold a felt at or above 2^32 from an earlier store (a reused stack
+        // slot); keep its low 32 bits so the merge below does not trap.
         self.emit_all(
             [masm::Instruction::MemLoadImm(imm.addr.into()), masm::Instruction::U32Cast],
             span,
@@ -1740,6 +1742,9 @@ mod tests {
         }
     }
 
+    /// A typed fill keeps the bytes outside its footprint in partially covered cells (the low 32
+    /// bits of a cell holding a stale felt), leaves the caller's stack suffix intact, and still
+    /// rejects an unaligned felt fill.
     #[test]
     fn fill_preserves_partial_cells_and_suffix() {
         let base = 0xc000_0010;
@@ -1788,7 +1793,7 @@ mod tests {
             );
         }
         // Partial-cell integer writes merge into the low 32 bits of a cell that still holds a
-        // felt above 2^32 (#1482); full-cell Felt needs alignment.
+        // felt at or above 2^32 (#1482); full-cell Felt needs alignment.
         check_fill(
             Type::U16,
             Immediate::U16(0xabcd),
@@ -1961,6 +1966,7 @@ mod tests {
         }
     }
 
+    /// The packed sub-word types (9, 17, 24 and 25 bits) that may cross a cell boundary.
     fn packed_types() -> [Type; 4] {
         [
             Type::from(ArrayType::new(Type::I1, 2)),
@@ -1970,6 +1976,8 @@ mod tests {
         ]
     }
 
+    /// Store every packed type at every byte offset over u32 cells and over cells holding a stale
+    /// felt, through the dynamic or the immediate store owner, and check the merged cells.
     fn check_packed_crossings(immediate: bool) {
         for ty in packed_types() {
             let bits = ty.size_in_bits();
@@ -2004,7 +2012,7 @@ mod tests {
                         &initial,
                         Some(&expected),
                     );
-                    // Either cell may still hold a felt above 2^32 from an earlier store.
+                    // Either cell may still hold a felt at or above 2^32 from an earlier store.
                     let high = (1u64 << 40) + 7;
                     for felt_cells in
                         [[(16, initial[0].1), (17, high)], [(16, high), (17, initial[1].1)]]
@@ -2018,7 +2026,8 @@ mod tests {
                             Some(&merged(felt_cells)),
                         );
                     }
-                    // A crossing from the last cell overflows the address space and traps.
+                    // A crossing from the last cell overflows the address space and traps; a store
+                    // that stays within the last cell succeeds.
                     check_packed_store(
                         ty.clone(),
                         value,
