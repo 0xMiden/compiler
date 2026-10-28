@@ -1286,7 +1286,7 @@ fn shift_by_constant(op: &str, ty: &str, count: u32) -> Parsed {
 }
 
 #[test]
-fn constant_shift_counts_are_immediates() {
+fn constant_movement_counts_are_immediates() {
     for (op, ty, instruction, a, expected) in [
         ("shl", "u32", "u32shl.3", 5usize, 40usize),
         ("shl", "i32", "u32shl.3", 5, 40),
@@ -1295,6 +1295,10 @@ fn constant_shift_counts_are_immediates() {
         ("shr", "u32", "u32shr.3", 40, 5),
         ("shr", "u16", "u32shr.3", 0x1234, 0x246),
         ("shr", "u8", "u32shr.3", 200, 25),
+        ("rotl", "u32", "u32rotl.3", 0xa000_0001, 0x0000_000d),
+        ("rotl", "i32", "u32rotl.3", 0xa000_0001, 0x0000_000d),
+        ("rotr", "u32", "u32rotr.3", 0x0000_000d, 0xa000_0001),
+        ("rotr", "i32", "u32rotr.3", 0x0000_000d, 0xa000_0001),
     ] {
         let f = shift_by_constant(op, ty, 3);
         let procedure = selected_procedure(&f, &SelectEnv::default());
@@ -1312,13 +1316,24 @@ fn constant_shift_counts_are_immediates() {
 
 #[test]
 fn signed_and_wide_shifts_keep_the_count_on_the_stack() {
-    for (op, ty, a, expected) in [("shr", "i32", 40usize, 5usize), ("shl", "u64", 5, 40)] {
+    for (op, ty, a, expected) in [
+        ("shr", "i32", 40usize, 5usize),
+        ("shl", "u64", 5, 40),
+        ("rotl", "u64", 5, 40),
+        ("rotr", "i64", 40, 5),
+    ] {
         let f = shift_by_constant(op, ty, 3);
         let procedure = selected_procedure(&f, &SelectEnv::default());
         assert!(procedure.contains("push.3"), "{op} {ty}: {procedure}");
-        assert!(!procedure.contains("u32shr.") && !procedure.contains("u32shl."), "{procedure}");
-        let inputs = if ty == "u64" { vec![a, 0] } else { vec![a] };
-        let outputs = if ty == "u64" {
+        assert!(
+            !["u32shr.", "u32shl.", "u32rotl.", "u32rotr."]
+                .iter()
+                .any(|i| procedure.contains(i)),
+            "{procedure}"
+        );
+        let wide = ty.ends_with("64");
+        let inputs = if wide { vec![a, 0] } else { vec![a] };
+        let outputs = if wide {
             vec![expected, 0]
         } else {
             vec![expected]

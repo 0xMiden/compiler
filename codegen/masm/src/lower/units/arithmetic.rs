@@ -89,18 +89,22 @@ pub(crate) enum Kind {
     Poison,
 }
 
-/// The count a shift carries as an instruction immediate: `op` is an `arith.shl` or `arith.shr`
-/// whose shifted type has a native immediate form and whose count is an `arith.constant` below
-/// the 32-bit shift limit. Signed and 64-bit right shifts are helper calls that take the count
-/// on the stack, so they never fold.
+/// The count a bit movement carries as an instruction immediate: `op` is an `arith.shl`,
+/// `arith.shr`, `arith.rotl` or `arith.rotr` whose moved type has a native immediate form and
+/// whose count is an `arith.constant` below the 32-bit limit. Signed and 64-bit right shifts and
+/// 64-bit rotates are helper calls that take the count on the stack, so they never fold.
 ///
-/// The shift and the constant both consult this rule, so selection agrees on which values are
-/// consumed as immediates without a physical lane.
-pub(crate) fn immediate_shift_count(op: &Operation) -> Option<u32> {
+/// The movement and the constant both consult this rule, so selection agrees on which values
+/// are consumed as immediates without a physical lane.
+pub(crate) fn immediate_movement_count(op: &Operation) -> Option<u32> {
     let kind = if op.is::<arith::Shl>() {
         Kind::Shl
     } else if op.is::<arith::Shr>() {
         Kind::Shr
+    } else if op.is::<arith::Rotl>() {
+        Kind::Rotl
+    } else if op.is::<arith::Rotr>() {
+        Kind::Rotr
     } else {
         return None;
     };
@@ -108,18 +112,19 @@ pub(crate) fn immediate_shift_count(op: &Operation) -> Option<u32> {
     if operands.len() != 2 {
         return None;
     }
-    let shifted = operands[0].borrow().ty().clone();
+    let moved = operands[0].borrow().ty().clone();
     let native = match kind {
         Kind::Shl => {
-            matches!(shifted, Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32)
+            matches!(moved, Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32)
         }
-        _ => matches!(shifted, Type::U8 | Type::U16 | Type::U32),
+        Kind::Shr => matches!(moved, Type::U8 | Type::U16 | Type::U32),
+        _ => matches!(moved, Type::I32 | Type::U32),
     };
     if !native {
         return None;
     }
     let count = operands[1].borrow().as_value_ref();
-    // The same value as shifted operand and count would be both a lane and an immediate.
+    // The same value as moved operand and count would be both a lane and an immediate.
     if count == operands[0].borrow().as_value_ref() {
         return None;
     }
@@ -129,9 +134,9 @@ pub(crate) fn immediate_shift_count(op: &Operation) -> Option<u32> {
     (count < 32).then_some(count)
 }
 
-/// Whether every non-transparent user of `constant` consumes it as a shift immediate, so that
-/// no physical copy of its result is ever required. A constant with no such user, or with any
-/// other user (including the shifted operand of a shift), keeps its stack publication.
+/// Whether every non-transparent user of `constant` consumes it as a movement immediate, so
+/// that no physical copy of its result is ever required. A constant with no such user, or with
+/// any other user (including the moved operand of a shift), keeps its stack publication.
 pub(crate) fn consumed_as_immediate(constant: &Operation) -> bool {
     use midenc_hir::{Usable, traits::Transparent};
     let results = constant.results().all();
@@ -145,7 +150,7 @@ pub(crate) fn consumed_as_immediate(constant: &Operation) -> bool {
         if owner.implements::<dyn Transparent>() {
             continue;
         }
-        if user.index != 1 || immediate_shift_count(&owner).is_none() {
+        if user.index != 1 || immediate_movement_count(&owner).is_none() {
             return false;
         }
         folded = true;
@@ -296,7 +301,9 @@ impl Arithmetic {
         );
         let mut order = (0..inputs.len()).collect::<Vec<_>>();
         let mut immediates = vec![];
-        let shift_count = matches!(kind, Shl | Shr).then(|| immediate_shift_count(op)).flatten();
+        let count = matches!(kind, Shl | Shr | Rotl | Rotr)
+            .then(|| immediate_movement_count(op))
+            .flatten();
         let expected = match kind {
             ConstantPointer | GlobalSymbol | Poison if inputs.is_empty() => {
                 vec![target.clone().unwrap()]
@@ -395,7 +402,7 @@ impl Arithmetic {
                 ) =>
             {
                 // A folded count leaves only the shifted value on the stack.
-                match shift_count {
+                match count {
                     Some(count) => {
                         order = vec![0];
                         immediates.push((1, Felt::from(count)));
@@ -411,7 +418,7 @@ impl Arithmetic {
                     Type::U8 | Type::U16 | Type::I32 | Type::U32 | Type::I64 | Type::U64
                 ) =>
             {
-                match shift_count {
+                match count {
                     Some(count) => {
                         order = vec![0];
                         immediates.push((1, Felt::from(count)));
@@ -425,7 +432,13 @@ impl Arithmetic {
                     && inputs[1] == Type::U32
                     && matches!(ty, Type::I32 | Type::U32 | Type::I64 | Type::U64) =>
             {
-                order.reverse();
+                match count {
+                    Some(count) => {
+                        order = vec![0];
+                        immediates.push((1, Felt::from(count)));
+                    }
+                    None => order.reverse(),
+                }
                 vec![ty.clone()]
             }
             Not if unary && ty == Type::I1 => vec![ty.clone()],
@@ -554,16 +567,22 @@ impl Arithmetic {
                 Band => e.band(span),
                 Bor => e.bor(span),
                 Bxor => e.bxor(span),
-                Shl => match shift_count {
+                Shl => match count {
                     Some(count) => e.shl_imm(count, span),
                     None => e.shl(span),
                 },
-                Shr => match shift_count {
+                Shr => match count {
                     Some(count) => e.shr_imm(count, span),
                     None => e.shr(span),
                 },
-                Rotl => e.rotl(span),
-                Rotr => e.rotr(span),
+                Rotl => match count {
+                    Some(count) => e.rotl_imm(count, span),
+                    None => e.rotl(span),
+                },
+                Rotr => match count {
+                    Some(count) => e.rotr_imm(count, span),
+                    None => e.rotr(span),
+                },
                 Eq => e.eq(span),
                 Neq => e.neq(span),
                 Gt => e.gt(span),

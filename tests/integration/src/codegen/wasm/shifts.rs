@@ -1,7 +1,8 @@
-//! Tests for `i32` shifts by constant counts and of constant values, compiled from Wasm.
+//! Tests for `i32` shifts and rotates by constant counts and of constant values, compiled from
+//! Wasm.
 //!
-//! A constant count below 32 is an immediate of the shift instruction rather than an operand on
-//! the stack; a constant shifted value is still an operand.
+//! A constant count below 32 is an immediate of the shift or rotate instruction rather than an
+//! operand on the stack; a constant shifted value is still an operand.
 
 use super::*;
 
@@ -202,5 +203,51 @@ fn shl_in_a_loop_by_a_constant_count() {
     assert!(masm.contains("u32shl.1"), "{masm}");
     for n in [0u32, 1, 5, 31] {
         assert_eq!(run(&test, &package, &[n]), 1u32.wrapping_shl(n), "1 << {n}\n{masm}");
+    }
+}
+
+/// Rotates by a constant count lower to the immediate forms, without pushing the count.
+#[test]
+fn rotates_by_a_constant_count_use_the_immediate_forms() {
+    for (op, instruction, rotate) in [
+        ("rotl", "u32rotl.5", u32::rotate_left as fn(u32, u32) -> u32),
+        ("rotr", "u32rotr.5", u32::rotate_right),
+    ] {
+        let (test, package, masm) = compile(
+            "i32",
+            &format!(
+                "local.get 0
+    i32.const 5
+    i32.{op}"
+            ),
+        );
+        assert!(masm.contains(instruction), "{masm}");
+        assert!(!has_instruction(&masm, "push.5"), "{masm}");
+        for arg in [0u32, 1, 0x8000_0000, 0x1234_5678, u32::MAX] {
+            assert_eq!(run(&test, &package, &[arg]), rotate(arg, 5), "{arg} {op} 5\n{masm}");
+        }
+    }
+}
+
+/// A rotate by a constant count of 32 or more takes the count modulo 32.
+#[test]
+fn rotl_by_a_constant_count_of_32_or_more() {
+    for (count, effective) in [(32u32, 0u32), (35, 3)] {
+        let (test, package, masm) = compile(
+            "i32",
+            &format!(
+                "local.get 0
+    i32.const {count}
+    i32.rotl"
+            ),
+        );
+        assert!(masm.contains(&format!("u32rotl.{effective}")), "{count}\n{masm}");
+        for arg in [0u32, 1, 0x8000_0000, 0x1234_5678, u32::MAX] {
+            assert_eq!(
+                run(&test, &package, &[arg]),
+                arg.rotate_left(effective),
+                "{arg} rotl {count}\n{masm}"
+            );
+        }
     }
 }

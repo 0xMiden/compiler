@@ -216,7 +216,11 @@ impl<'a> Verifier<'a> {
             for op in body.ops() {
                 match op {
                     AnnotatedOp::Instruction {
-                        instruction: Instruction::U32ShlImm(value) | Instruction::U32ShrImm(value),
+                        instruction:
+                            Instruction::U32ShlImm(value)
+                            | Instruction::U32ShrImm(value)
+                            | Instruction::U32RotlImm(value)
+                            | Instruction::U32RotrImm(value),
                         unit,
                     } => {
                         if let crate::masm::Immediate::Value(value) = value {
