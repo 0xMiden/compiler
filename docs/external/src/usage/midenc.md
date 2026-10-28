@@ -117,8 +117,10 @@ cargo miden build --release -C panic=abort
 ```
 
 The selected strategy is passed through Rust flags, which take precedence over Cargo profile
-panic settings. Inherited `CARGO_ENCODED_RUSTFLAGS` (or `RUSTFLAGS` when the encoded variable
-is absent) and explicit `--rustflags` can override it.
+panic settings. Both `midenc` and `cargo miden build` support inherited overrides through
+`RUSTFLAGS` (whitespace-separated) or `CARGO_ENCODED_RUSTFLAGS` (separated by ASCII 0x1f).
+These flags are appended after the selected strategy, and the last panic setting wins.
+`CARGO_ENCODED_RUSTFLAGS` takes precedence over `RUSTFLAGS` whenever it is set.
 
 Standalone Rust files built through a temporary Cargo project support both strategies.
 Files compiled directly with `rustc` use prebuilt standard libraries that are incompatible

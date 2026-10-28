@@ -2183,8 +2183,8 @@ pub(crate) mod manifest {
     /// (0x1f-separated; arguments may contain spaces) replaces plain `RUSTFLAGS`
     /// (whitespace-split) even when its value is empty — cargo treats an empty encoded value
     /// as "no inherited flags", not as an absent variable. Inherited flags are folded in after
-    /// the mandatory set and before the explicit `--rustflags`, preserving the pre-existing
-    /// override order — nothing a caller passes is dropped.
+    /// the mandatory set and before the programmatically supplied Rust flags, preserving the
+    /// pre-existing override order — nothing a caller passes is dropped.
     pub(super) fn merge_rust_flags(
         mandatory: &[&str],
         inherited_encoded: Option<&std::ffi::OsStr>,
@@ -3962,7 +3962,10 @@ path = "lib.rs"
         );
         let parsed = direct_rustc_flags(flags);
         assert_eq!(parsed.flags, expected_flags);
-        assert!(!parsed.panic_strategy_is_immediate_abort, "the effective panic strategy is abort");
+        assert!(
+            !parsed.panic_strategy_is_immediate_abort,
+            "the effective panic strategy is abort"
+        );
     }
 
     #[test]
