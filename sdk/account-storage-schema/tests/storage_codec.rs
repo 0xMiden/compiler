@@ -168,10 +168,13 @@ fn bundled_codec_parses_and_displays_custom_slot_values() {
     // Any account component package carries the sections the test replaces.
     let mut package =
         (*compile_project(&workspace_root().join("examples/storage-example"))).clone();
+    let replaced = [
+        package_account_storage_schema_section_id(),
+        SectionId::ACCOUNT_COMPONENT_METADATA,
+        package_codec_section_id(),
+    ];
+    package.sections.retain(|section| !replaced.contains(&section.id));
     let schema_id = package_account_storage_schema_section_id();
-    package.sections.retain(|section| {
-        section.id != schema_id && section.id != SectionId::ACCOUNT_COMPONENT_METADATA
-    });
     package
         .sections
         .push(Section::new(schema_id, STORAGE_SCHEMA.as_bytes().to_vec()));

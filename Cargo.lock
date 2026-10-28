@@ -4629,6 +4629,7 @@ dependencies = [
 name = "midenc-integration-network-tests"
 version = "0.1.0"
 dependencies = [
+ "miden-account-storage-schema",
  "miden-client",
  "miden-core",
  "miden-field",

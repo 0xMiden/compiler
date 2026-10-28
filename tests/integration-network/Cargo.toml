@@ -35,5 +35,6 @@ tokio.workspace = true
 midenc-integration-test-support.workspace = true
 
 [dev-dependencies]
+miden-account-storage-schema = { workspace = true, features = ["codec-component"] }
 miden-note-schema = { workspace = true, features = ["codec-component"] }
 midenc-frontend-wasm-metadata.workspace = true

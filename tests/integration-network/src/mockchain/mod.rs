@@ -7,6 +7,7 @@ mod note_asset_bindings;
 mod notes;
 mod output_note_seal;
 mod sibling;
+mod storage_schema;
 mod stored_procedure;
 mod support;
 mod swapp;

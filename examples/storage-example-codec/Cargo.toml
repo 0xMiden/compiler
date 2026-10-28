@@ -1,0 +1,11 @@
+[package]
+name = "storage-example-codec"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden-codec = { path = "../../sdk/codec" }

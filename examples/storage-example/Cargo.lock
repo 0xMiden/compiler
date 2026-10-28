@@ -3509,6 +3509,7 @@ name = "storage-example"
 version = "0.1.0"
 dependencies = [
  "miden",
+ "miden-field-repr",
  "miden-sdk-build-script-support",
 ]
 

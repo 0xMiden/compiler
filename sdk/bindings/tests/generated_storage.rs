@@ -129,35 +129,51 @@ fn map_words(data: &miden_bindings::InitStorageData, slot: &str) -> Vec<(Word, W
 }}
 
 fn main() {{
-    use project_bindings::Storage;
+    use project_bindings::{{Holding, Limits, Storage}};
 
     assert_eq!(Storage::OWNER_PUBLIC_KEY_SLOT, "miden::storage_example::foo::owner_public_key");
     assert_eq!(Storage::ASSET_QTY_MAP_SLOT, "miden::storage_example::foo::asset_qty_map");
+    assert_eq!(Storage::LIMITS_SLOT, "miden::storage_example::foo::limits");
+    assert_eq!(Storage::HOLDINGS_SLOT, "miden::storage_example::foo::holdings");
     let schema = Storage::schema().unwrap();
     assert_eq!(schema.slot("owner_public_key").unwrap().name(), Some(Storage::OWNER_PUBLIC_KEY_SLOT));
 
     let owner = word([1, 2, 3, 4]);
     let asset = word([5, 6, 7, 8]);
     let quantity = AssetAmount::new(100).unwrap();
+    let limits = Limits {{ max_qty: AssetAmount::new(50).unwrap(), paused: true }};
+    let holding = Holding {{ qty: AssetAmount::new(7).unwrap(), locked: true }};
     let storage = Storage {{
         owner_public_key: owner,
         asset_qty_map: vec![(asset, quantity)],
+        limits: limits.clone(),
+        holdings: vec![(asset, holding.clone())],
     }};
     let data = storage.to_init_storage_data().unwrap();
     assert_eq!(value_word(&data, Storage::OWNER_PUBLIC_KEY_SLOT), owner);
     let entries = map_words(&data, Storage::ASSET_QTY_MAP_SLOT);
     assert_eq!(entries, [(asset, word([100, 0, 0, 0]))]);
+    let limits_word = value_word(&data, Storage::LIMITS_SLOT);
+    assert_eq!(limits_word, word([50, 1, 0, 0]));
+    let holdings = map_words(&data, Storage::HOLDINGS_SLOT);
+    assert_eq!(holdings, [(asset, word([7, 1, 0, 0]))]);
 
     assert_eq!(Storage::decode_owner_public_key(owner).unwrap(), owner);
     let (key, value) = entries[0];
     assert_eq!(Storage::decode_asset_qty_map_entry(key, value).unwrap(), (asset, quantity));
     let error = Storage::decode_asset_qty_map_entry(key, word([100, 0, 0, 1])).unwrap_err();
     assert!(error.to_string().contains("nonzero padding felt at index 3"), "{{error}}");
+    assert_eq!(Storage::decode_limits(limits_word).unwrap(), limits);
+    let (key, value) = holdings[0];
+    assert_eq!(Storage::decode_holdings_entry(key, value).unwrap(), (asset, holding.clone()));
+    assert!(Storage::decode_holdings_entry(key, word([7, 2, 0, 0])).is_err());
 
     // A duplicate map key is rejected by the init storage data.
     let duplicate = Storage {{
         owner_public_key: owner,
         asset_qty_map: vec![(asset, quantity), (asset, quantity)],
+        limits,
+        holdings: vec![(asset, holding)],
     }};
     assert!(duplicate.to_init_storage_data().is_err());
 

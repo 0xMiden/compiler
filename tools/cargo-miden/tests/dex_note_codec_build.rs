@@ -74,19 +74,19 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
     assert_codec_component(codec.data.as_ref());
 }
 
-/// Verifies the sandbox and versioned interface exported by a note codec component.
-fn assert_codec_component(component: &[u8]) {
+/// Verifies the sandbox and versioned interface exported by a codec component.
+pub(crate) fn assert_codec_component(component: &[u8]) {
     let DecodedWasm::Component(resolve, world_id) =
-        wit_component::decode(component).expect("note codec section is not valid component bytes")
+        wit_component::decode(component).expect("codec section is not valid component bytes")
     else {
-        panic!("note codec section is not a component");
+        panic!("codec section is not a component");
     };
     let world = &resolve.worlds[world_id];
     for (key, _) in world.imports.iter() {
         let name = resolve.name_world_key(key);
         assert!(name.starts_with("wasi:"), "unexpected non-WASI import `{name}`");
     }
-    assert_eq!(world.exports.len(), 1, "unexpected note codec exports: {:#?}", world.exports);
+    assert_eq!(world.exports.len(), 1, "unexpected codec exports: {:#?}", world.exports);
 
     let interface = world
         .exports

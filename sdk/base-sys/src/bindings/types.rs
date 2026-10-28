@@ -1,6 +1,8 @@
 extern crate alloc;
 
-use miden_field_repr::{FromFeltRepr, ToFeltRepr};
+use miden_field_repr::{
+    FeltReader, FeltReprError, FeltReprResult, FeltWriter, FromFeltRepr, ToFeltRepr,
+};
 use miden_stdlib_sys::{Felt, Word, felt};
 
 use crate::raw::protocol::types as raw;
@@ -513,6 +515,30 @@ impl From<AssetAmount> for u64 {
 impl From<AssetAmount> for Felt {
     fn from(amount: AssetAmount) -> Self {
         amount.inner
+    }
+}
+
+/// Encodes an amount as its one felt.
+impl ToFeltRepr for AssetAmount {
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        writer.write(self.inner);
+    }
+}
+
+/// Decodes an amount from one felt; a value above [`AssetAmount::MAX_U64`] is out of range.
+impl FromFeltRepr for AssetAmount {
+    const FIXED_LEN: Option<usize> = Some(1);
+
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        let (pos, len) = (reader.pos(), reader.len());
+        let value = reader.read()?;
+        Self::try_from(value).map_err(|_| FeltReprError::ValueOutOfRange {
+            pos,
+            len,
+            ty: "AssetAmount",
+            value: value.as_canonical_u64(),
+            max: Self::MAX_U64,
+        })
     }
 }
 
@@ -1106,6 +1132,20 @@ mod tests {
             AssetAmount::try_from(Felt::new(Felt::ORDER - 1).unwrap()),
             Err(AssetAmountError::AmountTooBig(Felt::ORDER - 1))
         );
+    }
+
+    /// Ensures the felt representation is the amount's one felt and rejects out-of-range felts.
+    #[test]
+    fn asset_amount_felt_repr() {
+        use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+
+        let amount = AssetAmount::new(AssetAmount::MAX_U64).unwrap();
+        let felts = amount.to_felt_repr();
+        assert_eq!(felts, [Felt::new(AssetAmount::MAX_U64).unwrap()]);
+        assert_eq!(AssetAmount::from_felt_repr(&mut FeltReader::new(&felts)), Ok(amount));
+
+        let too_big = [Felt::new(AssetAmount::MAX_U64 + 1).unwrap()];
+        assert!(AssetAmount::from_felt_repr(&mut FeltReader::new(&too_big)).is_err());
     }
 
     /// Ensures addition computes exact integer sums for in-range amounts.

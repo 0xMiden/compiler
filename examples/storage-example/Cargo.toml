@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = { path = "../../sdk/sdk" }
+miden-field-repr = { path = "../../sdk/field-repr/repr" }
 
 [build-dependencies]
 miden-sdk-build-script-support = { path = "../../sdk/build-script-support" }

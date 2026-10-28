@@ -110,8 +110,13 @@ fn schema_and_protocol_metadata_must_declare_the_same_slots() {
     assert!(error.contains("as a map slot"), "{error}");
 
     let extra_name = StorageSlotName::new("miden::storage_example::extra").unwrap();
-    let extra =
-        with_slots(vec![(owner, value_slot()), (map, map_slot()), (extra_name, value_slot())]);
+    let mut slots = metadata
+        .storage_schema()
+        .iter()
+        .map(|(name, slot)| (name.clone(), slot.clone()))
+        .collect::<Vec<_>>();
+    slots.push((extra_name, value_slot()));
+    let extra = with_slots(slots);
     let error = AccountStorageSchema::from_wit_text_and_metadata(&wit_text, &extra)
         .unwrap_err()
         .to_string();
@@ -157,37 +162,51 @@ fn init_storage_data_instantiates_the_component_and_decodes_back() {
         .unwrap()
         .set_entry_words("asset_qty_map", owner_key, word_from_felts(&[felt(7)]).unwrap())
         .unwrap()
+        .set("limits.max_qty", "50")
+        .unwrap()
+        .set("limits.paused", "true")
+        .unwrap()
         .build()
         .unwrap();
 
     let component = AccountComponent::from_package((*package).clone(), &data).unwrap();
-    let mut saw_value = false;
-    let mut saw_map = false;
-    for slot in component.storage_slots() {
-        match slot.content() {
-            StorageSlotContent::Value(word) => {
-                assert_eq!(slot.name(), &slot_name(&metadata, "owner_public_key"));
-                assert_eq!(*word, owner_key);
-                let decoded = schema.decode_value("owner_public_key", *word).unwrap();
-                assert_eq!(decoded.to_string(), owner_key.to_hex());
-                saw_value = true;
-            }
-            StorageSlotContent::Map(map) => {
-                assert_eq!(slot.name(), &slot_name(&metadata, "asset_qty_map"));
-                assert_eq!(map.num_entries(), 2);
-                let stored = map.get(&StorageMapKey::new(asset));
-                assert_eq!(
-                    felts_from_word(stored),
-                    [felt(100), Felt::ZERO, Felt::ZERO, Felt::ZERO]
-                );
-                let (key, value) = schema.decode_map_entry("asset_qty_map", asset, stored).unwrap();
-                assert_eq!(key.to_string(), asset.to_hex());
-                assert_eq!(value.to_string(), "100");
-                saw_map = true;
-            }
-        }
-    }
-    assert!(saw_value && saw_map);
+    let content = |leaf: &str| {
+        let name = slot_name(&metadata, leaf);
+        component
+            .storage_slots()
+            .iter()
+            .find(|slot| slot.name() == &name)
+            .unwrap_or_else(|| panic!("the component has no slot `{name}`"))
+            .content()
+            .clone()
+    };
+
+    let StorageSlotContent::Value(word) = content("owner_public_key") else {
+        panic!("owner_public_key must be a value slot");
+    };
+    assert_eq!(word, owner_key);
+    let decoded = schema.decode_value("owner_public_key", word).unwrap();
+    assert_eq!(decoded.to_string(), owner_key.to_hex());
+
+    let StorageSlotContent::Value(word) = content("limits") else {
+        panic!("limits must be a value slot");
+    };
+    assert_eq!(felts_from_word(word), [felt(50), Felt::ONE, Felt::ZERO, Felt::ZERO]);
+
+    let StorageSlotContent::Map(map) = content("asset_qty_map") else {
+        panic!("asset_qty_map must be a map slot");
+    };
+    assert_eq!(map.num_entries(), 2);
+    let stored = map.get(&StorageMapKey::new(asset));
+    assert_eq!(felts_from_word(stored), [felt(100), Felt::ZERO, Felt::ZERO, Felt::ZERO]);
+    let (key, value) = schema.decode_map_entry("asset_qty_map", asset, stored).unwrap();
+    assert_eq!(key.to_string(), asset.to_hex());
+    assert_eq!(value.to_string(), "100");
+
+    let StorageSlotContent::Map(map) = content("holdings") else {
+        panic!("holdings must be a map slot");
+    };
+    assert_eq!(map.num_entries(), 0);
 }
 
 #[test]
@@ -201,9 +220,21 @@ fn init_builder_rejects_incomplete_and_conflicting_values() {
         error.contains("missing a value for account storage slot `owner_public_key`"),
         "{error}"
     );
+    let error = schema
+        .init_builder()
+        .set("owner_public_key", "[1, 2, 3, 4]")
+        .unwrap()
+        .build()
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("missing a value for account storage slot `limits`"), "{error}");
     schema
         .init_builder()
         .set("owner_public_key", "[1, 2, 3, 4]")
+        .unwrap()
+        .set("limits.max_qty", "1")
+        .unwrap()
+        .set("limits.paused", "false")
         .unwrap()
         .build()
         .unwrap();
