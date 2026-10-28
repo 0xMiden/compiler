@@ -174,7 +174,8 @@ impl ConstantIntRange {
         }
     }
 
-    /// Compute the least upper bound of two ranges.
+    /// Compute the least upper bound of two ranges, zero-extending their raw representations
+    /// to the larger width. This changes the signed interpretation without changing raw values.
     pub fn union(&self, other: &Self) -> Self {
         if self.is_untracked() {
             return *self;
@@ -182,16 +183,32 @@ impl ConstantIntRange {
         if other.is_untracked() {
             return *other;
         }
-        if self.width != other.width {
-            return Self::untracked();
-        }
+        let width = self.width.max(other.width);
+        let lhs = self.zero_extended_to(width);
+        let rhs = other.zero_extended_to(width);
 
         Self {
-            width: self.width,
-            umin: self.umin.min(other.umin),
-            umax: self.umax.max(other.umax),
-            smin: self.smin.min(other.smin),
-            smax: self.smax.max(other.smax),
+            width,
+            umin: lhs.umin.min(rhs.umin),
+            umax: lhs.umax.max(rhs.umax),
+            smin: lhs.smin.min(rhs.smin),
+            smax: lhs.smax.max(rhs.smax),
+        }
+    }
+
+    /// Interpret a tracked range at a width at least as large as its current width.
+    fn zero_extended_to(&self, width: u16) -> Self {
+        debug_assert!(!self.is_untracked() && self.width <= width && width <= 128);
+        if self.width == width {
+            return *self;
+        }
+        // Every raw value from a smaller representation has a clear sign bit at this width.
+        // Keep the unsigned bounds intact, including any redundant bounds left by widening.
+        Self {
+            width,
+            smin: self.umin as i128,
+            smax: self.umax as i128,
+            ..*self
         }
     }
 
@@ -202,24 +219,25 @@ impl ConstantIntRange {
         if joined.is_untracked() {
             return joined;
         }
+        let previous = self.zero_extended_to(joined.width);
         Self {
             width: joined.width,
-            umin: if joined.umin < self.umin {
+            umin: if joined.umin < previous.umin {
                 0
             } else {
                 joined.umin
             },
-            umax: if joined.umax > self.umax {
+            umax: if joined.umax > previous.umax {
                 unsigned_max(joined.width)
             } else {
                 joined.umax
             },
-            smin: if joined.smin < self.smin {
+            smin: if joined.smin < previous.smin {
                 signed_min(joined.width)
             } else {
                 joined.smin
             },
-            smax: if joined.smax > self.smax {
+            smax: if joined.smax > previous.smax {
                 signed_max(joined.width)
             } else {
                 joined.smax
@@ -524,12 +542,8 @@ const fn unsigned_to_signed(width: u16, value: u128) -> i128 {
     if width >= 128 {
         value as i128
     } else {
-        let sign_bit = 1u128 << (width - 1);
-        if value & sign_bit == 0 {
-            value as i128
-        } else {
-            (value as i128) - (1i128 << width)
-        }
+        let shift = 128 - width;
+        ((value << shift) as i128) >> shift
     }
 }
 
@@ -544,7 +558,126 @@ const fn signed_to_unsigned(width: u16, value: i128) -> u128 {
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
+
     use super::*;
+
+    #[test]
+    fn mixed_width_joins_preserve_raw_values() {
+        let narrow = ConstantIntRange::constant(Immediate::I1(true));
+        let wide = ConstantIntRange::constant(Immediate::U32(7));
+        assert_eq!(narrow.union(&wide), ConstantIntRange::from_unsigned(32, 1, 7));
+        assert_eq!(wide.union(&narrow), ConstantIntRange::from_unsigned(32, 1, 7));
+
+        // The raw representation of -1i8 is 255; widening its interpretation cannot sign-extend it.
+        let negative = ConstantIntRange::constant(Immediate::I8(-1));
+        let zero = ConstantIntRange::constant(Immediate::U16(0));
+        assert_eq!(negative.union(&zero), ConstantIntRange::from_unsigned(16, 0, 255));
+
+        // Keep the wider input's signed bounds, even when its unsigned interval crosses the sign bit.
+        let signed = ConstantIntRange::from_signed(16, -5, 5);
+        assert_eq!(narrow.union(&signed), signed);
+        assert_eq!(narrow.union(&ConstantIntRange::untracked()), ConstantIntRange::untracked());
+    }
+
+    #[test]
+    fn mixed_width_widening_compares_the_same_signed_interpretation() {
+        let byte = ConstantIntRange::constant(Immediate::I8(-1));
+        let word = ConstantIntRange::constant(Immediate::U16(255));
+        assert_eq!(byte.widen(&word), word);
+        assert_eq!(word.widen(&byte), word);
+
+        let negative_word = ConstantIntRange::constant(Immediate::I16(-1));
+        let widened = byte.widen(&negative_word);
+        assert_eq!(widened.width(), 16);
+        assert_eq!((widened.umin(), widened.umax()), (255, 65535));
+        assert_eq!((widened.smin(), widened.smax()), (-32768, 255));
+    }
+
+    #[test]
+    fn mixed_width_joins_keep_every_supported_raw_representation() {
+        for narrow_width in 1..=128 {
+            let raw_max = unsigned_max(narrow_width);
+            let narrow = ConstantIntRange::from_unsigned(narrow_width, raw_max, raw_max);
+            assert_eq!(narrow.union(&narrow), narrow);
+            for wide_width in narrow_width + 1..=128 {
+                let zero = ConstantIntRange::from_unsigned(wide_width, 0, 0);
+                let joined = narrow.union(&zero);
+                assert_eq!(joined, ConstantIntRange::from_unsigned(wide_width, 0, raw_max));
+            }
+        }
+    }
+
+    #[test]
+    fn small_mixed_width_joins_obey_lattice_laws_and_contain_inputs() {
+        fn contains(range: &ConstantIntRange, raw: u128) -> bool {
+            if range.is_untracked() {
+                return true;
+            }
+            if raw > unsigned_max(range.width) {
+                return false;
+            }
+            let signed = if raw < 1 << (range.width - 1) {
+                raw as i128
+            } else {
+                raw as i128 - (1 << range.width)
+            };
+            range.umin <= raw && raw <= range.umax && range.smin <= signed && signed <= range.smax
+        }
+
+        // Enumerate every nonempty pair of signed/unsigned intervals for widths one and two,
+        // including redundant bounds like those produced by widening. Add all three-bit
+        // constructor ranges so associativity also crosses three interpretation widths.
+        let mut ranges = vec![ConstantIntRange::untracked()];
+        for width in 1..=2 {
+            for umin in 0..=unsigned_max(width) {
+                for umax in umin..=unsigned_max(width) {
+                    for smin in signed_min(width)..=signed_max(width) {
+                        for smax in smin..=signed_max(width) {
+                            let range = ConstantIntRange {
+                                width,
+                                umin,
+                                umax,
+                                smin,
+                                smax,
+                            };
+                            if (0..=unsigned_max(width)).any(|raw| contains(&range, raw)) {
+                                ranges.push(range);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for min in 0..8 {
+            for max in min..8 {
+                ranges.push(ConstantIntRange::from_unsigned(3, min, max));
+                ranges.push(ConstantIntRange::from_signed(3, min as i128 - 4, max as i128 - 4));
+            }
+        }
+
+        for lhs in &ranges {
+            assert_eq!(lhs.union(lhs), *lhs);
+            for rhs in &ranges {
+                let joined = lhs.union(rhs);
+                assert_eq!(joined, rhs.union(lhs));
+                for raw in 0..8 {
+                    if contains(lhs, raw) || contains(rhs, raw) {
+                        assert!(contains(&joined, raw), "{lhs} union {rhs} excludes {raw}");
+                    }
+                }
+                // Widening may independently expand signed and unsigned intervals. Its result
+                // must still be a valid join operand, even when the bounds are not reduced.
+                let widened = lhs.widen(rhs);
+                assert_eq!(widened.union(&widened), widened);
+                for third in &ranges {
+                    assert_eq!(lhs.union(rhs).union(third), lhs.union(&rhs.union(third)));
+                    assert_eq!(widened.union(third), third.union(&widened));
+                    assert_eq!(widened.union(lhs).union(third), widened.union(&lhs.union(third)));
+                }
+            }
+        }
+    }
 
     #[test]
     fn regression_checked_refinement_does_not_prove_assumed_bounds() {
