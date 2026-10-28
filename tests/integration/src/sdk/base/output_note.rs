@@ -1,13 +1,13 @@
 use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
 
 use super::*;
-use crate::end_to_end::support::default_host_with_core_package;
+use crate::{end_to_end::support::default_host_with_core_package, trap_helpers::trap_matches};
 
-/// The fixed code that every guest panic reports through the VM assertion error (the same code
-/// `DECODE_PANIC_CODE` pins in the integration-network tests). The panic message is not
-/// observable at the VM level, so the empty-attachment and too-many-words asserts share this
-/// code; it still separates a wrapper panic from kernel asserts and from the extern sentinel.
-const WRAPPER_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+/// The assertion message every guest panic reports through the `unreachable` lowering. The Rust
+/// panic message is not observable at the VM level, so the empty-attachment and too-many-words
+/// asserts share it; it still separates a wrapper panic from kernel asserts and from the extern
+/// sentinel.
+const WRAPPER_PANIC_MESSAGE: &str = "entered unreachable code";
 
 #[allow(clippy::uninlined_format_args)]
 /// Compiles a minimal `miden` account component which calls the specified `output_note` method, and
@@ -90,7 +90,7 @@ fn run_attachment_length_boundary_test(attachment_len: usize, should_succeed: bo
     let main_fn = format!(
         r#"() -> Felt {{
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = [Word::from([Felt::new(0).unwrap(); 4]); {attachment_len}];
         output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
         Felt::new(1).unwrap()
@@ -143,8 +143,8 @@ end
         let error = result.expect_err("invalid attachment length should panic in the guest");
         let error = error.to_string();
         assert!(
-            error.contains(WRAPPER_PANIC_CODE),
-            "unexpected failure message (wanted `{WRAPPER_PANIC_CODE}`): {error}"
+            trap_matches(&error, WRAPPER_PANIC_MESSAGE),
+            "unexpected failure message (wanted `{WRAPPER_PANIC_MESSAGE}`): {error}"
         );
     }
 }
@@ -271,7 +271,7 @@ fn rust_sdk_output_note_add_word_attachment_binding() {
         "rust_sdk_output_note_add_word_attachment_binding",
         "pub fn binding(&self) -> Felt {
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_word_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
@@ -285,7 +285,7 @@ fn rust_sdk_output_note_add_attachment_binding() {
         "rust_sdk_output_note_add_attachment_binding",
         "pub fn binding(&self) -> Felt {
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
@@ -299,7 +299,7 @@ fn rust_sdk_output_note_add_attachment_from_memory_binding() {
         "rust_sdk_output_note_add_attachment_from_memory_binding",
         "pub fn binding(&self) -> Felt {
         let idx = NoteIdx::from(0u16);
-        let attachment_scheme = 1;
+        let attachment_scheme = NoteAttachmentScheme::none();
         let attachment = [Word::from([Felt::new(0).unwrap(); 4])];
         output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
         Felt::new(0).unwrap()
@@ -334,8 +334,9 @@ fn rust_sdk_output_note_find_attachment_binding() {
         "pub fn binding(&self) -> u32 {
         output_note::find_attachment(
             NoteIdx::from(0u16),
-            1,
+            NoteAttachmentScheme::none(),
         )
+        .map(u32::from)
         .unwrap_or(0)
     }",
     );
@@ -360,7 +361,7 @@ fn rust_sdk_output_note_write_attachment_to_memory_binding() {
         "pub fn binding(&self) -> Felt {
         let attachment = output_note::write_attachment_to_memory(
             NoteIdx::from(0u16),
-            0,
+            AttachmentIdx::new(0).unwrap(),
         );
         Felt::new(attachment.len() as u64).unwrap()
     }",

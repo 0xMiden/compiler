@@ -209,9 +209,9 @@ See the rust-sdk-pitfalls skill (P5) for more on slot naming.
 |--------|--------------|---------|
 | `native_account::` | `add_asset(Asset) -> Word`, `remove_asset(Asset) -> Word`, `incr_nonce() -> Nonce`, `get_id() -> AccountId`, `get_initial_asset(AssetId) -> Word`, `get_initial_commitment() -> Word`, `compute_commitment() -> Word`, `has_state_changed() -> bool`, `was_procedure_called(Word) -> bool`, `compute_delta_commitment() -> Word` | Modify / read the native account |
 | `active_account::` | `get_id() -> AccountId`, `get_nonce() -> Nonce`, `get_asset(asset_id: AssetId) -> Word`, `has_asset(asset_id: AssetId) -> bool`, `get_vault_root() -> Word`, `get_num_procedures() -> u32`, `get_procedure_root(u32) -> Word`, `has_procedure(Word) -> bool` | Query the active account |
-| `active_note::` | `get_storage() -> Vec<Felt>`, `get_initial_assets() -> Vec<Asset>`, `get_sender() -> AccountId`, `get_recipient() -> Recipient`, `get_metadata() -> NoteMetadata`, `find_attachment(Felt) -> Option<u32>`, `write_attachment_to_memory(u32) -> Vec<Word>` | Query the note being consumed |
+| `active_note::` | `get_storage() -> Vec<Felt>`, `get_initial_assets() -> Vec<Asset>`, `get_sender() -> AccountId`, `get_recipient() -> Recipient`, `get_metadata() -> NoteMetadata`, `find_attachment(NoteAttachmentScheme) -> Option<AttachmentIdx>`, `write_attachment_to_memory(AttachmentIdx) -> Vec<Word>`, `read_attachment(NoteAttachmentScheme) -> Option<NoteAttachment>` | Query the note being consumed |
 | `note::` | `build_recipient(Word, Word, Vec<Felt>) -> Recipient` | Build note recipients from serial number, script root, and note storage |
-| `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)`, the `*_attachment` family | Create output notes |
+| `output_note::` | `create(Tag, NoteType, Recipient) -> NoteIdx`, `add_asset(Asset, NoteIdx)`, the `*_attachment` family, or `NoteAttachment::add_to(NoteIdx)` (a `miden` root type), `read_attachment(NoteIdx, NoteAttachmentScheme) -> Option<NoteAttachment>` | Create output notes |
 | `faucet::` | `mint(Asset)`, `burn(Asset)` | Move assets in and out of existence |
 | `tx::` | `get_reference_block_number() -> BlockNumber`, `get_block_timestamp() -> u32`, `get_num_input_notes() -> u32`, `get_num_output_notes() -> u32`, `get_expiration_block_delta() -> u16`, `update_expiration_block_delta(u16)`, `execute_foreign_procedure(..)` | Transaction context and FPI |
 | Intrinsics | `assert(Felt)`, `assertz(Felt)`, `assert_eq(Felt, Felt)` | Validation (`assert` fails unless the felt equals 1; `assertz` fails unless it equals 0) |
@@ -339,7 +339,7 @@ let n: u64 = f.as_canonical_u64();
 
 ### Kernel scalars are typed, not felts
 
-Counts are `u32` (`tx::get_num_input_notes`, `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the `num_assets` / `num_storage_items` fields of the note-info structs), so count-driven loops index directly. Block heights are `BlockNumber` (comparable as integers; `BlockNumber::try_from(felt)` validates a height read out of note storage). Block timestamps are `u32` seconds and expiration deltas are `u16`. Account nonces are `Nonce` — use `as_felt()` / `as_u64()` or `Felt::from(nonce)` where a raw value is needed, e.g. when packing a nonce into a `Word`. Attachment lookups return `Option<u32>`.
+Counts are `u32` (`tx::get_num_input_notes`, `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the `num_assets` / `num_storage_items` fields of the note-info structs), so count-driven loops index directly. Block heights are `BlockNumber` (comparable as integers; `BlockNumber::try_from(felt)` validates a height read out of note storage). Block timestamps are `u32` seconds and expiration deltas are `u16`. Account nonces are `Nonce` — use `as_felt()` / `as_u64()` or `Felt::from(nonce)` where a raw value is needed, e.g. when packing a nonce into a `Word`. Attachment lookups return `Option<AttachmentIdx>`.
 
 ## Debug Printing
 

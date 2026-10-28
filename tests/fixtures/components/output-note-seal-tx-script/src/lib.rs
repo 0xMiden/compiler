@@ -32,9 +32,7 @@ fn run(arg: Word, account: &mut Wallet) {
     assert!(output_note::is_sealed(note_idx), "a sealed output note must stay sealed");
 
     if arg[0] != felt!(0) {
-        // Scheme 0 is reserved by the protocol to signal an absent attachment.
-        let attachment_scheme = 1;
         let attachment = Word::from([felt!(5), felt!(6), felt!(7), felt!(8)]);
-        output_note::add_word_attachment(note_idx, attachment_scheme, attachment);
+        output_note::add_word_attachment(note_idx, NoteAttachmentScheme::none(), attachment);
     }
 }

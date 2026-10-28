@@ -11,6 +11,7 @@
 pub mod active_account;
 pub mod active_note;
 pub mod asset;
+mod attachment;
 pub mod faucet;
 pub mod input_note;
 pub mod native_account;
@@ -20,6 +21,7 @@ pub mod storage;
 pub mod tx;
 mod types;
 
+pub use attachment::{AttachmentIdx, NoteAttachment, NoteAttachmentError, NoteAttachmentScheme};
 pub use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 pub use types::*;
 
@@ -45,13 +47,4 @@ fn assert_attachment_word_count(num_words: usize) {
         num_words <= MAX_ATTACHMENT_WORDS,
         "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
     );
-}
-
-/// Converts an attachment index to the `u8` the protocol's attachment procedures take.
-///
-/// # Panics
-///
-/// If the index does not fit in a `u8`; no note has that many attachments.
-fn attachment_index_u8(attachment_idx: u32) -> u8 {
-    u8::try_from(attachment_idx).expect("attachment index exceeds u8")
 }

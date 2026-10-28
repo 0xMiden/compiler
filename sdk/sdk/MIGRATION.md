@@ -38,7 +38,7 @@ Byte addresses convert with `miden::support::ElementPtr::from_ptr(ptr)` (the poi
 for the pointee); both panic otherwise. Manifest constants are `FeltConstant`/`WordConstant`
 carriers: call `.get()` for the `Felt`/`Word`.
 
-### `Tag`, `NoteIdx` and `NoteType` wrap integers; attachment schemes are `u16`
+### `Tag`, `NoteIdx` and `NoteType` wrap integers; attachment schemes and indexes are typed
 
 The three newtypes now hold the integer the protocol declares instead of a `Felt`:
 `Tag { inner: u32 }`, `NoteIdx { inner: u16 }`, `NoteType { inner: u8 }`. A value built from an
@@ -72,7 +72,12 @@ that does not fit. Account storage reads go through them, so a `StorageValue<Tag
 previous value — if the slot holds a felt outside the type's range. A slot written through the
 SDK with a valid tag, index or note type is unaffected.
 
-The attachment procedures take the scheme as a `u16`, which no longer needs a check:
+The attachment procedures take the scheme as a `NoteAttachmentScheme`, a validated value in
+`1..=65534`. `NoteAttachmentScheme::none()` is scheme `1`, the unspecified scheme; build any
+other scheme with `NoteAttachmentScheme::new(n)` or `NoteAttachmentScheme::try_from(n)`, which
+reject `0` and `65535` (`.unwrap()` where an invalid scheme is a bug).
+`NoteAttachmentScheme::try_from(felt)` converts a felt. `NoteAttachmentScheme::new_const(n)`
+defines a constant:
 
 ```rust
 // Before
@@ -80,14 +85,45 @@ output_note::add_word_attachment(note_idx, felt!(1), word);
 let found = active_note::find_attachment(felt!(1));
 
 // After
-output_note::add_word_attachment(note_idx, 1, word);
-let found = active_note::find_attachment(1);
+output_note::add_word_attachment(note_idx, NoteAttachmentScheme::none(), word);
+let found = active_note::find_attachment(NoteAttachmentScheme::none());
 ```
 
 The same holds for `output_note::{add_attachment, add_attachment_from_memory, find_attachment}`,
 `input_note::find_attachment`, `note::find_attachment_idx` and the `ActiveNote::find_attachment`
-trait method. `note::metadata_into_attachment_schemes` returns the four schemes as `[u16; 4]`
-instead of a `Word` of felts, so its result feeds the lookups directly.
+trait method. `note::metadata_into_attachment_schemes` returns the four schemes as
+`[Option<NoteAttachmentScheme>; 4]` instead of a `Word` of felts, with `None` for a slot without
+an attachment. It never panics for the metadata of notes the kernel created or the protocol
+validated; for a hand-built word holding `65535`, an invalid scheme, the function panics;
+`miden::raw::protocol::note::metadata_into_attachment_schemes` returns the raw `u16`s for such a
+word. `NoteAttachment::with_word(scheme, word)` builds a one-word attachment;
+`NoteAttachment::with_words(scheme, words: Vec<Word>)` checks the content length (`1..=256`
+words) and returns a `NoteAttachmentError` otherwise. `add_to(note_idx)` appends an attachment to
+an output note. `output_note::read_attachment(note_idx, scheme)`,
+`input_note::read_attachment(note_idx, scheme)` and `active_note::read_attachment(scheme)` (also
+on the `ActiveNote` trait) return the first attachment with that scheme as a `NoteAttachment`.
+
+Attachment indexes are `AttachmentIdx`, a validated value in `0..=3`, instead of `u32`. The
+`find_attachment` lookups and `note::find_attachment_idx` return `Option<AttachmentIdx>`, and
+`write_attachment_to_memory` and `note::load_indexed_attachment` take an `AttachmentIdx`. A found
+index passes straight through. Build one by hand with `AttachmentIdx::new(n)` (or `new_const(n)` for
+a constant); `AttachmentIdx::try_from(felt)` and `try_from(n_u32)` convert checked values;
+`u32::from(idx)` gives the integer back. `NoteAttachmentScheme` and `AttachmentIdx` implement
+`FromFeltRepr` and `ToFeltRepr` (one felt each, validated on decode), so they can be typed script
+arguments and fields of `#[derive(FromFeltRepr, ToFeltRepr)]` layouts (`NoteAttachmentScheme` and
+`AttachmentIdx` are not accepted as `#[note]` storage fields):
+
+```rust
+// Before
+let index = active_note::find_attachment(scheme).unwrap();
+let attachment = active_note::write_attachment_to_memory(index);
+let first = output_note::write_attachment_to_memory(note_idx, 0);
+
+// After
+let index = active_note::find_attachment(scheme).unwrap();
+let attachment = active_note::write_attachment_to_memory(index);
+let first = output_note::write_attachment_to_memory(note_idx, AttachmentIdx::new(0).unwrap());
+```
 
 The WIT `core-types` records `tag`, `note-idx` and `note-type` changed with the types
 (`inner: u32`/`u16`/`u8` instead of `felt`), and they cross component boundaries: the basic

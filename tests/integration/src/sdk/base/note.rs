@@ -146,7 +146,7 @@ fn note_load_indexed_attachment_binding() {
         "pub fn binding(&self) -> Felt {
         let commitments = [Word::from([Felt::new(0).unwrap(); 4])];
         let attachment =
-            note::load_indexed_attachment(&commitments, 0);
+            note::load_indexed_attachment(&commitments, AttachmentIdx::new(0).unwrap());
         Felt::new(attachment.len() as u64).unwrap()
     }",
     );
@@ -182,6 +182,7 @@ fn note_metadata_into_attachment_schemes_binding() {
         "note_metadata_into_attachment_schemes_binding",
         "pub fn binding(&self) -> u16 {
         note::metadata_into_attachment_schemes(Word::from([Felt::new(0).unwrap(); 4]))[0]
+            .map_or(0, |scheme| scheme.as_u16())
     }",
     );
 }
@@ -212,9 +213,10 @@ fn note_find_attachment_idx_binding() {
         "note_find_attachment_idx_binding",
         "pub fn binding(&self) -> u32 {
         note::find_attachment_idx(
-            1,
+            NoteAttachmentScheme::none(),
             Word::from([Felt::new(0).unwrap(); 4]),
         )
+        .map(u32::from)
         .unwrap_or(0)
     }",
     );

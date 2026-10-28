@@ -5,8 +5,8 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{ElementPtr, Felt, Word};
 
 use super::{
-    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, Recipient, Tag,
-    assert_attachment_count,
+    AccountId, AttachmentIdx, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteAttachmentScheme,
+    NoteType, Recipient, Tag, assert_attachment_count,
 };
 use crate::raw::protocol::note as raw;
 
@@ -152,10 +152,14 @@ pub fn load_attachment(attachment_commitment: Word) -> Vec<Word> {
 /// # Panics
 ///
 /// Panics if `attachment_commitments` holds more entries than a note can have attachments, if
-/// `attachment_idx` is out of bounds for it, or under the conditions of [`load_attachment`].
-pub fn load_indexed_attachment(attachment_commitments: &[Word], attachment_idx: u32) -> Vec<Word> {
+/// `attachment_idx` is not below `attachment_commitments.len()`, or under the conditions of
+/// [`load_attachment`].
+pub fn load_indexed_attachment(
+    attachment_commitments: &[Word],
+    attachment_idx: AttachmentIdx,
+) -> Vec<Word> {
     assert_attachment_count(attachment_commitments.len());
-    load_attachment(attachment_commitments[attachment_idx as usize])
+    load_attachment(attachment_commitments[usize::from(attachment_idx)])
 }
 
 /// Loads and authenticates a bounded word preimage using the public core library primitives.
@@ -188,10 +192,20 @@ pub fn metadata_into_sender(metadata: Word) -> AccountId {
 }
 
 /// Extracts the four attachment schemes encoded in a note metadata header word, in attachment
-/// order. Each is the `u16` the attachment lookups and `add_*attachment` procedures take.
-pub fn metadata_into_attachment_schemes(metadata: Word) -> [u16; 4] {
+/// order. A slot without an attachment is `None`.
+///
+/// `Option::is_none` means the slot is empty; [`NoteAttachmentScheme::is_none`] on a present
+/// scheme means scheme `1`.
+///
+/// # Panics
+///
+/// Panics if a slot holds `65535`, which is not a valid scheme. The metadata of notes the kernel
+/// created or the protocol validated never holds it; for a hand-built metadata word that may, use
+/// [`miden::raw::protocol::note::metadata_into_attachment_schemes`](raw::metadata_into_attachment_schemes),
+/// which returns the raw `u16`s.
+pub fn metadata_into_attachment_schemes(metadata: Word) -> [Option<NoteAttachmentScheme>; 4] {
     let (first, second, third, fourth) = raw::metadata_into_attachment_schemes(metadata);
-    [first, second, third, fourth]
+    [first, second, third, fourth].map(NoteAttachmentScheme::from_header_u16)
 }
 
 /// Extracts the note type encoded in a note metadata header word.
@@ -204,8 +218,12 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
     raw::metadata_into_tag(metadata).into()
 }
 
-/// Searches a metadata header word for `attachment_scheme`.
-pub fn find_attachment_idx(attachment_scheme: u16, metadata: Word) -> Option<u32> {
-    let (found, index) = raw::find_attachment_idx(attachment_scheme, metadata);
-    found.then_some(index.into())
+/// Searches a metadata header word for `attachment_scheme` and returns the index of the first
+/// matching attachment.
+pub fn find_attachment_idx(
+    attachment_scheme: NoteAttachmentScheme,
+    metadata: Word,
+) -> Option<AttachmentIdx> {
+    let (found, index) = raw::find_attachment_idx(attachment_scheme.as_u16(), metadata);
+    found.then(|| AttachmentIdx::from_kernel(index))
 }

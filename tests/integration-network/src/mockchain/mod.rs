@@ -4,6 +4,7 @@ mod asset_amount;
 mod counter;
 mod fpi;
 mod note_asset_bindings;
+mod note_attachment;
 mod notes;
 mod output_note_seal;
 mod sibling;

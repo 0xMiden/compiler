@@ -12,7 +12,8 @@ use miden_protocol::{
 use miden_testing::{Auth, MockChain, MockTransaction};
 
 use super::support::{
-    compile_rust_package, execute_tx, execute_tx_expect_failure, transaction_script_from_package,
+    assert_failure_contains, compile_rust_package, execute_tx, execute_tx_expect_failure,
+    transaction_script_from_package,
 };
 
 /// Builds a mock chain with a basic-wallet account and a transaction that runs the sealing
@@ -74,5 +75,5 @@ pub fn a_sealed_output_note_rejects_a_new_attachment() {
     let err = execute_tx_expect_failure(mock_tx);
     let needle =
         format!("assertion failed with error message: {}", ERR_OUTPUT_NOTE_IS_SEALED.message());
-    assert!(err.contains(&needle), "unexpected failure message (wanted `{needle}`): {err}");
+    assert_failure_contains(&err, &needle);
 }
