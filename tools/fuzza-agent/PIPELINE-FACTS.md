@@ -107,8 +107,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `arith.band(trunc(count), width - 1)` (`mask_movement_count`,
   `frontend/wasm/src/code_translator/mod.rs`). Immediate MASM shift selection
   remains separate work for the unified backend.
-- Never built by the wasm frontend: `min`/`max`, `neg`/`not`/`incr`, checked
-  and overflowing ops, `clo`/`cto`, `ilog2`/`pow2`/`exp`/`is_odd`/`inv`,
+- Never built by the wasm frontend: `min`/`max`, `neg`/`not`/`incr`,
+  overflowing ops, checked ops other than `u32` pointer-offset adds
+  (`prepare_addr`, which `share-base-divmod` relies on, and
+  `miden_abi/transform.rs`), `clo`/`cto`, `ilog2`/`pow2`/`exp`/`is_odd`/`inv`,
   `ext2*`, `sdiv`/`smod`/`sdivmod`, `ashr` (`i32.shr_s` is `arith.shr` on a
   signed type), `bnot` (`!x` is `bxor x, -1`), the i1 `and`/`or`/`xor`,
   `hir.cast`, `builtin.ret_imm`, and `Call`/`Syscall`/`ExecFpi` (SDK only)

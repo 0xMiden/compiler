@@ -283,8 +283,8 @@ MIDENC_TRACE='codegen=trace,peephole=trace' cargo test ... --nocapture
 #   the IR after one pass (pin the flag in the case via run_case_with_flags,
 #   or MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=<pass>'; the printer logs
 #   through `pass:<pass>=trace`, so both are needed; pass names include
-#   local2reg, lift-control-flow, canonicalizer, sink-operand-defs, cse,
-#   sparse-conditional-constant-propagation; these are Pass::name values):
+#   local2reg, lift-control-flow, share-base-divmod, canonicalizer, sink-operand-defs,
+#   cse, sparse-conditional-constant-propagation; these are Pass::name values):
 MIDENC_DIFF_FLAGS='-Z print-ir-after-pass=lift-control-flow' MIDENC_TRACE='pass:lift-control-flow=trace' cargo test ... --nocapture
 ```
 

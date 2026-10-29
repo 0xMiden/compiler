@@ -289,7 +289,8 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(Local2Reg));
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             func_pm.add_pass(Box::new(ShareBaseDivmod));
-            // Re-run canonicalization to clean up generated structured control flow
+            // Re-run canonicalization to clean up generated structured control flow, and the
+            // repeated alignment assertions and dead reloads of shared divisions
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
         // Function passes for component-level functions, up to the last canonicalization
@@ -303,7 +304,8 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(Local2Reg));
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             func_pm.add_pass(Box::new(ShareBaseDivmod));
-            // Re-run canonicalization to clean up generated structured control flow
+            // Re-run canonicalization to clean up generated structured control flow, and the
+            // repeated alignment assertions and dead reloads of shared divisions
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
         // Representation legalization precedes final optional operand sinking
