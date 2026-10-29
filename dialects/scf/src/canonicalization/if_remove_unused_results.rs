@@ -36,7 +36,7 @@ impl IfRemoveUnusedResults {
         // Move all operations to the destination block
         rewriter.merge_blocks(src, dest, &[]);
 
-        // Replace the yield op with one that returns only the used values.
+        // A non-yielding branch has no result operands to shorten.
         let op = { dest.borrow().terminator().unwrap() };
         let Ok(mut yield_op) = op.try_downcast_op::<Yield>() else {
             // Returns and traps do not forward region results.
@@ -152,10 +152,135 @@ mod tests {
         patterns::{
             self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet, RewriterListener,
         },
-        testing::Test,
+        testing::{Test, parse_function_fixpoint},
     };
 
     use super::*;
+
+    #[track_caller]
+    fn run_one(name: &str, source: &str) -> (bool, Result<(), String>) {
+        let context = Rc::new(Context::default());
+        let (function, _) = parse_function_fixpoint(&context, name, source).unwrap_or_else(|err| {
+            panic!("'{name}' must parse AND verify before the pattern runs: {err}")
+        });
+        let op = function.as_operation_ref();
+        let pattern_set = RewritePatternSet::from_iter(
+            context.clone(),
+            [Box::new(IfRemoveUnusedResults::new(context.clone())) as Box<dyn RewritePattern>],
+        );
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            op,
+            rewrites,
+            GreedyRewriteConfig::default(),
+        )
+        .expect("expected the canonicalizer to converge");
+        let verified = function
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .map_err(|err| format!("{err}"));
+        (changed, verified)
+    }
+
+    const PROGRAM: &str = "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %flag = arith.gt %n, %n;
+    %a, %b = scf.if %flag then {
+        THEN
+    } else {
+        scf.yield %n, %n : (u32, u32);
+    } : (i1) -> (u32, u32);
+    builtin.ret %b : (u32);
+};";
+
+    #[test]
+    fn if_remove_unused_results_prunes_results_around_a_branch_that_leaves_the_if() {
+        let (changed, verified) = run_one(
+            "if_remove_unused_results_early_exit.hir",
+            &PROGRAM.replace("THEN", "builtin.ret %n : (u32);"),
+        );
+        verified.unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+        assert!(changed, "unused results can be pruned while retaining a non-yielding branch");
+    }
+
+    /// **THE NESTED-EXIT SWEEP.** The guard above tests each branch's DIRECT terminator, so an
+    /// `scf.break` one region deeper passes it. That is the blindness that let `FoldRedundantYields`
+    /// delete a loop exit; this pattern is checked for it too, and does not have it: it never
+    /// deletes a region body, it MOVES both of them into the replacement `scf.if` (`transfer_body`
+    /// merges the block, terminator and all), and the only terminators it rewrites are the two
+    /// direct `scf.yield`s it re-binds by hand. A nested exit rides along untouched.
+    #[test]
+    fn if_remove_unused_results_keeps_a_nested_early_exit_it_rewrites_around() {
+        let source = "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %z = arith.constant 0 : u32;
+    %r = scf.while %z before {
+    ^before(%i: u32):
+        %c = arith.lt %i, %n;
+        scf.condition %c, %i : (i1, u32);
+    } after {
+    ^after(%j: u32):
+        %g = arith.gt %j, %n;
+        %a, %b = scf.if %g then {
+            %p = scf.if %g then {
+                scf.break 1 %j : (u32);
+            } else {
+                scf.yield %j : (u32);
+            } : (i1) -> (u32);
+            scf.yield %j, %p : (u32, u32);
+        } else {
+            scf.yield %j, %j : (u32, u32);
+        } : (i1) -> (u32, u32);
+        scf.yield %b : (u32);
+    } : (u32) -> (u32);
+    builtin.ret %r : (u32);
+};";
+        let context = Rc::new(Context::default());
+        let (function, _) =
+            parse_function_fixpoint(&context, "if_remove_unused_results_nested_exit.hir", source)
+                .expect("the probe must parse before the pattern runs");
+        let count_breaks = || {
+            let mut breaks = 0usize;
+            function.as_operation_ref().borrow().prewalk_all(|op| {
+                if op.is::<Break>() {
+                    breaks += 1;
+                }
+            });
+            breaks
+        };
+        assert_eq!(count_breaks(), 1, "the probe must start with exactly one loop exit");
+
+        let pattern_set = RewritePatternSet::from_iter(
+            context.clone(),
+            [Box::new(IfRemoveUnusedResults::new(context.clone())) as Box<dyn RewritePattern>],
+        );
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            function.as_operation_ref(),
+            rewrites,
+            GreedyRewriteConfig::default(),
+        )
+        .expect("expected the canonicalizer to converge");
+
+        assert!(changed, "the unused first result must still be dropped");
+        assert_eq!(count_breaks(), 1, "the rewrite lost the nested loop exit");
+        function
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+    }
+
+    #[test]
+    fn if_remove_unused_results_still_fires_when_both_branches_yield() {
+        let (changed, verified) = run_one(
+            "if_remove_unused_results_control.hir",
+            &PROGRAM.replace("THEN", "scf.yield %n, %n : (u32, u32);"),
+        );
+        verified.unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+        assert!(changed, "must still drop the unused result when both branches yield");
+    }
 
     /// Strips trailing whitespace from every line and ends the text with a single newline
     fn normalize_hir(input: &str) -> String {

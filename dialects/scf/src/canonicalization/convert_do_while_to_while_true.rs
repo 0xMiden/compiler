@@ -132,7 +132,10 @@ impl RewritePattern for ConvertDoWhileToWhileTrue {
         let after_only_yields = after_term.prev().is_none();
 
         // Criteria #2
-        let condition = while_op.condition_op();
+        // A header terminated by `scf.break` has no `scf.condition` to rotate around.
+        let Some(condition) = while_op.condition_op() else {
+            return Ok(false);
+        };
         let condition_op = condition.borrow();
         // Condition must be an operation result
         let condition_value = condition_op.condition().as_value_ref();
@@ -222,14 +225,16 @@ fn eval_condition(value: ValueRef, if_op: &If) -> Option<bool> {
     let result = value.downcast_ref::<OpResult>().unwrap();
     let result_index = result.index();
 
-    let then_yield = if_op.then_yield();
+    // A branch that exits the enclosing loop instead of yielding produces no value for this
+    // result index, so the condition cannot be evaluated from it.
+    let then_yield = if_op.then_yield()?;
     let then_yielded = then_yield.borrow().yielded()[result_index].borrow().as_value_ref();
     let definition = then_yielded.borrow().get_defining_op()?;
     let definition = definition.borrow();
     let definition = definition.downcast_ref::<Constant>()?;
     let then_value = definition.value().as_bool()?;
 
-    let else_yield = if_op.else_yield();
+    let else_yield = if_op.else_yield()?;
     let else_yielded = else_yield.borrow().yielded()[result_index].borrow().as_value_ref();
     let definition = else_yielded.borrow().get_defining_op()?;
     let definition = definition.borrow();

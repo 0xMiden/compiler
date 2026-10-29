@@ -15,3 +15,6 @@ pub use self::{
     liveness::LivenessAnalysis,
     loops::{LoopAction, LoopState},
 };
+
+#[cfg(test)]
+mod early_exit;

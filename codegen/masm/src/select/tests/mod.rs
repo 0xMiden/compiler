@@ -232,7 +232,7 @@ fn execute_linked_memory_env(
     Ok(())
 }
 
-fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
+pub(crate) fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
     let program = miden_assembly::Assembler::default()
         .assemble_program("selected_hir", code)?
         .try_into_program()?;

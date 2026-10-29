@@ -2,13 +2,13 @@ use alloc::vec::Vec;
 
 use midenc_hir::{
     Backward, Builder, EntityMut, Forward, FxHashSet, OpBuilder, Operation, OperationName,
-    OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface, RegionRef, Report,
-    SmallVec, Usable, Value, ValueRef,
+    OperationRef, ProgramPoint, RawWalk, Region, RegionBranchOpInterface,
+    RegionExitTerminatorOpInterface, RegionRef, Report, SmallVec, Usable, Value, ValueRef,
     adt::SmallDenseMap,
     dominance::DominanceInfo,
     matchers::{self, Matcher},
     pass::{Pass, PassExecutionState, PostPassStatus},
-    traits::{BinaryOp, ConstantLike, Transparent},
+    traits::{BinaryOp, ConstantLike, ReturnLike, Transparent},
 };
 
 /// Check whether `operation` is the sole _non-transparent_ user of `value`.
@@ -19,6 +19,42 @@ fn is_sole_non_transparent_user(value: &dyn Value, operation: OperationRef) -> b
     value
         .iter_uses()
         .all(|user| user.owner == operation || user.owner.borrow().implements::<dyn Transparent>())
+}
+
+/// Whether any region of `op` (transitively) contains an operation that LEAVES the region it
+/// terminates — a return, an `scf.break`, an `scf.continue`.
+fn regions_contain_an_exit(op: &Operation) -> bool {
+    let root = op.as_operation_ref();
+    let mut found = false;
+    op.prewalk_all(|nested: &Operation| {
+        if OperationRef::ptr_eq(&nested.as_operation_ref(), &root) {
+            return;
+        }
+        found |= nested.implements::<dyn ReturnLike>()
+            || nested.implements::<dyn RegionExitTerminatorOpInterface>();
+    });
+    found
+}
+
+/// Whether sinking `def` to a use in `user_region` would carry an early exit into a region other
+/// than the one the exit was written in.
+///
+/// An operation whose regions contain an exit is lowered by rewriting the region that holds it,
+/// and each kind of region answers a different exit protocol — a loop's condition region has no
+/// channel to carry an exit at all, so an exit sunk into one is refused outright by codegen. A
+/// `?` bound before a loop and read by that loop's condition is exactly that shape: the sole use
+/// of the `scf.if` the `?` lowers to sits in the loop's `before` region.
+///
+/// Sinking is a scheduling convenience, so it gives way: an operation carrying an exit stays in
+/// the region it was written in, however few uses its result has.
+fn would_sink_an_exit_between_regions(def: &Operation, user_region: Option<RegionRef>) -> bool {
+    if !regions_contain_an_exit(def) {
+        return false;
+    }
+    match (def.parent_region(), user_region) {
+        (Some(from), Some(to)) => !RegionRef::ptr_eq(&from, &to),
+        _ => true,
+    }
 }
 
 /// Erase all transparent operations that reference the given value.
@@ -443,7 +479,11 @@ impl Pass for SinkOperandDefs {
                         // Move any transparent users of `defining_op` after it
                         move_transparent_users_to(&def_op, &[operation]);
                     }
-                } else if !is_sole_user || def.num_results() != 1 || !def.is_memory_effect_free() {
+                } else if !is_sole_user
+                    || def.num_results() != 1
+                    || !def.is_memory_effect_free()
+                    || would_sink_an_exit_between_regions(&def, op.parent_region())
+                {
                     // Skip this operand if the defining op cannot be safely moved
                     //
                     // NOTE: For now we do not move ops that produce more than a single result, but

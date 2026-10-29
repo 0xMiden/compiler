@@ -50,11 +50,12 @@ impl RegionBranchPoint {
         }
     }
 }
+/// NOTE: The resulting branch point is relative to [RegionSuccessor::owner], which for an early
+/// exit is an ancestor rather than the immediate parent. This conversion therefore *discards* the
+/// addressed ancestor, and a caller which resolves the result against the immediate parent will
+/// attribute the edge to the wrong operation. Use [RegionSuccessor::owner] alongside it.
 impl<'a> From<RegionSuccessor<'a>> for RegionBranchPoint {
     fn from(succ: RegionSuccessor<'a>) -> Self {
-        match succ.into_successor() {
-            None => Self::Parent,
-            Some(succ) => Self::Child(succ),
-        }
+        *succ.branch_point()
     }
 }

@@ -59,6 +59,20 @@ pub enum ControlFlowEffect {
         successor: RegionBranchPoint,
         arguments: ValueRange<'static, 4>,
     },
+    /// Control is leaving the enclosing operation AND every intermediate ancestor op, up to
+    /// `target`, which receives it.
+    ///
+    /// This is the interpreter's twin of [midenc_hir::RegionSuccessorInfo::Exiting], and it exists
+    /// for the same reason: a [RegionBranchPoint] is relative to the *immediate* parent, so it
+    /// cannot name the ancestor an early exit addresses. `to` says where control resumes at
+    /// `target` — [RegionBranchPoint::Parent] for a break (leaving the target, its results taking
+    /// `arguments`) and [RegionBranchPoint::Child] for a continue (re-entering the target's
+    /// header, whose block arguments take `arguments`).
+    Exit {
+        target: OperationRef,
+        to: RegionBranchPoint,
+        arguments: ValueRange<'static, 4>,
+    },
     /// Control should transfer to `callee`, with `arguments`, and return to the current operation
     /// if control exits normally from the callee.
     Call {
@@ -294,6 +308,60 @@ impl Eval for scf::Yield {
             successor,
             arguments,
         })
+    }
+}
+
+/// The early exits are implemented exactly as [scf::Yield] is — through
+/// `RegionBranchTerminatorOpInterface::get_successor_regions` rather than by hard-coding the set
+/// of parent ops — so the interpreter learns nothing about `levels`, about which ops propagate an
+/// exit, or about which op receives one. All three of those questions are answered once, by the
+/// dialect, and one wrong answer is better than three that disagree.
+fn eval_structured_exit(
+    op: &dyn RegionBranchTerminatorOpInterface,
+    arguments: ValueRange<'static, 4>,
+) -> Result<ControlFlowEffect, Report> {
+    let num_operands = op.as_operation().num_operands();
+    let mut operands = SmallVec::<[Option<AttributeRef>; 4]>::with_capacity(num_operands);
+    operands.resize_with(num_operands, || None);
+
+    let successors = op.get_successor_regions(&operands);
+    match successors.as_slice() {
+        [midenc_hir::RegionSuccessorInfo::Exiting { target, to, .. }] => {
+            Ok(ControlFlowEffect::Exit {
+                target: *target,
+                to: *to,
+                arguments,
+            })
+        }
+        // A structured exit whose `levels` does not resolve has no successor to name. The
+        // verifier rejects that IR, so reaching here means evaluation was handed a tree that
+        // never passed verification — report it rather than silently falling through the exit.
+        _ => Err(Report::msg(alloc::format!(
+            "invalid '{}': its target does not resolve, so control has nowhere to transfer",
+            op.as_operation().name()
+        ))),
+    }
+}
+
+impl Eval for scf::Break {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let arguments = ValueRange::<4>::from(self.args()).into_owned();
+        let this = self
+            .as_operation()
+            .as_trait::<dyn RegionBranchTerminatorOpInterface>()
+            .expect("scf.break implements RegionBranchTerminatorOpInterface");
+        eval_structured_exit(this, arguments)
+    }
+}
+
+impl Eval for scf::Continue {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let arguments = ValueRange::<4>::from(self.args()).into_owned();
+        let this = self
+            .as_operation()
+            .as_trait::<dyn RegionBranchTerminatorOpInterface>()
+            .expect("scf.continue implements RegionBranchTerminatorOpInterface");
+        eval_structured_exit(this, arguments)
     }
 }
 

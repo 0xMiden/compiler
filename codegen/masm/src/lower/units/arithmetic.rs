@@ -176,11 +176,7 @@ impl Arithmetic {
             Poison => {
                 let a = op.downcast_ref::<ub::Poison>().unwrap();
                 target = Some(a.get_value().clone());
-                literal = Some(
-                    a.value()
-                        .as_immediate()
-                        .ok_or_else(|| invalid("unsupported poison representation"))?,
-                );
+                literal = a.value().as_immediate();
             }
             GlobalSymbol => {
                 let a = op.downcast_ref::<midenc_hir::dialects::builtin::GlobalSymbol>().unwrap();
@@ -550,6 +546,21 @@ impl Arithmetic {
                     e.push(Type::U32);
                 }
                 Select => e.select(span),
+                Poison if literal.is_none() => {
+                    let ty = target.clone().unwrap();
+                    // Poison has no observable value. Retain a recognizable bit pattern for
+                    // diagnostics while giving aggregate fillers their exact raw lane count.
+                    for part in ValueLayout::new(ty.clone())?.raw_parts().iter().rev() {
+                        let bits = part.size_in_bits();
+                        let mask = if bits < 32 {
+                            (1u32 << bits) - 1
+                        } else {
+                            u32::MAX
+                        };
+                        e.emit_push(0xdeadc0deu32 & mask, span);
+                    }
+                    e.push(ty);
+                }
                 ConstantPointer | GlobalSymbol | Poison => e.literal(literal.unwrap(), span),
             }
         }

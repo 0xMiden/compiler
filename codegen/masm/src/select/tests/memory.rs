@@ -799,6 +799,7 @@ fn selected_copy_overlap_direction_range_and_alignment_match_vm() {
             execute_linked_memory(&f, &[u32::MAX as usize, u32::MAX as usize, 0], &[], "", "")
                 .unwrap();
             assert!(execute_linked_memory(&f, &[u32::MAX as usize, 256, 1], &[], "", "").is_err());
+            assert!(execute_linked_memory(&f, &[256, u32::MAX as usize, 1], &[], "", "").is_err());
             assert!(
                 execute_linked_memory(&f, &[256, 320, u32::MAX as usize], &[], "", "").is_err()
             );
@@ -839,7 +840,7 @@ fn parsed_and_bound_local_authority_is_checked_before_emission() {
 }
 
 #[test]
-fn packed_store_support_does_not_authorize_aggregate_loads_or_scalar_copies() {
+fn packed_locals_do_not_authorize_aggregate_pointer_copies() {
     use midenc_hir::{ArrayType, Builder, BuilderExt, OpBuilder, PointerType, SourceSpan, Type};
     for size in [2, 3, 4] {
         let ty = Type::from(ArrayType::new(Type::U8, size));
@@ -861,7 +862,7 @@ fn packed_store_support_does_not_authorize_aggregate_loads_or_scalar_copies() {
         builder.create::<crate::hir::LocalAddress, _>(SourceSpan::UNKNOWN)(local).unwrap();
         execute_linked(&f, &[], &[]);
         builder.create::<crate::hir::LoadLocal, _>(SourceSpan::UNKNOWN)(local).unwrap();
-        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_ok());
     }
 }
 
@@ -1306,4 +1307,196 @@ fn aggregate_local_gep_reads_each_struct_field() {
             .unwrap();
         }
     }
+}
+
+/// Exercise typed locals against independently addressed memory, including their padding and
+/// adjacent locals. The returned raw cells make mutually compensating load/store bugs visible.
+fn aggregate_local_memory(ty: midenc_hir::Type, initialize: usize, store: bool) -> Parsed {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        AddressSpace, Felt, PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
+    };
+
+    use crate::hir::HirOpBuilder;
+
+    let cells = ty.size_in_felts();
+    let mut results = vec![ty.clone()];
+    results.extend(vec![Type::Felt; cells + 2]);
+    let mut test = Test::new("aggregate_local_memory", std::slice::from_ref(&ty), &results);
+    {
+        let span = SourceSpan::UNKNOWN;
+        let mut builder = test.function_builder();
+        let value = builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+        let prefix = builder.alloc_local(Type::Felt);
+        let local = builder.alloc_local(ty);
+        let suffix = builder.alloc_local(Type::Felt);
+        let prefix_value = builder.felt(Felt::new(17).unwrap(), span);
+        let suffix_value = builder.felt(Felt::new(29).unwrap(), span);
+        builder.store_local(prefix, prefix_value, span).unwrap();
+        builder.store_local(suffix, suffix_value, span).unwrap();
+        let base = builder.local_address(local, span).unwrap();
+        let base = builder.ptrtoint(base, Type::U32, span).unwrap();
+        let pointer_ty =
+            Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element));
+        let mut addresses = vec![];
+        for i in 0..cells {
+            let offset = builder.u32(i as u32, span);
+            let address = builder.add(base, offset, span).unwrap();
+            let address = builder.inttoptr(address, pointer_ty.clone(), span).unwrap();
+            let fill = builder.felt(Felt::new(initialize as u64).unwrap(), span);
+            builder.store(address, fill, span).unwrap();
+            addresses.push(address);
+        }
+        if store {
+            builder.store_local(local, value, span).unwrap();
+        }
+        let mut values = vec![builder.load_local(local, span).unwrap()];
+        for address in addresses {
+            values.push(builder.load(address, span).unwrap());
+        }
+        values.push(builder.load_local(prefix, span).unwrap());
+        values.push(builder.load_local(suffix, span).unwrap());
+        builder.ret(values, span).unwrap();
+    }
+    Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    }
+}
+
+#[test]
+fn aggregate_locals_preserve_lane_order_padding_and_neighboring_locals() {
+    use midenc_hir::{ArrayType, StructType, Type, TypeRepr};
+    let cases = [
+        (Type::from(StructType::new([Type::U32, Type::U32])), vec![11, 23], vec![11, 23]),
+        (
+            Type::from(StructType::new([Type::U8, Type::U32, Type::U8])),
+            vec![0x12, 0x34567890, 0x56],
+            vec![0xa5a5a512, 0x34567890, 0xa5a5a556],
+        ),
+        (
+            Type::from(ArrayType::new(Type::U8, 7)),
+            vec![0x12345678, 0xabcdef],
+            vec![0x12345678, 0xa5abcdef],
+        ),
+        (
+            Type::from(StructType::new_with_repr(
+                TypeRepr::packed(1),
+                [Type::U8, Type::U64, Type::U8],
+            )),
+            vec![0x12345678, 0x9abcdef0, 0x4321],
+            vec![0x12345678, 0x9abcdef0, 0xa5a54321],
+        ),
+        (
+            Type::from(StructType::new_with_repr(TypeRepr::align(16), [Type::U64, Type::U8])),
+            vec![0x12345678, 0x9abcdef0, 0x43],
+            vec![0x12345678, 0x9abcdef0, 0xa5a5a543, 0xa5a5a5a5],
+        ),
+        (
+            Type::from(StructType::new([Type::Felt, Type::U32])),
+            vec![0xffff_ffff_0000_0000, 23],
+            vec![0xffff_ffff_0000_0000, 23],
+        ),
+        (
+            Type::from(StructType::new([Type::from(StructType::new([Type::Felt])), Type::U32])),
+            vec![0xffff_ffff_0000_0000, 23],
+            vec![0xffff_ffff_0000_0000, 23],
+        ),
+        (
+            Type::from(ArrayType::new(Type::Felt, 4)),
+            vec![0xffff_ffff_0000_0000, 11, 23, 37],
+            vec![0xffff_ffff_0000_0000, 11, 23, 37],
+        ),
+    ];
+    for (ty, input, cells) in cases {
+        assert_eq!(ty.size_in_felts(), cells.len(), "raw cell expectation for {ty}");
+        let f = aggregate_local_memory(ty.clone(), 0xa5a5a5a5, true);
+        let expected = input.iter().copied().chain(cells).chain([17, 29]).collect::<Vec<_>>();
+        execute_linked_memory(&f, &input, &expected, "", "")
+            .unwrap_or_else(|error| panic!("aggregate local {ty}: {error:?}"));
+    }
+}
+
+#[test]
+fn aggregate_local_partial_stores_accept_full_field_frame_contents() {
+    use midenc_hir::{ArrayType, Type};
+    let f = aggregate_local_memory(Type::from(ArrayType::new(Type::U8, 3)), 0x1a5a5a5a5, true);
+    execute_linked(&f, &[0x123456], &[0x123456, 0xa5123456, 17, 29]);
+}
+
+#[test]
+fn aggregate_local_loads_observe_aliased_memory() {
+    use midenc_hir::{StructType, Type};
+    let fill = 0x1a5a5a543;
+    let f =
+        aggregate_local_memory(Type::from(StructType::new([Type::Felt, Type::U8])), fill, false);
+    execute_linked(&f, &[0, 0], &[fill, 0x43, fill, fill, 17, 29]);
+}
+
+#[test]
+fn aggregate_local_accesses_reject_zero_and_oversized_values() {
+    use midenc_hir::{ArrayType, Type, testing::Test};
+
+    use crate::hir::HirOpBuilder;
+    for ty in [
+        Type::from(ArrayType::new(Type::U8, 0)),
+        Type::from(ArrayType::new(Type::U32, 5)),
+    ] {
+        for store in [false, true] {
+            let params = if store { vec![ty.clone()] } else { vec![] };
+            let mut test = Test::new("invalid_local_value", &params, &[]);
+            {
+                let mut builder = test.function_builder();
+                let local = builder.alloc_local(ty.clone());
+                if store {
+                    let value =
+                        builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+                    builder.store_local(local, value, Default::default()).unwrap();
+                } else {
+                    builder.load_local(local, Default::default()).unwrap();
+                }
+                use midenc_hir::dialects::builtin::BuiltinOpBuilder;
+                builder.ret([], Default::default()).unwrap();
+            }
+            let error =
+                select_function(&test.function().borrow(), &SelectEnv::default()).unwrap_err();
+            assert!(format!("{error:?}").contains("one to four raw lanes"), "{ty}: {error:?}");
+        }
+    }
+}
+
+#[test]
+fn aggregate_local_accesses_preserve_spill_sentinels() {
+    use midenc_hir::{StructType, Type, dialects::builtin::BuiltinOpBuilder, testing::Test};
+
+    use crate::hir::HirOpBuilder;
+    let ty = Type::from(StructType::new(vec![Type::U32; 4]));
+    let mut types = vec![Type::U32; 20];
+    types.push(ty.clone());
+    let mut test = Test::new("aggregate_pressure", &types, &types);
+    {
+        let mut builder = test.function_builder();
+        let mut values = builder
+            .entry_block()
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|v| v.borrow().as_value_ref())
+            .collect::<Vec<_>>();
+        builder.alloc_local(Type::U128);
+        let local = builder.alloc_local(ty);
+        builder.store_local(local, values[20], Default::default()).unwrap();
+        values[20] = builder.load_local(local, Default::default()).unwrap();
+        builder.ret(values, Default::default()).unwrap();
+    }
+    let f = Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    };
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert!(!frame.spills().is_empty());
+    verify::verify(&plan, &frame, body).unwrap();
+    let values = (100..120).chain([11, 23, 37, 41]).collect::<Vec<_>>();
+    execute_linked(&f, &values, &values);
 }

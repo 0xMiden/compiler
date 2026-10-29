@@ -49,5 +49,6 @@ thiserror.workspace = true
 itertools = "0.14.0"
 miden-debug = { workspace = true, features = ["std"] }
 midenc-expect-test = { path = "../../tools/expect-test" }
+midenc-hir-eval = { path = "../../eval" }
 midenc-hir = { path = "../../hir", features = ["logging"] }
 proptest.workspace = true

@@ -1,6 +1,6 @@
 use midenc_hir::{
     Block, CallOpInterface, CallableOpInterface, Operation, ProgramPoint, RegionBranchOpInterface,
-    RegionRef, Report, Spanned,
+    RegionExitTerminatorOpInterface, RegionRef, Report, Spanned,
 };
 
 use super::*;
@@ -414,10 +414,25 @@ pub fn visit_region_branch_operation<A>(
         //   before the parent.
         // In the latter case, just perform the join as it isn't the control flow
         // affected by the region.
+        // An early exit can address `branch` from inside an intermediate operation.
+        let exits_branch = predecessor
+            .borrow()
+            .as_trait::<dyn RegionExitTerminatorOpInterface>()
+            .is_some_and(|exit| exit.get_exit_target() == Some(branch_op));
+
         let region_from = if &branch_op == predecessor {
             None
         } else {
-            predecessor.borrow().parent_region()
+            // Resolve to a region of `branch`. For an ordinary region terminator that is its own
+            // parent region; for an early exit the immediate parent region belongs to an
+            // intermediate op, and every consumer of `region_from` asks `branch` about it (e.g.
+            // `is_repetitive_region`, whose answer decides whether a value stays live around a
+            // loop). Handing it an intermediate op's region would ask the right question of the
+            // wrong operation.
+            let predecessor = predecessor.borrow();
+            predecessor
+                .region_in_ancestor(&branch_op)
+                .or_else(|| predecessor.parent_region())
         };
         if point.is_at_block_start() {
             let region_to = point.block().unwrap().parent().unwrap();
@@ -437,8 +452,10 @@ pub fn visit_region_branch_operation<A>(
             );
             // Only need to call the arc transfer when the predecessor is the region or the op
             // itself, not the previous op.
+            // Early exits addressing this branch also require its arc transfer, even when
+            // their immediate parent is an intermediate operation.
             let parent_op = predecessor.borrow().parent_op().unwrap();
-            if parent_op == branch_op || predecessor == &branch_op {
+            if parent_op == branch_op || predecessor == &branch_op || exits_branch {
                 analysis.visit_region_branch_control_flow_transfer(
                     branch,
                     region_from,

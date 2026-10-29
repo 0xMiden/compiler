@@ -873,3 +873,70 @@ fn mem_cpy_out_of_bounds_source_is_an_error() {
     .expect_err("expected the out-of-bounds source to be an error");
     assert!(format!("{err}").contains("invalid memory read"), "unexpected error: {err:?}");
 }
+
+/// Evaluate a **nested** `scf.break`: the break sits inside an `scf.if` inside an inner
+/// `scf.while` inside an outer `scf.while`, and addresses the OUTER loop with `levels = 2`.
+///
+/// This is the gate row that the interpreter can actually unwind an early exit, and the nesting
+/// is what makes it one. A break that only ever left its immediate parent would be indexed
+/// correctly by accident; a `levels = 2` break has to leave the `scf.if`, then the inner loop,
+/// then arrive at the outer loop's continuation — three ops of unwinding, none of them the
+/// immediate parent.
+///
+/// **The program is built so that the wrong unwind terminates with a DIFFERENT answer rather
+/// than hanging or agreeing.** With `limit = 3`, the break fires when the inner counter reaches
+/// 2 and hands 2 to the OUTER loop's result, so the answer is 2. An interpreter that resumed
+/// after the `scf.if` instead would let the inner body finish (3), let the inner loop exit
+/// normally (3), and let the outer loop exit with 3 — the same shape of program, one op of
+/// unwinding short, and a wrong value with nothing red. That mutation was run: replacing
+/// `target` with the immediate parent region's owner yields 3 here.
+#[test]
+fn eval_nested_structured_break() -> Result<(), Report> {
+    use midenc_hir::{Context, testing::parse_function_fixpoint};
+
+    let context = alloc::rc::Rc::new(Context::default());
+    let source = "\
+builtin.function public extern(\"C\") @nested_break(%limit: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %two = arith.constant 2 : u32;
+    %r = scf.while %zero before {
+    ^outer_head(%i: u32):
+        %more = arith.lt %i, %limit;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^outer_body(%j: u32):
+        %inner = scf.while %j before {
+        ^inner_head(%k: u32):
+            %go = arith.lt %k, %limit;
+            scf.condition %go, %k : (i1, u32);
+        } after {
+        ^inner_body(%m: u32):
+            %done = arith.gte %m, %two;
+            %n = scf.if %done then {
+                scf.break 2 %m : (u32);
+            } else {
+                %bumped = arith.incr %m;
+                scf.yield %bumped : (u32);
+            } : (i1) -> (u32);
+            %np = arith.incr %n;
+            scf.yield %np : (u32);
+        } : (u32) -> u32;
+        scf.yield %inner : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};";
+    let (function, _) = parse_function_fixpoint(&context, "nested_break.hir", source)?;
+
+    let mut evaluator = HirEvaluator::new(context.clone());
+    let callable = function.borrow();
+    let results = evaluator.eval_callable(&*callable, [3u32.into()])?;
+    assert_eq!(results.len(), 1);
+    assert_eq!(
+        results[0],
+        Value::Immediate(2u32.into()),
+        "the `levels = 2` break must leave BOTH loops and hand 2 to the outer loop's result; \
+         resuming after the `scf.if` instead produces 3"
+    );
+
+    Ok(())
+}

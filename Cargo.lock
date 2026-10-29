@@ -4305,6 +4305,7 @@ dependencies = [
  "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-hir",
+ "midenc-hir-eval",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",

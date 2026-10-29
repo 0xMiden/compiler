@@ -229,7 +229,8 @@ impl<T: Effect> Iterator for RecursiveEffectIterator<T> {
             if let Some(op) = self.effecting_ops.pop() {
                 let operation = op.borrow();
 
-                let has_recursive_effects = operation.implements::<dyn HasRecursiveEffects<T>>();
+                let has_recursive_effects = T::is_recursive_on(&operation)
+                    || operation.implements::<dyn HasRecursiveEffects<T>>();
                 if has_recursive_effects {
                     for region in operation.regions() {
                         for block in region.body() {
@@ -311,5 +312,73 @@ mod derive_tests {
         let op = EmptyEffects {};
         assert_eq!(op.effects().count(), 0);
         assert!(op.has_no_effect());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        Builder, BuilderExt, Op, SourceSpan, Type, ValueRef,
+        dialects::test::{Store, TestDialect},
+        testing::Test,
+        traits::SingleBlock,
+    };
+
+    #[derive(crate::derive::EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    #[effects(AdviceEffect())]
+    #[crate::derive::operation(
+        dialect = TestDialect,
+        traits(SingleBlock, HasRecursiveMemoryEffects, HasRecursiveAdviceEffects),
+        implements(MemoryEffectOpInterface, AdviceEffectOpInterface)
+    )]
+    pub struct RecursiveRegion {
+        #[region]
+        body: Region,
+    }
+
+    /// **A DECLARED RECURSIVE-EFFECTS MARKER MUST BE VISIBLE TO THE WALK.**
+    ///
+    /// `#[operation(traits(HasRecursiveMemoryEffects))]` registers `dyn HasRecursiveMemoryEffects`
+    /// in the op's trait table; the walk asked for `dyn HasRecursiveEffects<T>`, which is a
+    /// DIFFERENT `TypeId` and is registered by nobody. So the query answered `false` for every op
+    /// in the compiler, the walk never descended into a single region, and `scf.if` — whose whole
+    /// effect story is its body's — was reported as having UNKNOWN effects instead of its body's.
+    #[test]
+    fn a_recursive_effects_op_is_walked_into() {
+        let pointer = Type::from(crate::PointerType::new(Type::U32));
+        let mut test = Test::new("recursive_marker_is_visible", &[pointer, Type::U32], &[]);
+        let region_op = {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let (addr, value) = {
+                let block = entry.borrow();
+                (block.arguments()[0] as ValueRef, block.arguments()[1] as ValueRef)
+            };
+            let builder = builder.builder_mut();
+            builder.set_insertion_point_to_end(entry);
+            let op = builder.create::<RecursiveRegion, ()>(SourceSpan::UNKNOWN)().unwrap();
+            let body = op.borrow().body().as_region_ref();
+            let block = builder.create_block(body, None, &[]);
+            builder.set_insertion_point_to_end(block);
+            builder.create::<Store, _>(SourceSpan::UNKNOWN)(addr, value).unwrap();
+            op.borrow().as_operation().as_operation_ref()
+        };
+
+        let effects = RecursiveEffectIterator::<MemoryEffect>::new(region_op)
+            .map(|(_, effect)| effect)
+            .collect::<alloc::vec::Vec<_>>();
+
+        assert_eq!(
+            effects.len(),
+            1,
+            "the walk must report the body's one effect, and never 'unknown': {effects:?}"
+        );
+        assert_eq!(
+            effects[0].as_ref().map(|instance| *instance.effect()),
+            Some(MemoryEffect::Write),
+            "the nested store's write is the op's recursive effect"
+        );
     }
 }

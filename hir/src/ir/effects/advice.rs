@@ -97,7 +97,11 @@ impl PartialEq<AdviceEffect> for &AdviceEffect {
     }
 }
 
-impl Effect for AdviceEffect {}
+impl Effect for AdviceEffect {
+    fn is_recursive_on(op: &crate::Operation) -> bool {
+        op.implements::<dyn HasRecursiveAdviceEffects>()
+    }
+}
 
 pub trait AdviceEffectOpInterface = EffectOpInterface<AdviceEffect>;
 

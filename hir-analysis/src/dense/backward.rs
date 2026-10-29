@@ -1,7 +1,7 @@
 use midenc_hir::{
     Block, CallOpInterface, CallableOpInterface, Operation, ProgramPoint, RegionBranchOpInterface,
-    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionRef, Report, Spanned, SymbolTable,
-    cfg::Graph,
+    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionRef, RegionSuccessorInfo,
+    RegionSuccessorIter, RegionSuccessorKind, Report, SmallVec, Spanned, SymbolTable, cfg::Graph,
 };
 
 use super::*;
@@ -218,11 +218,16 @@ where
     // Special cases where control flow may dictate data flow.
     if let Some(branch) = op.as_trait::<dyn RegionBranchOpInterface>() {
         log::trace!(target: analysis.analysis.debug_name(), "op implements RegionBranchOpInterface, handling as special case");
+        // Entering `op` from outside it: no terminator is involved, so the op itself is the only
+        // thing that can answer where control goes.
+        let successors =
+            branch.get_successor_regions(RegionBranchPoint::Parent).into_successor_infos();
         visit_region_branch_operation(
             analysis,
             point,
             branch,
             RegionBranchPoint::Parent,
+            successors,
             &mut before,
             solver,
         );
@@ -330,11 +335,31 @@ pub fn visit_block<A>(
         // lattice back along the control flow edge.
         if let Some(branch) = parent_op.borrow().as_trait::<dyn RegionBranchOpInterface>() {
             log::trace!(target: analysis.analysis.debug_name(), "{}'s parent implements RegionBranchOpInterface", block.id());
+            // A nested exit can bypass the immediate parent. Ask the terminator for its
+            // successors so the edge is anchored at the addressed ancestor.
+            let successors = block
+                .terminator()
+                .and_then(|terminator| {
+                    let terminator = terminator.borrow();
+                    let exit = terminator.as_trait::<dyn RegionBranchTerminatorOpInterface>()?;
+                    // No constant operands are available in this direction, so every operand is
+                    // reported unknown: an implementation that folds on a constant condition
+                    // (`scf.condition`) then returns ALL of its successors, which is the same set
+                    // the parent would have given and is the conservative direction.
+                    let operands = alloc::vec![None; terminator.num_operands()];
+                    Some(exit.get_successor_regions(&operands))
+                })
+                .unwrap_or_else(|| {
+                    branch
+                        .get_successor_regions(RegionBranchPoint::Child(region))
+                        .into_successor_infos()
+                });
             return visit_region_branch_operation(
                 analysis,
                 point,
                 branch,
                 RegionBranchPoint::Child(region),
+                successors,
                 &mut before,
                 solver,
             );
@@ -458,11 +483,15 @@ pub fn visit_call_operation<A>(
 
 /// Visit a program point within a region branch operation with successors (from which the state is
 /// propagated) in or after it.
+///
+/// Callers supply the successors because a region terminator may exit to an ancestor that is
+/// not represented by the immediate parent's region graph.
 pub fn visit_region_branch_operation<A>(
     analysis: &DenseDataFlowAnalysis<A, Backward>,
     point: ProgramPoint,
     branch: &dyn RegionBranchOpInterface,
     branch_point: RegionBranchPoint,
+    successors: SmallVec<[RegionSuccessorInfo; 2]>,
     before: &mut AnalysisStateGuardMut<'_, <A as DenseBackwardDataFlowAnalysis>::Lattice>,
     solver: &mut DataFlowSolver,
 ) where
@@ -471,18 +500,33 @@ pub fn visit_region_branch_operation<A>(
     log::trace!(target: analysis.analysis.debug_name(), "visiting region branch operation from {point}");
     // The successors of the operation may be either the first operation of the entry block of each
     // possible successor region, or the next operation when the branch is a successor of itself.
-    for successor in branch.get_successor_regions(branch_point) {
+    for successor in RegionSuccessorIter::new(branch.as_operation(), successors) {
         log::trace!(target: analysis.analysis.debug_name(), "visiting region branch successor {}", successor.branch_point());
-        let successor_region = successor.successor();
+        // The op this edge belongs to: `branch` for an ordinary successor, the addressed ancestor
+        // for an early exit. Reading the state after `branch` for an exit would read the state
+        // after an op control does not stop at.
+        let exit_owner = successor.owner().filter(|_| successor.is_exiting());
+        let successor_region = successor.region_graph_successor().or_else(|| {
+            // A `continue` resumes at the target's header, which is an entered region for the
+            // purposes of reading state — it just belongs to the target rather than to `branch`.
+            match successor.kind() {
+                RegionSuccessorKind::Exiting {
+                    to: RegionBranchPoint::Child(header),
+                    ..
+                } => Some(header),
+                _ => None,
+            }
+        });
         let after = match successor_region.as_ref() {
             None => {
-                // The successor is `branch` itself
+                // The successor is `branch` itself, or — for a `break` — the ancestor it exits.
+                let owner = exit_owner.unwrap_or_else(|| branch.as_operation_ref());
                 log::trace!(
                     target: analysis.analysis.debug_name(),
                     "getting 'after' analysis state for {}",
-                    ProgramPoint::after(branch.as_operation())
+                    ProgramPoint::after(owner)
                 );
-                solver.require(ProgramPoint::after(branch.as_operation()), point)
+                solver.require(ProgramPoint::after(owner), point)
             }
             Some(region) => {
                 // The successor is a region of `branch`
@@ -508,7 +552,25 @@ pub fn visit_region_branch_operation<A>(
             }
         };
 
-        let region_from = branch_point.region();
+        // Transfer rules must use the same owner as the successor lattice. In particular,
+        // a nested break consumes the receiving loop's results, not its immediate parent's.
+        let exit_owner = exit_owner.map(|owner| owner.borrow());
+        let (branch, region_from) = if let Some(owner) = exit_owner.as_ref() {
+            let origin = point
+                .operation()
+                .expect("an early exit originates at a terminator")
+                .borrow()
+                .region_in_ancestor(&owner.as_operation_ref())
+                .expect("an early exit targets an ancestor");
+            (
+                owner
+                    .as_trait::<dyn RegionBranchOpInterface>()
+                    .expect("an exit receiver implements RegionBranchOpInterface"),
+                Some(origin),
+            )
+        } else {
+            (branch, branch_point.region())
+        };
         analysis.visit_region_branch_control_flow_transfer(
             branch,
             region_from,

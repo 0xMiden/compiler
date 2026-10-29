@@ -127,6 +127,8 @@ fn eval_scf_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<scf::IndexSwitch, dyn Eval>();
     info.register_operation_trait::<scf::Condition, dyn Eval>();
     info.register_operation_trait::<scf::Yield, dyn Eval>();
+    info.register_operation_trait::<scf::Break, dyn Eval>();
+    info.register_operation_trait::<scf::Continue, dyn Eval>();
 }
 
 fn eval_ub_dialect(info: &mut ::midenc_hir::DialectInfo) {

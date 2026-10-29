@@ -277,14 +277,14 @@ fn mem_move_byte_length_overflow_traps() {
     );
 }
 
-/// Checks that a copy whose source or destination range extends past the end of the address
-/// space traps with the matching range assertion.
+/// Public native byte pointers cover the VM's 34-bit byte address space. Check that a source
+/// or destination range extending past its end traps with the matching range assertion.
 #[test]
 fn mem_move_out_of_range_traps() {
     assert_copy_traps(
         CopyOp::MemMove,
         Type::U8,
-        u32::MAX - 7,
+        (1u64 << 34) - 8,
         FIXED_BASE,
         16,
         "memmove source range is out of bounds",
@@ -293,7 +293,7 @@ fn mem_move_out_of_range_traps() {
         CopyOp::MemMove,
         Type::U8,
         FIXED_BASE,
-        u32::MAX - 7,
+        (1u64 << 34) - 8,
         16,
         "memmove destination range is out of bounds",
     );

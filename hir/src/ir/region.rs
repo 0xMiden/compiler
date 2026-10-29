@@ -14,12 +14,14 @@ use smallvec::SmallVec;
 pub use self::{
     branch_point::RegionBranchPoint,
     interfaces::{
-        LoopLikeOpInterface, RegionBranchOpInterface, RegionBranchTerminatorOpInterface,
-        RegionKindInterface,
+        ExitDefect, ExitDefectKind, ExitResolution, HasBreakingControlFlowOpInterface,
+        LoopLikeOpInterface, PropagateControlFlowBreak, RegionBranchOpInterface,
+        RegionBranchTerminatorOpInterface, RegionExitKind, RegionExitTerminatorOpInterface,
+        RegionKindInterface, ResolvedExit,
     },
     invocation_bounds::InvocationBounds,
     kind::RegionKind,
-    successor::{RegionSuccessor, RegionSuccessorInfo, RegionSuccessorIter},
+    successor::{RegionSuccessor, RegionSuccessorInfo, RegionSuccessorIter, RegionSuccessorKind},
     transforms::RegionTransformFailed,
 };
 use super::*;
@@ -310,7 +312,7 @@ impl Region {
         for successor in
             branch.get_successor_regions(RegionBranchPoint::Child(begin.as_region_ref()))
         {
-            if let Some(successor) = successor.into_successor() {
+            if let Some(successor) = successor.region_graph_successor() {
                 worklist.push(successor);
             }
         }
@@ -326,7 +328,7 @@ impl Region {
                 for successor in
                     branch.get_successor_regions(RegionBranchPoint::Child(next_region_ref))
                 {
-                    if let Some(successor) = successor.into_successor() {
+                    if let Some(successor) = successor.region_graph_successor() {
                         worklist.push(successor);
                     }
                 }
@@ -370,7 +372,7 @@ impl Region {
                 // Collect unvisited children
                 let children = branch
                     .get_successor_regions(RegionBranchPoint::Child(region))
-                    .filter_map(|s| s.into_successor())
+                    .filter_map(|s| s.region_graph_successor())
                     .collect();
                 Self { region, children }
             }
@@ -429,7 +431,7 @@ impl Region {
                 // Collect unvisited children
                 let children = branch
                     .get_successor_regions(RegionBranchPoint::Child(region))
-                    .filter_map(|s| s.into_successor())
+                    .filter_map(|s| s.region_graph_successor())
                     .collect();
                 Self { region, children }
             }
@@ -440,7 +442,7 @@ impl Region {
         let mut worklist = SmallVec::<[(RegionNode, usize); 4]>::default();
 
         for succ in root.get_successor_regions(RegionBranchPoint::Parent) {
-            let Some(region) = succ.into_successor() else {
+            let Some(region) = succ.region_graph_successor() else {
                 continue;
             };
 

@@ -67,10 +67,12 @@ pub use self::{
     parse::{OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
     region::{
-        InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,
-        RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,
+        ExitDefect, ExitDefectKind, ExitResolution, HasBreakingControlFlowOpInterface,
+        InvocationBounds, LoopLikeOpInterface, PropagateControlFlowBreak, Region,
+        RegionBranchOpInterface, RegionBranchPoint, RegionBranchTerminatorOpInterface,
+        RegionCursor, RegionCursorMut, RegionExitKind, RegionExitTerminatorOpInterface, RegionKind,
         RegionKindInterface, RegionList, RegionRef, RegionSuccessor, RegionSuccessorInfo,
-        RegionSuccessorIter, RegionTransformFailed,
+        RegionSuccessorIter, RegionSuccessorKind, RegionTransformFailed, ResolvedExit,
     },
     successor::{
         KeyedSuccessor, KeyedSuccessorRange, KeyedSuccessorRangeMut, OpSuccessor, OpSuccessorMut,

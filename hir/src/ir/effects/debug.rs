@@ -48,6 +48,13 @@ impl PartialEq<DebugEffect> for &DebugEffect {
     }
 }
 
-impl Effect for DebugEffect {}
+impl Effect for DebugEffect {
+    /// There is no `HasRecursiveDebugEffects` marker for an op to declare, so no op has recursive
+    /// debug effects. Saying so is the honest answer; inventing a marker nothing declares would
+    /// only move the same `false` somewhere less obvious.
+    fn is_recursive_on(_op: &crate::Operation) -> bool {
+        false
+    }
+}
 
 pub trait DebugEffectOpInterface = EffectOpInterface<DebugEffect>;

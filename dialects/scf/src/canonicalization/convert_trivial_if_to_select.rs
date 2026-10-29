@@ -60,12 +60,10 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         let cond = if_op.condition().as_value_ref();
         let then_region = if_op.then_body().as_region_ref();
         let else_region = if_op.else_body().as_region_ref();
-        let then_terminator = if_op.then_body().entry().terminator().unwrap();
-        let else_terminator = if_op.else_body().entry().terminator().unwrap();
-        let Ok(then_yield) = then_terminator.try_downcast_op::<Yield>() else {
-            return Ok(false);
-        };
-        let Ok(else_yield) = else_terminator.try_downcast_op::<Yield>() else {
+        // A branch terminated by `scf.break`/`scf.continue` (or by a `ret`/`unreachable`)
+        // leaves the `scf.if` entirely, so there is nothing to fold into a `select`: the two
+        // branches do not both produce the op's results.
+        let (Some(then_yield), Some(else_yield)) = (if_op.then_yield(), if_op.else_yield()) else {
             return Ok(false);
         };
         let then_yield_args = then_yield
@@ -150,8 +148,23 @@ impl RewritePattern for ConvertTrivialIfToSelect {
         }
 
         // Rewrite the `scf.yield` ops in the new `scf.if`
-        let new_then_yield = anchor_op.then_yield();
-        let new_else_yield = anchor_op.else_yield();
+        //
+        // The new `scf.if` was built by this pattern from two yield-terminated branches, so both
+        // accessors resolve; `expect` states that rather than hiding it behind a silent bail.
+        // **AND THEY ARE UNREACHABLE BY A DATA DEPENDENCY, NOT BY A CHECK THAT COULD DRIFT.** The
+        // bail near the top of this function does not merely test the branches — it *binds*
+        // `then_yield`/`else_yield`, and the whole body below is written against those two
+        // handles. There is no way to arrive here without them, and the regions the new `scf.if`
+        // receives are those same two regions, moved into it by `take_body` with their terminators
+        // intact. A branch that leaves the `scf.if` — a `builtin.ret` under a conditional, before
+        // `LowerEarlyExits` — is declined up there and never gets this far. Replacing that bail
+        // with the accessors' pre-guard `expect` shape confirms it: the early-exit program dies
+        // at the binding, not here. `convert_trivial_if_to_select_declines_a_branch_that_leaves_the_if`
+        // is the kept witness that the pattern declines that shape rather than panicking on it.
+        let new_then_yield =
+            anchor_op.then_yield().expect("cloned `then` branch lost its scf.yield");
+        let new_else_yield =
+            anchor_op.else_yield().expect("cloned `else` branch lost its scf.yield");
 
         rewriter.set_insertion_point_to_end(new_then_region.borrow().entry_block_ref().unwrap());
         let replacement_then_yield = rewriter.r#yield(true_yields, span)?.as_operation_ref();
@@ -341,5 +354,205 @@ mod terminal_region_tests {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{boxed::Box, format, rc::Rc, string::String};
+
+    use midenc_hir::{
+        patterns::{self, FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet},
+        testing::parse_function_fixpoint,
+    };
+
+    use super::*;
+
+    /// The pattern applied to `source` to a fixpoint: whether it changed anything, whether the
+    /// output verifies, and the function as printed before and after.
+    #[track_caller]
+    fn rewrite(name: &str, source: &str) -> (bool, Result<(), String>, String, String) {
+        let context = Rc::new(Context::default());
+        let (function, _) = parse_function_fixpoint(&context, name, source).unwrap_or_else(|err| {
+            panic!("'{name}' must parse AND verify before the pattern runs: {err}")
+        });
+        let before = format!("{}", function.as_operation_ref().borrow());
+        let op = function.as_operation_ref();
+        let pattern_set = RewritePatternSet::from_iter(
+            context.clone(),
+            [Box::new(ConvertTrivialIfToSelect::new(context.clone())) as Box<dyn RewritePattern>],
+        );
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            op,
+            rewrites,
+            GreedyRewriteConfig::default(),
+        )
+        .expect("expected the canonicalizer to converge");
+        let verified = function
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .map_err(|err| format!("{err}"));
+        let after = format!("{}", function.as_operation_ref().borrow());
+        (changed, verified, before, after)
+    }
+
+    #[track_caller]
+    fn run_one(name: &str, source: &str) -> (bool, Result<(), String>) {
+        let (changed, verified, ..) = rewrite(name, source);
+        (changed, verified)
+    }
+
+    const PROGRAM: &str = "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %flag = arith.gt %n, %zero;
+    %a = scf.if %flag then {
+        THEN
+    } else {
+        scf.yield %zero : (u32);
+    } : (i1) -> (u32);
+    builtin.ret %a : (u32);
+};";
+
+    /// The guard that makes the two `expect`s on the clone's yields unreachable, asserted at the
+    /// pattern rather than at the comment beside them.
+    ///
+    /// Without the bail this program does not decline — it runs the whole rewrite with an empty
+    /// `then_yield_args`, builds the clone, and dies on `cloned 'then' branch lost its scf.yield`.
+    #[test]
+    fn convert_trivial_if_to_select_declines_a_branch_that_leaves_the_if() {
+        let (changed, verified) = run_one(
+            "convert_trivial_if_to_select_early_exit.hir",
+            &PROGRAM.replace("THEN", "builtin.ret %n : (u32);"),
+        );
+        verified.unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+        assert!(!changed, "must decline an scf.if whose branch does not yield");
+    }
+
+    /// **THE NESTED-EXIT SWEEP.** The guard above tests each branch's DIRECT terminator, so an
+    /// `scf.break` one region deeper passes it — the blindness that let `FoldRedundantYields`
+    /// delete a loop exit. This pattern does not have it, for two independent reasons: it MOVES
+    /// both region bodies into the replacement `scf.if` (`take_body`, terminators intact) rather
+    /// than dropping them, and its one erasure path is gated on `is_noop`, which requires each
+    /// branch to hold nothing but its terminator — a branch carrying a nested exit has at least
+    /// two operations in it and can never satisfy that.
+    #[test]
+    fn convert_trivial_if_to_select_keeps_a_nested_early_exit_it_hoists_around() {
+        let source = "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %z = arith.constant 0 : u32;
+    %r = scf.while %z before {
+    ^before(%i: u32):
+        %c = arith.lt %i, %n;
+        scf.condition %c, %i : (i1, u32);
+    } after {
+    ^after(%j: u32):
+        %g = arith.gt %j, %n;
+        %o = scf.if %g then {
+            %p = scf.if %g then {
+                scf.break 1 %j : (u32);
+            } else {
+                scf.yield %j : (u32);
+            } : (i1) -> (u32);
+            scf.yield %j : (u32);
+        } else {
+            scf.yield %n : (u32);
+        } : (i1) -> (u32);
+        scf.yield %o : (u32);
+    } : (u32) -> (u32);
+    builtin.ret %r : (u32);
+};";
+        let context = Rc::new(Context::default());
+        let (function, _) = parse_function_fixpoint(
+            &context,
+            "convert_trivial_if_to_select_nested_exit.hir",
+            source,
+        )
+        .expect("the probe must parse before the pattern runs");
+        let count_breaks = || {
+            let mut breaks = 0usize;
+            function.as_operation_ref().borrow().prewalk_all(|op| {
+                if op.is::<Break>() {
+                    breaks += 1;
+                }
+            });
+            breaks
+        };
+        assert_eq!(count_breaks(), 1, "the probe must start with exactly one loop exit");
+
+        let pattern_set = RewritePatternSet::from_iter(
+            context.clone(),
+            [Box::new(ConvertTrivialIfToSelect::new(context.clone())) as Box<dyn RewritePattern>],
+        );
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            function.as_operation_ref(),
+            rewrites,
+            GreedyRewriteConfig::default(),
+        )
+        .expect("expected the canonicalizer to converge");
+
+        assert!(changed, "two outer-defined yields must still hoist into a select");
+        assert_eq!(count_breaks(), 1, "the rewrite lost the nested loop exit");
+        function
+            .as_operation_ref()
+            .borrow()
+            .recursively_verify()
+            .unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+    }
+
+    /// The other half: the guard is narrow, not a disable switch. Both branches yield a value
+    /// defined outside the `scf.if`, so both hoist into a `cf.select`.
+    #[test]
+    fn convert_trivial_if_to_select_still_fires_when_both_branches_yield() {
+        let (changed, verified) = run_one(
+            "convert_trivial_if_to_select_control.hir",
+            &PROGRAM.replace("THEN", "scf.yield %n : (u32);"),
+        );
+        verified.unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+        assert!(changed, "must still hoist two outer-defined yields into a select");
+    }
+
+    /// **A POINTER PAIR STAYS A RESULT OF THE `scf.if`.** `cf.select` chooses between integers
+    /// only (its operands are `AnyInteger`), so a pair of pointers the branches yield is not
+    /// hoisted into one: the `scf.if` keeps yielding it, and an integer pair beside it still
+    /// hoists. The pointer-only `scf.if` is declined and left as it was; the mixed one rewrites
+    /// into one `cf.select` and one `scf.if` of the pointer result; both verify.
+    #[test]
+    fn convert_trivial_if_to_select_keeps_a_pointer_pair_in_the_if() {
+        const POINTERS: &str = "\
+builtin.function public extern(\"C\") @f(%p: ptr<u32, byte>, %q: ptr<u32, byte>, %c: i1) -> \
+                                ptr<u32, byte> {
+    %r = scf.if %c then {
+        scf.yield %p : (ptr<u32, byte>);
+    } else {
+        scf.yield %q : (ptr<u32, byte>);
+    } : (i1) -> (ptr<u32, byte>);
+    builtin.ret %r : (ptr<u32, byte>);
+};";
+        let (changed, verified, before, after) =
+            rewrite("convert_trivial_if_to_select_pointers.hir", POINTERS);
+        verified.unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+        assert!(!changed, "must decline an scf.if whose only yielded pair is two pointers");
+        assert_eq!(after, before, "a declined scf.if is left as it was");
+
+        const MIXED: &str = "\
+builtin.function public extern(\"C\") @f(%p: ptr<u32, byte>, %q: ptr<u32, byte>, %n: u32, %m: u32, \
+                             %c: i1) -> u32 {
+    %r, %k = scf.if %c then {
+        scf.yield %p, %n : (ptr<u32, byte>, u32);
+    } else {
+        scf.yield %q, %m : (ptr<u32, byte>, u32);
+    } : (i1) -> (ptr<u32, byte>, u32);
+    builtin.ret %k : (u32);
+};";
+        let (changed, verified, _, after) =
+            rewrite("convert_trivial_if_to_select_mixed.hir", MIXED);
+        verified.unwrap_or_else(|err| panic!("output does not verify:\n{err}"));
+        assert!(changed, "the integer pair beside the pointer pair must still hoist");
+        assert_eq!(after.matches("cf.select").count(), 1, "one select, of the integers:\n{after}");
+        assert_eq!(after.matches("scf.if").count(), 1, "one scf.if, of the pointers:\n{after}");
     }
 }

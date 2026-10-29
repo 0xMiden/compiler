@@ -766,7 +766,12 @@ fn register_masm_legalization_dialects(context: &Rc<Context>) {
 /// An op MASM codegen can lower: one with a `HirSelection`, or a transparent cast, which codegen
 /// lowers by renaming its operand.
 fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
-    if op.implements::<dyn HirSelection>() || op.implements::<dyn TransparentCast>() {
+    if op.implements::<dyn midenc_hir::RegionExitTerminatorOpInterface>() {
+        DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "structured exit '{}' must be normalized by lower-early-exits before MASM legalization",
+            op.name()
+        )))
+    } else if op.implements::<dyn HirSelection>() || op.implements::<dyn TransparentCast>() {
         DynamicLegalityResult::legal()
     } else {
         DynamicLegalityResult::illegal_with_reason(Report::msg(format!(

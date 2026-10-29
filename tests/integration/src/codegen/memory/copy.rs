@@ -211,14 +211,15 @@ pub(super) fn check_copy_traps(
     op: CopyOp,
     package: &Arc<miden_mast_package::Package>,
     context: &Rc<midenc_hir::Context>,
-    src: u32,
-    dst: u32,
+    src: impl Into<u64>,
+    dst: impl Into<u64>,
     count: u32,
     message: &str,
 ) -> Result<(), TestCaseError> {
+    let (src, dst) = (src.into(), dst.into());
     let args = [
-        Felt::new_unchecked(src as u64),
-        Felt::new_unchecked(dst as u64),
+        Felt::new_unchecked(src),
+        Felt::new_unchecked(dst),
         Felt::new_unchecked(count as u64),
     ];
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -249,8 +250,8 @@ pub(super) fn check_copy_traps(
 pub(super) fn assert_copy_traps(
     op: CopyOp,
     elem: Type,
-    src: u32,
-    dst: u32,
+    src: impl Into<u64>,
+    dst: impl Into<u64>,
     count: u32,
     message: &str,
 ) {

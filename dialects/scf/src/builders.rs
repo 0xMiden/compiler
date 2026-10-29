@@ -125,6 +125,40 @@ pub trait StructuredControlFlowOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(yielded)
     }
 
+    /// Build an `scf.break` exiting the `levels`-th enclosing loop, carrying `args` as that
+    /// loop's results.
+    ///
+    /// `levels` is 1-based; 1 names the innermost enclosing loop. The value is not validated
+    /// here — the op's verifier is what resolves it, so that a break built against a tree still
+    /// under construction is rejected once, at verification, with the enclosing ops in place.
+    fn r#break<T>(
+        &mut self,
+        levels: u32,
+        args: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<Break>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<Break, (_, T)>(span);
+        op_builder(levels, args)
+    }
+
+    /// Build an `scf.continue` re-entering the `levels`-th enclosing loop's header, carrying
+    /// `args` as that loop's next iter_args.
+    fn r#continue<T>(
+        &mut self,
+        levels: u32,
+        args: T,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<Continue>, Report>
+    where
+        T: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<Continue, (_, T)>(span);
+        op_builder(levels, args)
+    }
+
     fn builder(&self) -> &B;
     fn builder_mut(&mut self) -> &mut B;
 }

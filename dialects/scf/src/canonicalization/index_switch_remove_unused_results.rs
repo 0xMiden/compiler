@@ -151,6 +151,7 @@ impl RewritePattern for IndexSwitchRemoveUnusedResults {
 mod tests {
     use alloc::{boxed::Box, format, rc::Rc, string::String, vec::Vec};
 
+    use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
     use midenc_expect_test::expect_file;
     use midenc_hir::{
         Op, Report, SourceSpan, Type,
@@ -217,6 +218,71 @@ mod tests {
 
         let output = normalize_hir(&format!("{}", test.function().as_operation_ref().borrow()));
         expect_file!["expected/index_switch_remove_unused_results_after.hir"].assert_eq(&output);
+
+        Ok(())
+    }
+
+    /// **A CASE REGION THAT DOES NOT YIELD IS SKIPPED, NOT UNWRAPPED**
+    /// (S7-F-6). The pattern narrows a switch's results by rewriting each
+    /// region's `scf.yield`; a region terminated by `ub.unreachable` has no
+    /// yielded operands to narrow, and the pass used to `unwrap()` on it
+    /// twice — once for the terminator and once for the downcast.
+    ///
+    /// It is not an exotic shape. An exhaustive enum match lowers its DEFAULT
+    /// region to `ub.unreachable` by construction, so every exhaustive match
+    /// with an unused switch result reached this. The Sigma reproduction is
+    /// `let v = match o { Some(x) => x, None => 0u32 }; let _ = v;` in a
+    /// unit-returning function — ordinary source, with no `abort` in it —
+    /// and it panicked the compiler.
+    #[test]
+    fn an_unreachable_case_region_is_left_alone() -> Result<(), Report> {
+        let mut test = Test::new("unreachable_case_region", &[Type::U32], &[Type::U32]);
+
+        let span = SourceSpan::default();
+        let mut builder = test.function_builder();
+        let entry = builder.entry_block();
+        let selector = entry.borrow().arguments()[0].upcast();
+
+        let dead_case_value = builder.u32(1, span)?;
+        let live_case_value = builder.u32(2, span)?;
+
+        let switch = builder.index_switch(selector, [1], &[Type::U32, Type::U32], span)?;
+
+        let case_region = switch.borrow().get_case_region(0);
+        let case_block = builder.create_block_in_region(case_region);
+        builder.switch_to_block(case_block);
+        builder.r#yield([dead_case_value, live_case_value], span)?;
+
+        // THE DEFAULT REGION DIVERGES — the shape an exhaustive match emits.
+        let default_region = switch.borrow().default_region().as_region_ref();
+        let default_block = builder.create_block_in_region(default_region);
+        builder.switch_to_block(default_block);
+        builder.unreachable(span);
+
+        builder.switch_to_block(entry);
+        let live_switch_result = switch.borrow().results()[1].upcast();
+        builder.ret(Some(live_switch_result), span)?;
+
+        let context = test.context_rc();
+        let pattern: Box<dyn RewritePattern> =
+            Box::new(IndexSwitchRemoveUnusedResults::new(context.clone()));
+        let pattern_set = RewritePatternSet::from_iter(context.clone(), [pattern]);
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            test.function().as_operation_ref(),
+            rewrites,
+            GreedyRewriteConfig::default(),
+        )
+        .expect("expected canonicalizer to converge");
+        assert!(changed, "the yielding case is still narrowed");
+
+        test.function().as_operation_ref().borrow().recursively_verify()?;
+
+        // The yielding region lost its dead operand; the diverging one is
+        // untouched and still terminates the switch's second region.
+        let rendered = normalize_hir(&format!("{}", test.function().as_operation_ref().borrow()));
+        assert!(rendered.contains("ub.unreachable"), "{rendered}");
+        assert_eq!(rendered.matches("scf.yield").count(), 1, "{rendered}");
 
         Ok(())
     }

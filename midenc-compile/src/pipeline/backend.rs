@@ -318,6 +318,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
         // Clean up generated structured control flow before representation legalization.
         functions.add_pass(Canonicalizer::create_with_config(&rewrite_config));
     }
+    pm.add_pass(Box::new(midenc_codegen_masm::LowerEarlyExits));
     pm.add_pass(Box::new(LegalizeForMasm));
     pm.nest_recursive::<builtin::Function>().add_pass(Box::new(SinkOperandDefs));
 
@@ -411,6 +412,7 @@ pub fn legalize_for_masm(hir: &MidenComponent, context: Rc<Context>) -> Compiler
     let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
     let mut pm = PassManager::new(context, OpPassManager::ANY, Nesting::Implicit)
         .enable_ir_printing(ir_print_config);
+    pm.add_pass(Box::new(midenc_codegen_masm::LowerEarlyExits));
     pm.add_pass(Box::new(LegalizeForMasm));
     pm.run(anchor)?;
 
@@ -822,6 +824,73 @@ mod tests {
         }
     }
 
+    #[test]
+    fn shared_rewrites_normalize_structured_exits_in_nested_modules() {
+        assert_structured_exits_normalized(false);
+    }
+
+    #[test]
+    fn fallback_legalization_normalizes_structured_exits_in_nested_modules() {
+        assert_structured_exits_normalized(true);
+    }
+
+    fn assert_structured_exits_normalized(fallback: bool) {
+        use midenc_hir::{Forward, RawWalk, WalkResult};
+
+        let context = Rc::new(Context::default());
+        let world = midenc_hir::parse::parse_any(
+            midenc_hir::parse::ParserConfig::new(context.clone()),
+            midenc_hir::diagnostics::Uri::new("shared-early-exits.hir"),
+            r#"builtin.world {
+                builtin.module public @outer {
+                    builtin.module public @inner {
+                        builtin.function public extern("C") @exit(%flag: i1, %value: u32) -> u32 {
+                            %result = scf.while %value before {
+                            ^head(%current: u32):
+                                scf.condition %flag, %current : (i1, u32);
+                            } after {
+                            ^body(%next: u32):
+                                scf.break 1 %next : (u32);
+                            } : (u32) -> u32;
+                            builtin.ret %result : (u32);
+                        };
+                    };
+                };
+            };"#,
+        )
+        .expect("valid structured exit");
+        if fallback {
+            let hir = MidenComponent {
+                world: world.try_downcast_op::<builtin::World>().expect("world fixture"),
+                component: None,
+                sections: Default::default(),
+                source_provenance: miden_assembly::ProjectSourceProvenanceInputs {
+                    root: miden_assembly::SourceFileProvenance {
+                        path: midenc_session::PathBuf::from("shared-early-exits.hir")
+                            .into_boxed_path(),
+                        content: "".into(),
+                    },
+                    support: Default::default(),
+                },
+            };
+            legalize_for_masm(&hir, context.clone()).expect("fallback normalizes exits");
+        } else {
+            apply_rewrites(world, context.clone()).expect("shared rewrites normalize exits");
+        }
+        let mut returns = 0;
+        let _: WalkResult<()> =
+            world.raw_prewalk::<Forward, _, _>(|op: midenc_hir::OperationRef| {
+                let op = op.borrow();
+                assert!(!op.implements::<dyn midenc_hir::RegionExitTerminatorOpInterface>());
+                if op.is::<builtin::Ret>() {
+                    returns += 1;
+                    assert!(op.parent_op().unwrap().borrow().is::<builtin::Function>());
+                }
+                WalkResult::Continue(())
+            });
+        assert_eq!(returns, 1);
+    }
+
     /// [`rewrite_pipeline`], as its textual pipeline.
     fn textual_pipeline(
         world: OperationRef,
@@ -848,8 +917,8 @@ mod tests {
         assert_eq!(
             pipeline,
             alloc::format!(
-                "builtin.world(recursive(builtin.function({functions})),legalize-for-masm,\
-                 recursive(builtin.function({last})))"
+                "builtin.world(recursive(builtin.function({functions})),lower-early-exits,\
+                 legalize-for-masm,recursive(builtin.function({last})))"
             )
         );
     }
@@ -879,7 +948,7 @@ mod tests {
         .expect("an empty world should build");
         let pipeline = textual_pipeline(world.as_operation_ref(), context);
         assert!(
-            pipeline.contains("),legalize-for-masm,recursive(builtin.function("),
+            pipeline.contains("),lower-early-exits,legalize-for-masm,recursive(builtin.function("),
             "{pipeline}"
         );
     }

@@ -367,8 +367,8 @@ impl Memory {
                     && outputs.is_empty()
                     && storable(&ty)
             }
-            LoadLocal => inputs.is_empty() && outputs == [ty.clone()] && scalar(&ty),
-            StoreLocal => inputs == [ty.clone()] && outputs.is_empty() && storable(&ty),
+            LoadLocal => inputs.is_empty() && outputs == [ty.clone()],
+            StoreLocal => inputs == [ty.clone()] && outputs.is_empty(),
             LocalAddress | LocalByteAddress => {
                 inputs.is_empty()
                     && outputs
@@ -410,6 +410,14 @@ impl Memory {
         }
         for t in inputs.iter().chain(&outputs) {
             ValueLayout::new(t.clone())?;
+        }
+        if matches!(kind, LoadLocal | StoreLocal) && !scalar(&ty) {
+            return Ok(Self::aggregate_local(
+                &ValueLayout::new(ty)?,
+                local.expect("local access has a validated source local"),
+                kind == StoreLocal,
+                op.span(),
+            ));
         }
         let mut stack = OperandStack::new(op.context_rc());
         for t in inputs.iter().rev() {
@@ -505,6 +513,79 @@ impl Memory {
             argument_lanes,
             direct_results,
         })
+    }
+
+    /// Aggregate lanes occupy their original four-byte intervals, including interior padding.
+    /// Use one relocatable base address; lane offsets never depend on the final frame layout.
+    fn aggregate_local(
+        layout: &ValueLayout,
+        local: u32,
+        store: bool,
+        span: midenc_hir::SourceSpan,
+    ) -> Self {
+        use masm::Instruction as I;
+
+        let mut body = raw::Builder::new(span);
+        body.emit(I::Locaddr(0u16.into()));
+        let parts = layout.raw_parts();
+        let mut partial_store = false;
+        for step in 0..parts.len() {
+            let lane = if store { step } else { parts.len() - 1 - step };
+            let last = step + 1 == parts.len();
+            if !last {
+                body.emit(I::Dup0);
+                if store {
+                    // [base, base, value, ...] -> [base, value, base, ...]
+                    body.emit_all([I::MovUp2, I::Swap1]);
+                }
+            }
+            if lane != 0 {
+                body.emit(I::AddImm(midenc_hir::Felt::from(lane as u32).into()));
+            }
+            let bits = parts[lane].size_in_bits();
+            if store {
+                if bits < 32 {
+                    partial_store = true;
+                    let mask = (1u32 << bits) - 1;
+                    // Preserve padding in this cell's remaining bytes. Frame contents can be
+                    // full field elements; reduce to their low 32 bits before bitwise operations.
+                    body.emit_all([I::Dup0, I::MemLoad, I::U32Cast]);
+                    body.emit_push(!mask);
+                    body.emit_all([I::U32And, I::MovUp2, I::U32Cast]);
+                    body.emit_push(mask);
+                    body.emit_all([I::U32And, I::U32Or, I::Swap1]);
+                }
+                body.emit(I::MemStore);
+            } else {
+                body.emit(I::MemLoad);
+                if bits < 32 {
+                    body.emit(I::U32Cast);
+                    body.emit_push((1u32 << bits) - 1);
+                    body.emit(I::U32And);
+                }
+                if !last {
+                    body.emit(I::Swap1);
+                }
+            }
+        }
+        Self {
+            body: body.ops,
+            local: Some(local),
+            proof: UnitEvidence::default(),
+            effects: LoweringEffects {
+                memory: if !store {
+                    SourceMemoryEffects::READ
+                } else if partial_store {
+                    SourceMemoryEffects::READ_WRITE
+                } else {
+                    SourceMemoryEffects::WRITE
+                },
+                may_trap: true,
+                normal_return: true,
+            },
+            argument_lanes: vec![],
+            direct_results: None,
+        }
     }
 
     /// Replace source-relative helper argument/result positions with exact selected lane atoms.
