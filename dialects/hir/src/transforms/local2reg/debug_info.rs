@@ -36,13 +36,35 @@ const RECOVERY_BATCH_SIZE: usize = 64;
 /// Bottom is an unreachable program point. At reachable points, aliases are SSA values known
 /// equal to the current slot; an empty set means unknown. Binding bits record possible inactive
 /// (1) and active (2) states, so a join cannot invent an unconditional source binding.
+/// Dense program points share immutable snapshots; only changed transfers copy their payload.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct Recovery(Option<Facts>);
+struct Recovery(Option<Rc<Facts>>);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 struct Facts {
     aliases: Vec<Vec<ValueRef>>,
     bindings: Vec<u8>,
+}
+
+impl Facts {
+    fn new(aliases: Vec<Vec<ValueRef>>, bindings: Vec<u8>) -> Self {
+        #[cfg(test)]
+        tests::MATERIALIZED.with(|count| {
+            count.set(
+                count.get()
+                    + aliases.len()
+                    + aliases.iter().map(Vec::len).sum::<usize>()
+                    + bindings.len(),
+            );
+        });
+        Self { aliases, bindings }
+    }
+}
+
+impl Clone for Facts {
+    fn clone(&self) -> Self {
+        Self::new(self.aliases.clone(), self.bindings.clone())
+    }
 }
 
 impl LatticeLike for Recovery {
@@ -50,15 +72,38 @@ impl LatticeLike for Recovery {
         match (&self.0, &other.0) {
             (None, _) => other.clone(),
             (_, None) => self.clone(),
-            (Some(a), Some(b)) => Self(Some(Facts {
-                aliases: a
-                    .aliases
+            (Some(a), Some(b)) => {
+                // Inspect the result before allocating, including joins made by lattice assertions.
+                // Independently allocated equal facts must behave just like shared snapshots.
+                if Rc::ptr_eq(a, b)
+                    || (a
+                        .aliases
+                        .iter()
+                        .zip(&b.aliases)
+                        .all(|(a, b)| a.iter().all(|v| b.contains(v)))
+                        && a.bindings.iter().zip(&b.bindings).all(|(a, b)| a | b == *a))
+                {
+                    return self.clone();
+                }
+                // Intersection retains the left operand's order. Reuse the right only when its
+                // sequence, as well as its binding bits, already equals that result.
+                if a.aliases
                     .iter()
                     .zip(&b.aliases)
-                    .map(|(a, b)| a.iter().copied().filter(|v| b.contains(v)).collect())
-                    .collect(),
-                bindings: a.bindings.iter().zip(&b.bindings).map(|(a, b)| a | b).collect(),
-            })),
+                    .all(|(a, b)| a.iter().filter(|v| b.contains(v)).eq(b.iter()))
+                    && a.bindings.iter().zip(&b.bindings).all(|(a, b)| a | b == *b)
+                {
+                    return other.clone();
+                }
+                Self(Some(Rc::new(Facts::new(
+                    a.aliases
+                        .iter()
+                        .zip(&b.aliases)
+                        .map(|(a, b)| a.iter().copied().filter(|v| b.contains(v)).collect())
+                        .collect(),
+                    a.bindings.iter().zip(&b.bindings).map(|(a, b)| a | b).collect(),
+                ))))
+            }
         }
     }
 
@@ -73,6 +118,52 @@ struct LocalRecovery {
     references: Vec<OperationRef>,
     record_updates: FxHashMap<OperationRef, Vec<(usize, u8)>>,
     dominance: Rc<DominanceInfo>,
+}
+
+impl LocalRecovery {
+    fn transfer(&self, op: &Operation, before: &Recovery) -> Recovery {
+        let mut state = before.clone();
+        if let Some(facts) = state.0.as_mut() {
+            if let Some(store) = op.downcast_ref::<StoreLocal>()
+                && let Some(index) = self.locals.get(&*store.get_local())
+            {
+                let value = store.value().as_value_ref();
+                if facts.aliases[*index] != [value] {
+                    let aliases = &mut Rc::make_mut(facts).aliases[*index];
+                    aliases.clear();
+                    aliases.push(value);
+                }
+            }
+            if op.has_regions() {
+                // RegionBranchOpInterface owners are dispatched separately. An opaque owner
+                // may execute its regions in an unknown order, so it cannot preserve a reaching
+                // value or promise that a previously active binding remains active.
+                if facts.aliases.iter().any(|values| !values.is_empty()) {
+                    Rc::make_mut(facts).aliases.iter_mut().for_each(Vec::clear);
+                }
+                for (index, reference) in self.references.iter().enumerate() {
+                    let active = facts.bindings[index];
+                    if active != 3
+                        && (active != 1
+                            || self.references.iter().any(|nested| {
+                                op.is_ancestor_of(&nested.borrow())
+                                    && same_binding(&reference.borrow(), &nested.borrow())
+                            }))
+                    {
+                        Rc::make_mut(facts).bindings[index] = 3;
+                    }
+                }
+            }
+            if let Some(updates) = self.record_updates.get(&op.as_operation_ref()) {
+                for (index, active) in updates {
+                    if facts.bindings[*index] != *active {
+                        Rc::make_mut(facts).bindings[*index] = *active;
+                    }
+                }
+            }
+        }
+        state
+    }
 }
 
 impl BuildableDataFlowAnalysis for LocalRecovery {
@@ -97,10 +188,10 @@ impl DenseForwardDataFlowAnalysis for LocalRecovery {
     ) {
         let point = lattice.anchor().as_any().downcast_ref::<ProgramPoint>().unwrap();
         let at_entry = point.block() == Some(self.entry);
-        lattice.join(&Recovery(Some(Facts {
-            aliases: alloc::vec![Vec::new(); self.locals.len()],
-            bindings: alloc::vec![if at_entry { 1 } else { 3 }; self.references.len()],
-        })));
+        lattice.join(&Recovery(Some(Rc::new(Facts::new(
+            alloc::vec![Vec::new(); self.locals.len()],
+            alloc::vec![if at_entry { 1 } else { 3 }; self.references.len()],
+        )))));
     }
 
     fn visit_operation(
@@ -110,35 +201,7 @@ impl DenseForwardDataFlowAnalysis for LocalRecovery {
         after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
         _: &mut DataFlowSolver,
     ) -> Result<(), Report> {
-        let mut state = before.value().clone();
-        if let Some(facts) = state.0.as_mut() {
-            if let Some(store) = op.downcast_ref::<StoreLocal>()
-                && let Some(index) = self.locals.get(&*store.get_local())
-            {
-                facts.aliases[*index] = alloc::vec![store.value().as_value_ref()];
-            }
-            if op.has_regions() {
-                // RegionBranchOpInterface owners are dispatched separately. An opaque owner
-                // may execute its regions in an unknown order, so it cannot preserve a reaching
-                // value or promise that a previously active binding remains active.
-                facts.aliases.iter_mut().for_each(Vec::clear);
-                for (reference, active) in self.references.iter().zip(&mut facts.bindings) {
-                    if *active != 1
-                        || self.references.iter().any(|nested| {
-                            op.is_ancestor_of(&nested.borrow())
-                                && same_binding(&reference.borrow(), &nested.borrow())
-                        })
-                    {
-                        *active = 3;
-                    }
-                }
-            }
-            if let Some(updates) = self.record_updates.get(&op.as_operation_ref()) {
-                for (index, active) in updates {
-                    facts.bindings[*index] = *active;
-                }
-            }
-        }
+        let state = self.transfer(op, before.value());
         after.join(&state);
         Ok(())
     }
@@ -236,8 +299,8 @@ fn translate(
     target: ProgramPoint,
     dominance: &DominanceInfo,
 ) -> Recovery {
-    let mut state = state.clone();
-    if let Some(facts) = &mut state.0 {
+    let mut result = state.clone();
+    if let Some(before) = &state.0 {
         let mappings = mappings.collect::<Vec<_>>();
         let entry = target.is_at_block_start().then(|| target.block().unwrap());
         let anchor = if entry.is_some() {
@@ -248,21 +311,34 @@ fn translate(
         // A loop reentry assigns a new dynamic value to its arguments and reexecutes its body.
         // Only explicit edge operands can reestablish these names. In particular, an old loop
         // argument is not the current local just because it has the same static ValueRef.
-        for values in &mut facts.aliases {
-            let aliases = values.clone();
-            values.retain(|value| {
-                let value = value.borrow();
-                entry.is_none_or(|block| value.parent_block() != Some(block))
-                    && anchor.is_some_and(|op| value.properly_dominates(&op.borrow(), dominance))
-            });
-            for (source, target) in &mappings {
-                if aliases.contains(source) && !values.contains(target) {
-                    values.push(*target);
-                }
+        let preserved = |value: &ValueRef| {
+            let value = value.borrow();
+            entry.is_none_or(|block| value.parent_block() != Some(block))
+                && anchor.is_some_and(|op| value.properly_dominates(&op.borrow(), dominance))
+        };
+        for (index, aliases) in before.aliases.iter().enumerate() {
+            // Compare the complete translated sequence before copying. Sources always refer to
+            // the predecessor snapshot, even when the edge kills or remaps the same static name.
+            let translated = || {
+                aliases.iter().copied().filter(preserved).chain(
+                    mappings.iter().enumerate().filter_map(|(i, (source, target))| {
+                        (aliases.contains(source)
+                            && !(aliases.contains(target) && preserved(target))
+                            && !mappings[..i].iter().any(|(previous_source, previous_target)| {
+                                previous_target == target && aliases.contains(previous_source)
+                            }))
+                        .then_some(*target)
+                    }),
+                )
+            };
+            if !aliases.iter().copied().eq(translated()) {
+                let values = &mut Rc::make_mut(result.0.as_mut().unwrap()).aliases[index];
+                values.clear();
+                values.extend(translated());
             }
         }
     }
-    state
+    result
 }
 
 fn normalized_expression(expression: &Expression, local: u32) -> Option<Expression> {
@@ -500,3 +576,6 @@ pub(super) fn convert<R: Rewriter>(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
