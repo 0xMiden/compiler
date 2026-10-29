@@ -5,7 +5,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use miden_debug::DebugQuery;
 
 use super::*;
-use crate::CompilerTest;
+use crate::{
+    CompilerTest,
+    trap_helpers::{panic_message, trap_matches},
+};
 
 const MEMORY_ADDR: u32 = 17 * 2u32.pow(16);
 
@@ -257,14 +260,39 @@ const SHARED_BASE_ACCESSES: &str = r#"(module
 /// The values stored at memarg offsets 0, 4 and 8 by [SHARED_BASE_ACCESSES].
 const SHARED_BASE_VALUES: [u32; 3] = [0x1111_2222, 0x3333_4444, 0x5555_6666];
 
-/// Compiles [SHARED_BASE_ACCESSES] through the full pipeline.
-fn compile_shared_base_accesses() -> CompilerTest {
-    let wasm = wat::parse_str(SHARED_BASE_ACCESSES).unwrap();
+/// The failure message of a `u32` operation given an operand of 2^32 or more.
+const U32_OVERFLOW_FAILURE: &str = "operation expected u32 values";
+
+/// The failure message of an element-aligned access through a misaligned address.
+const ALIGNMENT_FAILURE: &str = "pointer address does not meet minimum alignment for the type";
+
+/// Compiles the Wasm module `wat`, which exports `entrypoint`, through the full pipeline.
+fn compile_wat(wat: &str) -> CompilerTest {
+    let wasm = wat::parse_str(wat).unwrap();
     CompilerTest::from_wasm(
         "shared_base",
         wasm,
         ["--test-harness".into(), "--entrypoint".into(), "shared_base::entrypoint".into()],
     )
+}
+
+/// The arguments of the entrypoint of a module compiled by [compile_wat].
+fn felt_args(args: &[u32]) -> Vec<Felt> {
+    args.iter().copied().map(Felt::from).collect()
+}
+
+/// Evaluates the entrypoint of `test` with `args`, handing `check` a reader of the final memory.
+fn eval_wat(
+    test: &mut CompilerTest,
+    args: &[u32],
+    check: impl Fn(&dyn Fn(u32) -> Option<u32>),
+) -> u32 {
+    let package = test.compile_package();
+    eval_package::<u32, _, _>(package, None, &felt_args(args), &test.session, |trace| {
+        check(&|addr| trace.read_from_rust_memory(addr));
+        Ok(())
+    })
+    .unwrap()
 }
 
 /// Evaluates [SHARED_BASE_ACCESSES] at `addr`, handing `check` a reader of the final memory.
@@ -273,25 +301,25 @@ fn eval_shared_base_accesses(
     addr: u32,
     check: impl Fn(&dyn Fn(u32) -> Option<u32>),
 ) -> u32 {
-    let package = test.compile_package();
     let [v0, v1, v2] = SHARED_BASE_VALUES;
-    eval_package::<u32, _, _>(
-        package,
-        None,
-        &[Felt::from(addr), Felt::from(v0), Felt::from(v1), Felt::from(v2)],
-        &test.session,
-        |trace| {
-            check(&|addr| trace.read_from_rust_memory(addr));
-            Ok(())
-        },
-    )
-    .unwrap()
+    eval_wat(test, &[addr, v0, v1, v2], check)
 }
 
-/// Returns whether evaluating [SHARED_BASE_ACCESSES] at `addr` traps.
-fn shared_base_accesses_trap(addr: u32) -> bool {
-    let mut test = compile_shared_base_accesses();
-    catch_unwind(AssertUnwindSafe(|| eval_shared_base_accesses(&mut test, addr, |_| ()))).is_err()
+/// Evaluates [SHARED_BASE_ACCESSES] at `addr`, which must fail, and returns the failure message.
+fn shared_base_accesses_failure(addr: u32) -> String {
+    let mut test = compile_wat(SHARED_BASE_ACCESSES);
+    // Compiled outside `catch_unwind`, so that a compiler failure is not taken for a trap.
+    let package = test.compile_package();
+    let [v0, v1, v2] = SHARED_BASE_VALUES;
+    let args = felt_args(&[addr, v0, v1, v2]);
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        eval_package::<u32, _, _>(package, None, &args, &test.session, |_| Ok(()))
+    }));
+    match outcome {
+        Err(panic) => panic_message(panic),
+        Ok(Err(err)) => err.to_string(),
+        Ok(Ok(result)) => panic!("expected a failure at {addr:#x}, got {result:#x}"),
+    }
 }
 
 /// Returns the procedure `name` of `masm`, up to its column-0 `end`.
@@ -305,14 +333,16 @@ fn masm_procedure<'a>(masm: &'a str, name: &str) -> &'a str {
 }
 
 /// Verifies that element-aligned accesses through one base share a single byte->element
-/// conversion guarded by one hoisted overflow check, and still write the expected cells.
+/// conversion, one overflow check of the base plus the largest offset and one alignment check,
+/// and still write the expected cells.
 #[test]
 fn element_accesses_through_one_base_share_one_conversion() {
-    let mut test = compile_shared_base_accesses();
+    let mut test = compile_wat(SHARED_BASE_ACCESSES);
     let masm = test.masm_src();
     let entry = masm_procedure(&masm, "entrypoint");
     assert_eq!(entry.matches("u32divmod").count(), 1, "{entry}");
-    assert!(entry.contains("u32overflowing_add"), "{entry}");
+    assert_eq!(entry.matches("u32assert").count(), 1, "{entry}");
+    assert_eq!(entry.matches(ALIGNMENT_FAILURE).count(), 1, "{entry}");
 
     let result = eval_shared_base_accesses(&mut test, MEMORY_ADDR, |read| {
         for (index, expected) in SHARED_BASE_VALUES.into_iter().enumerate() {
@@ -328,7 +358,7 @@ fn element_accesses_through_one_base_share_one_conversion() {
 /// accesses at `0xFFFF_FFF4`, `0xFFFF_FFF8` and `0xFFFF_FFFC` are all valid.
 #[test]
 fn shared_conversion_reaches_the_last_byte_addressable_element() {
-    let mut test = compile_shared_base_accesses();
+    let mut test = compile_wat(SHARED_BASE_ACCESSES);
     let result = eval_shared_base_accesses(&mut test, 0xffff_fff4, |read| {
         let stored = read(0xffff_fffc).expect("the last element was not written");
         assert_eq!(stored, SHARED_BASE_VALUES[2]);
@@ -336,21 +366,76 @@ fn shared_conversion_reaches_the_last_byte_addressable_element() {
     assert_eq!(result, SHARED_BASE_VALUES[2]);
 }
 
-/// Verifies that the shared conversion traps when only the largest offset overflows: at base
-/// `0xFFFF_FFF8` offsets 0 and 4 stay below 2^32, but offset 8 does not.
+/// Verifies that the shared conversion traps on the overflow of the base plus the largest offset
+/// when only that offset overflows: at base `0xFFFF_FFF8` offsets 0 and 4 stay below 2^32, but
+/// offset 8 does not.
 #[test]
 fn shared_conversion_traps_when_base_plus_offset_overflows() {
-    assert!(
-        shared_base_accesses_trap(0xffff_fff8),
-        "an access past byte address 2^32 must trap"
-    );
+    let err = shared_base_accesses_failure(0xffff_fff8);
+    assert!(err.contains(U32_OVERFLOW_FAILURE), "unexpected overflow failure: {err}");
 }
 
 /// Verifies that the shared conversion still checks the element alignment of the base.
 #[test]
 fn shared_conversion_keeps_the_alignment_check() {
-    assert!(
-        shared_base_accesses_trap(MEMORY_ADDR + 2),
-        "an alignment promise must still be checked at runtime"
+    let err = shared_base_accesses_failure(MEMORY_ADDR + 2);
+    assert!(trap_matches(&err, ALIGNMENT_FAILURE), "unexpected alignment failure: {err}");
+}
+
+/// A Wasm function `(addr0, addr1, v0, v1, v2) -> i32` that stores `v0` and `v1` at memarg
+/// offsets 0 and 4 through local 0 holding `addr0`, sets local 0 to `addr1`, then stores `v2` at
+/// offset 8 through local 0, loads it back and returns it.
+const LOCAL_SET_SPLIT_ACCESSES: &str = r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32 i32 i32 i32) (result i32)
+    local.get 0 local.get 2 i32.store offset=0 align=4
+    local.get 0 local.get 3 i32.store offset=4 align=4
+    local.get 1 local.set 0
+    local.get 0 local.get 4 i32.store offset=8 align=4
+    local.get 0 i32.load offset=8 align=4))"#;
+
+/// Verifies that accesses through a local do not share a conversion across a `local.set` of that
+/// local: sharing one would store `v2` at `addr0 + 8` rather than at `addr1 + 8`.
+#[test]
+fn local_set_splits_the_accesses_through_a_local() {
+    let mut test = compile_wat(LOCAL_SET_SPLIT_ACCESSES);
+    let masm = test.masm_src();
+    let entry = masm_procedure(&masm, "entrypoint");
+    assert_eq!(entry.matches("u32divmod").count(), 2, "{entry}");
+
+    let [v0, v1, v2] = SHARED_BASE_VALUES;
+    let addr0 = MEMORY_ADDR;
+    let addr1 = MEMORY_ADDR + 64;
+    let result = eval_wat(&mut test, &[addr0, addr1, v0, v1, v2], |read| {
+        for (addr, expected) in [(addr0, v0), (addr0 + 4, v1), (addr1 + 8, v2)] {
+            let stored = read(addr).expect("the target memory cell was not written");
+            assert_eq!(stored, expected, "memory at {addr:#x}");
+        }
+        assert_ne!(read(addr0 + 8), Some(v2), "v2 was stored through the stale base");
+    });
+    assert_eq!(result, v2);
+}
+
+/// Verifies that element-aligned accesses through a constant base materialized at each access
+/// write the expected cells.
+#[test]
+fn element_accesses_through_a_constant_base() {
+    let wat = format!(
+        r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32 i32) (result i32)
+    i32.const {MEMORY_ADDR} local.get 0 i32.store offset=0 align=4
+    i32.const {MEMORY_ADDR} local.get 1 i32.store offset=4 align=4
+    i32.const {MEMORY_ADDR} local.get 2 i32.store offset=8 align=4
+    i32.const {MEMORY_ADDR} i32.load offset=8 align=4))"#
     );
+    let mut test = compile_wat(&wat);
+    let result = eval_wat(&mut test, &SHARED_BASE_VALUES, |read| {
+        for (index, expected) in SHARED_BASE_VALUES.into_iter().enumerate() {
+            let addr = MEMORY_ADDR + 4 * index as u32;
+            let stored = read(addr).expect("the target memory cell was not written");
+            assert_eq!(stored, expected, "memory at {addr:#x}");
+        }
+    });
+    assert_eq!(result, SHARED_BASE_VALUES[2]);
 }
