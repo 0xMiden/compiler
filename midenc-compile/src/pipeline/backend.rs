@@ -20,7 +20,7 @@ use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
 use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
-use midenc_dialect_hir::transforms::Local2Reg;
+use midenc_dialect_hir::transforms::{Local2Reg, ShareBaseDivmod};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{
@@ -288,6 +288,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             //func_pm.add_pass(Box::new(ControlFlowSink));
             func_pm.add_pass(Box::new(Local2Reg));
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
+            func_pm.add_pass(Box::new(ShareBaseDivmod));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
@@ -301,6 +302,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             //func_pm.add_pass(Box::new(ControlFlowSink));
             func_pm.add_pass(Box::new(Local2Reg));
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
+            func_pm.add_pass(Box::new(ShareBaseDivmod));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
         }
@@ -775,8 +777,8 @@ mod tests {
     fn the_masm_legalization_precedes_final_operand_sinking() {
         let (component, context) = build_component();
         let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
-        let functions =
-            "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,canonicalizer";
+        let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,\
+                         share-base-divmod,canonicalizer";
         let last = "sink-operand-defs";
         assert_eq!(
             pipeline,
