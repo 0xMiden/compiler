@@ -761,6 +761,8 @@ mod tests {
             cm64,
             cm_implements,
             cm_canon_names,
+            cm_forward,
+            cm_accessors,
         } = NOTE_CODEC_WASM_FEATURES.inflate();
 
         for (name, required) in [
@@ -809,6 +811,8 @@ mod tests {
             ("component model 64-bit contexts", cm64),
             ("component model implements", cm_implements),
             ("component model canonical names", cm_canon_names),
+            ("component model forwarding", cm_forward),
+            ("component model accessors", cm_accessors),
             ("custom descriptors", custom_descriptors),
             ("compact imports", compact_imports),
         ] {

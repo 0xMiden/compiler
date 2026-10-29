@@ -983,6 +983,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 | wasmparser::Name::Element(_)
                 | wasmparser::Name::Field(_)
                 | wasmparser::Name::Tag(_)
+                | wasmparser::Name::Parameter(_)
+                | wasmparser::Name::TagParameter(_)
                 | wasmparser::Name::Unknown { .. } => {}
             }
         }
@@ -1075,7 +1077,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         let types = self.validator.types(0).unwrap();
         let ty = &types[id];
         assert!(ty.is_final);
-        assert!(ty.supertype_idx.is_none());
+        assert!(ty.supertype_idxs.is_empty());
         match &ty.composite_type.inner {
             CompositeInnerType::Func(ty) => {
                 let wasm = convert_func_type(ty);

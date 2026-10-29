@@ -7,7 +7,7 @@ use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{PACKAGE_NOTE_CODEC_SECTION_ID, package_note_codec_section_id};
 use wasmtime::{
     Config, Engine, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder, Trap,
-    component::{Component, Instance, Linker, WasmList, WasmStr},
+    component::{Component, Linker},
 };
 
 use crate::{
@@ -18,12 +18,6 @@ use crate::{
 
 /// Maximum bytes of Wasm stack available to one component call.
 const MAX_WASM_STACK_BYTES: usize = 512 * 1024;
-
-/// The versioned interface a note codec component exports.
-const CODEC_INTERFACE: &str = "miden:note-codec/codec@1.0.0";
-
-/// The discovery function of the codec interface.
-const SUPPORTED_TYPES: &str = "supported-types";
 
 /// Maximum instances one codec call store may hold.
 ///
@@ -219,8 +213,6 @@ impl ResourceLimiter for ComponentStore {
 struct ComponentInstance {
     /// The store that holds the fuel budget and the resource limits of this call.
     store: Store<ComponentStore>,
-    /// The raw instance, used by the calls that lift their results lazily.
-    instance: Instance,
     /// The generated typed bindings of the codec world.
     bindings: NoteCodec,
 }
@@ -239,11 +231,11 @@ impl ComponentRuntime {
         config.wasm_multi_value(true);
         // Validation policy: `NOTE_CODEC_WASM_FEATURES` decides what loads, and the call above
         // already applied it. The setters below repeat that policy in the engine wherever
-        // wasmtime exposes a setter. Threads, garbage collection, reference types and typed
-        // function references have no setter here, because wasmtime gates those setters behind
-        // Cargo features this crate does not enable. Another crate in the same build can turn
-        // those proposals back on by feature unification, which is why the accepted set is
-        // pinned in wasmparser instead of read back from the engine.
+        // wasmtime exposes a setter. Threads, garbage collection, exceptions, reference types
+        // and typed function references have no setter here, because wasmtime gates those
+        // setters behind Cargo features this crate does not enable. Another crate in the same
+        // build can turn those proposals back on by feature unification, which is why the
+        // accepted set is pinned in wasmparser instead of read back from the engine.
         config.wasm_simd(false);
         config.wasm_relaxed_simd(false);
         config.wasm_multi_memory(false);
@@ -254,13 +246,12 @@ impl ComponentRuntime {
         config.wasm_wide_arithmetic(false);
         config.wasm_shared_everything_threads(false);
         config.wasm_stack_switching(false);
-        config.wasm_exceptions(false);
         config.wasm_component_model_error_context(false);
         // Floats stay on: codecs parse and format decimal text. NaN canonicalization keeps
         // float results identical across hosts.
         config.cranelift_nan_canonicalization(true);
         config.max_wasm_stack(MAX_WASM_STACK_BYTES);
-        config.wasm_backtrace(false);
+        config.wasm_backtrace_max_frames(None);
         let engine = Engine::new(&config)
             .map_err(|error| component_error("create the Wasmtime engine", error))?;
         let component = Component::new(&engine, bytes)
@@ -299,49 +290,23 @@ impl ComponentRuntime {
             Ok(bindings) => bindings,
             Err(error) => return Err(start_failure(&store, error)),
         };
-        Ok(ComponentInstance {
-            store,
-            instance,
-            bindings,
-        })
+        Ok(ComponentInstance { store, bindings })
     }
 
     /// Queries the component's supported FQNs once during registry construction.
     ///
-    /// The call lifts its result lazily instead of going through the generated bindings. A
-    /// `list<string>` is the one result a codec can inflate far past every limit: the elements
-    /// are pointer and length pairs that may all alias one small region, so lifting the whole
-    /// list into owned strings allocates before any cap applies. The per-value calls return one
-    /// string or one felt list, which guest memory already bounds, so they keep the bindings.
+    /// The result is lifted into owned strings by the generated bindings before the caps below
+    /// apply. The call runs the guest post-return, which frees the result area, before it
+    /// returns, so no lazy cursor into guest memory survives it. A `list<string>` whose
+    /// elements alias one region can therefore inflate the host copy up to the product of the
+    /// element count and the guest memory limit before the count cap rejects it.
     fn supported_types(&self) -> Result<Vec<String>> {
         let ComponentInstance {
             mut store,
-            instance,
-            ..
+            bindings,
         } = self.instantiate()?;
-        let interface =
-            instance.get_export_index(&mut store, None, CODEC_INTERFACE).ok_or_else(|| {
-                Error::codec(
-                    CodecFailure::Trapped,
-                    format!("note codec component exports no `{CODEC_INTERFACE}`"),
-                )
-            })?;
-        let export = instance
-            .get_export_index(&mut store, Some(&interface), SUPPORTED_TYPES)
-            .ok_or_else(|| {
-                Error::codec(
-                    CodecFailure::Trapped,
-                    format!(
-                        "note codec component exports no `{SUPPORTED_TYPES}` in \
-                         `{CODEC_INTERFACE}`"
-                    ),
-                )
-            })?;
-        let supported_types = instance
-            .get_typed_func::<(), (WasmList<WasmStr>,)>(&mut store, &export)
-            .map_err(|error| component_error("find `supported-types`", error))?;
-        let (reported,) = match supported_types.call(&mut store, ()) {
-            Ok(reported) => reported,
+        let fqns = match bindings.miden_note_codec_codec().call_supported_types(&mut store) {
+            Ok(fqns) => fqns,
             Err(error) => {
                 return Err(Error::codec(
                     classify_failure(&store, &error),
@@ -349,40 +314,19 @@ impl ComponentRuntime {
                 ));
             }
         };
-
-        // Check the list length before any element is read, then take the cursors. A cursor
-        // holds a pointer and a length, so this copies nothing out of guest memory.
-        if reported.len() > self.limits.max_supported_types {
+        if fqns.len() > self.limits.max_supported_types {
             return Err(Error::codec(
                 CodecFailure::LimitExceeded,
                 format!(
                     "note codec component reported {} types; the limit is {}",
-                    reported.len(),
+                    fqns.len(),
                     self.limits.max_supported_types
                 ),
             ));
         }
-        let cursors = reported
-            .iter(&mut store)
-            .collect::<wasmtime::Result<Vec<_>>>()
-            .map_err(|error| component_error("read the reported type FQNs", error))?;
-
-        let mut fqns = Vec::with_capacity(cursors.len());
-        for cursor in cursors {
-            // `to_str` borrows guest memory for UTF-8, so the cap applies before the copy.
-            let fqn = cursor
-                .to_str(&store)
-                .map_err(|error| component_error("decode a reported type FQN", error))?;
-            ensure_returned_string_limit("type FQN", &fqn, self.limits.max_fqn_bytes)?;
-            fqns.push(fqn.into_owned());
+        for fqn in &fqns {
+            ensure_returned_string_limit("type FQN", fqn, self.limits.max_fqn_bytes)?;
         }
-        // Post-return executes guest cleanup under the same fuel and resource limits.
-        supported_types.post_return(&mut store).map_err(|error| {
-            Error::codec(
-                classify_failure(&store, &error),
-                format!("failed to finish `supported-types`: {error:#}"),
-            )
-        })?;
         Ok(fqns)
     }
 }
@@ -659,6 +603,8 @@ pub(crate) mod tests {
     use super::*;
 
     const WASM_TARGET: &str = "wasm32-wasip2";
+    /// The versioned interface a note codec component exports.
+    const CODEC_INTERFACE: &str = "miden:note-codec/codec@1.0.0";
     const FIXTURE_FQN: &str = "example:codec-schema/note-storage@1.0.0.ratio";
     const DIGEST_FQN: &str = "miden:base/core-types@1.0.0.digest";
     const FIXTURE_SCHEMA: &str = r#"
@@ -826,9 +772,9 @@ package miden:base@1.0.0 {
     }
 
     #[test]
-    fn discovery_checks_the_reported_length_before_it_lifts_a_string() {
-        // Every descriptor points at the same four bytes, so lifting the whole list first would
-        // allocate far past the limit that rejects it.
+    fn discovery_rejects_a_reported_count_over_the_limit() {
+        // Every descriptor points at the same four bytes, so the list is over the count limit
+        // while every element stays within the byte limit.
         let limits = CodecLimits::default();
         let reported = limits.max_supported_types + 1;
         let component = codec_shaped_component(&aliasing_descriptors(reported), "(i32.const 8)");
@@ -899,7 +845,7 @@ package miden:base@1.0.0 {
                 .expect_err("a failing post-return must reject codec discovery");
 
             assert!(
-                error.to_string().contains("finish `supported-types`"),
+                error.to_string().contains("failed in `supported-types`"),
                 "unexpected error: {error}"
             );
             assert_eq!(error.codec_failure(), Some(expected), "unexpected error: {error}");
