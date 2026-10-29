@@ -6,7 +6,7 @@ use miden_field::Felt;
 use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{PACKAGE_NOTE_CODEC_SECTION_ID, package_note_codec_section_id};
 use wasmtime::{
-    Config, Engine, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder, Trap,
+    Config, Engine, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder, Trap, WasmFeatures,
     component::{Component, Linker},
 };
 
@@ -84,6 +84,23 @@ impl Default for CodecLimits {
             max_returned_felts: 4_096,
             max_returned_string_bytes: 16 * 1024,
         }
+    }
+}
+
+impl CodecLimits {
+    /// Bytes wasmtime may allocate on the host while it lifts the results of one call.
+    ///
+    /// Wasmtime charges this budget before every host-side allocation a lift makes, so a result
+    /// whose elements alias one region of guest memory cannot inflate the host copy past it. The
+    /// budget admits every result within the caps: the descriptors and the bytes of
+    /// `max_supported_types` names of `max_fqn_bytes`, plus `max_returned_felts` felts and a
+    /// value string and an error string of `max_returned_string_bytes` each.
+    fn hostcall_fuel(&self) -> usize {
+        // A lifted list is charged one owned descriptor per element before any element is read.
+        self.max_supported_types
+            .saturating_mul(size_of::<String>().saturating_add(self.max_fqn_bytes))
+            .saturating_add(self.max_returned_felts.saturating_mul(size_of::<u64>()))
+            .saturating_add(self.max_returned_string_bytes.saturating_mul(2))
     }
 }
 
@@ -230,12 +247,19 @@ impl ComponentRuntime {
         config.wasm_bulk_memory(true);
         config.wasm_multi_value(true);
         // Validation policy: `NOTE_CODEC_WASM_FEATURES` decides what loads, and the call above
-        // already applied it. The setters below repeat that policy in the engine wherever
-        // wasmtime exposes a setter. Threads, garbage collection, exceptions, reference types
-        // and typed function references have no setter here, because wasmtime gates those
-        // setters behind Cargo features this crate does not enable. Another crate in the same
-        // build can turn those proposals back on by feature unification, which is why the
-        // accepted set is pinned in wasmparser instead of read back from the engine.
+        // already applied it. The setters below repeat that policy in the engine as a backstop.
+        // Threads, garbage collection, exceptions and typed function references go through the
+        // generic setter: wasmtime strips the first three itself while the `threads` and `gc`
+        // Cargo features are off, but another crate in the same build can turn those features
+        // back on by unification, which is also why the accepted set is pinned in wasmparser
+        // instead of read back from the engine.
+        config.wasm_features(
+            WasmFeatures::THREADS
+                | WasmFeatures::GC
+                | WasmFeatures::EXCEPTIONS
+                | WasmFeatures::FUNCTION_REFERENCES,
+            false,
+        );
         config.wasm_simd(false);
         config.wasm_relaxed_simd(false);
         config.wasm_multi_memory(false);
@@ -280,6 +304,7 @@ impl ComponentRuntime {
         store
             .set_fuel(self.limits.fuel)
             .map_err(|error| component_error("set the note codec fuel budget", error))?;
+        store.set_hostcall_fuel(self.limits.hostcall_fuel());
         // Instantiation runs the guest `_initialize` and every data-segment initializer under
         // the same fuel and store limits as an exported call, so it fails in the same classes.
         let instance = match linker.instantiate(&mut store, &self.component) {
@@ -295,11 +320,13 @@ impl ComponentRuntime {
 
     /// Queries the component's supported FQNs once during registry construction.
     ///
-    /// The result is lifted into owned strings by the generated bindings before the caps below
-    /// apply. The call runs the guest post-return, which frees the result area, before it
-    /// returns, so no lazy cursor into guest memory survives it. A `list<string>` whose
-    /// elements alias one region can therefore inflate the host copy up to the product of the
-    /// element count and the guest memory limit before the count cap rejects it.
+    /// The generated bindings lift the result into owned strings inside the call, and the call
+    /// runs the guest post-return before it returns, so nothing borrows guest memory afterwards.
+    /// A `list<string>` is the one result whose elements can alias one region and so inflate the
+    /// host copy past every limit; wasmtime charges each allocation of that lift against the
+    /// budget [`CodecLimits::hostcall_fuel`] sets on the store, so such a list is refused
+    /// before the host copies more than the caps admit. The caps below then bound what the
+    /// registry keeps.
     fn supported_types(&self) -> Result<Vec<String>> {
         let ComponentInstance {
             mut store,
@@ -503,6 +530,7 @@ fn classify_failure(store: &Store<ComponentStore>, error: &wasmtime::Error) -> C
         // Wasmtime applies the store instance, table, and memory counts without asking the
         // limiter, so that failure carries no trap and no recorded refusal.
         None if reports_store_count_limit(error) => CodecFailure::LimitExceeded,
+        None if reports_host_copy_budget(error) => CodecFailure::LimitExceeded,
         None => CodecFailure::Trapped,
     }
 }
@@ -510,6 +538,13 @@ fn classify_failure(store: &Store<ComponentStore>, error: &wasmtime::Error) -> C
 /// Returns true when one wasmtime error reports a store count that was reached.
 fn reports_store_count_limit(error: &wasmtime::Error) -> bool {
     format!("{error:#}").contains("resource limit exceeded")
+}
+
+/// Returns true when one wasmtime error reports that a lift reached the host copy budget.
+///
+/// Wasmtime keeps that error type private, so the message is the only handle on it.
+fn reports_host_copy_budget(error: &wasmtime::Error) -> bool {
+    format!("{error:#}").contains("fuel allocated for hostcalls has been exhausted")
 }
 
 /// Reports a component that did not reach its first exported call.
@@ -759,16 +794,69 @@ package miden:base@1.0.0 {
         wat::parse_str(text).unwrap()
     }
 
+    /// Returns core module text that reports `count` string descriptors, all aliasing the
+    /// `length` bytes at `ptr`. The list header lives at 8 and the descriptors from 16 on.
+    fn descriptors(count: usize, ptr: u32, length: u32) -> String {
+        let le = |value: u32| value.to_le_bytes().map(|byte| format!("\\{byte:02x}")).concat();
+        let descriptor = format!("{}{}", le(ptr), le(length)).repeat(count);
+        format!(
+            r#"(data (i32.const 0) "abcd")
+               (data (i32.const 8) "\10\00\00\00{}")
+               (data (i32.const 16) "{descriptor}")"#,
+            le(count as u32)
+        )
+    }
+
     /// Returns core module text that reports `count` string descriptors, all aliasing one
     /// four-byte string.
     fn aliasing_descriptors(count: usize) -> String {
-        let length = (count as u32).to_le_bytes().map(|byte| format!("\\{byte:02x}")).concat();
-        let descriptor = "\\00\\00\\00\\00\\04\\00\\00\\00".repeat(count);
-        format!(
-            r#"(data (i32.const 0) "abcd")
-               (data (i32.const 8) "\10\00\00\00{length}")
-               (data (i32.const 16) "{descriptor}")"#
-        )
+        descriptors(count, 0, 4)
+    }
+
+    #[test]
+    fn discovery_accepts_the_maximum_count_of_maximal_fqns() {
+        // Every descriptor covers the same zeroed region past the descriptor table, so each
+        // name is valid UTF-8 of exactly the byte cap, and the count is exactly the count cap.
+        let limits = CodecLimits::default();
+        let component = codec_shaped_component(
+            &descriptors(limits.max_supported_types, 2048, limits.max_fqn_bytes as u32),
+            "(i32.const 8)",
+        );
+
+        let fqns = ComponentRuntime::new(&component, limits.clone())
+            .unwrap()
+            .supported_types()
+            .expect("a list at both caps must be accepted");
+
+        assert_eq!(fqns.len(), limits.max_supported_types);
+        assert!(fqns.iter().all(|fqn| fqn.len() == limits.max_fqn_bytes));
+    }
+
+    #[test]
+    fn discovery_host_copies_are_budgeted_before_the_byte_cap() {
+        // The count is within its cap and every descriptor stays in bounds of the one-page
+        // memory, but together the names alias far more bytes than the host copy budget. The
+        // budget refuses the list inside the call, before the byte cap sees the first name.
+        let limits = CodecLimits::default();
+        let component = codec_shaped_component(
+            &descriptors(limits.max_supported_types, 2048, 60_000),
+            "(i32.const 8)",
+        );
+
+        let error = ComponentRuntime::new(&component, limits)
+            .unwrap()
+            .supported_types()
+            .expect_err("a list past the host copy budget must be refused");
+
+        assert!(
+            error.to_string().contains("failed in `supported-types`"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            error.codec_failure(),
+            Some(CodecFailure::LimitExceeded),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
