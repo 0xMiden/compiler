@@ -326,11 +326,8 @@ miden-protocol = { linkage = "dynamic", version = "0.17.2" }
 Each procedure of the component's interface is a `pub proc` with a typed signature and a role
 attribute: `@account_procedure` for the procedures notes, scripts and other components call, and
 `@auth_script` for the account's authentication procedure, which only the transaction kernel
-calls. Record types are declared with `pub type ... = struct`. The procedures are invoked with
-`call`, so they follow the padding discipline of the standard components: a procedure taking `n`
-stack elements starts with `[args, pad(16-n)]` and one returning `m` elements ends with
-`[results, pad(16-m)]`. An abridged version of the counter in
-`tests/fixtures/components/acme-counter-masm`, which keeps its count in one value slot:
+calls. Record types are declared with `pub type ... = struct`. An abridged version of the counter
+in `tests/fixtures/components/acme-counter-masm`, which keeps its count in one value slot:
 
 ```masm
 use miden::protocol::active_account
