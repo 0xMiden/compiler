@@ -32,8 +32,8 @@ fn aligned_i32_memory_uses_element_addresses() {
             builder.ret(Some(result), span).unwrap();
         });
 
-    // The byte->element conversion must be done inline (a CSE pass may legally merge the two
-    // conversions, hence no exact count), without falling back to the byte-space intrinsics.
+    // The byte->element conversion must be done inline, without falling back to the byte-space
+    // intrinsics.
     assert!(masm.contains("u32divmod"), "{masm}");
     assert!(!masm.contains("exec.::intrinsics::mem::load_sw"), "{masm}");
     assert!(!masm.contains("exec.::intrinsics::mem::store_sw"), "{masm}");
@@ -341,6 +341,9 @@ fn element_accesses_through_one_base_share_one_conversion() {
     let masm = test.masm_src();
     let entry = masm_procedure(&masm, "entrypoint");
     assert_eq!(entry.matches("u32divmod").count(), 1, "{entry}");
+    // The `u32assert` of the shared addition is the overflow check: `u32divmod` does not
+    // constrain its dividend to 32 bits in a proof, so without it a prover could pick an element
+    // address of 2^30 or more. It must stay exactly one, not "at least one".
     assert_eq!(entry.matches("u32assert").count(), 1, "{entry}");
     assert_eq!(entry.matches(ALIGNMENT_FAILURE).count(), 1, "{entry}");
 
@@ -360,8 +363,11 @@ fn element_accesses_through_one_base_share_one_conversion() {
 fn shared_conversion_reaches_the_last_byte_addressable_element() {
     let mut test = compile_wat(SHARED_BASE_ACCESSES);
     let result = eval_shared_base_accesses(&mut test, 0xffff_fff4, |read| {
-        let stored = read(0xffff_fffc).expect("the last element was not written");
-        assert_eq!(stored, SHARED_BASE_VALUES[2]);
+        for (index, expected) in SHARED_BASE_VALUES.into_iter().enumerate() {
+            let addr = 0xffff_fff4 + 4 * index as u32;
+            let stored = read(addr).expect("the target memory cell was not written");
+            assert_eq!(stored, expected, "memory at {addr:#x}");
+        }
     });
     assert_eq!(result, SHARED_BASE_VALUES[2]);
 }
@@ -414,6 +420,31 @@ fn local_set_splits_the_accesses_through_a_local() {
         assert_ne!(read(addr0 + 8), Some(v2), "v2 was stored through the stale base");
     });
     assert_eq!(result, v2);
+}
+
+/// A Wasm function `(addr0, addr1, cond) -> i32` that stores 7 at offset 0 through local 0
+/// holding `addr0`, sets local 0 to `addr1` in a branch taken when `cond` is not zero, then stores
+/// 9 at offset 4 through local 0 and returns the value at `addr1 + 4`.
+const LOCAL_SET_IN_BRANCH_ACCESSES: &str = r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32 i32) (result i32)
+    local.get 0 i32.const 7 i32.store offset=0 align=4
+    local.get 2 (if (then local.get 1 local.set 0))
+    local.get 0 i32.const 9 i32.store offset=4 align=4
+    local.get 1 i32.load offset=4 align=4))"#;
+
+/// Verifies that a `local.set` of the base in a branch between two accesses through a local also
+/// keeps them from sharing a conversion: sharing one would store 9 at `addr0 + 4`.
+#[test]
+fn local_set_in_a_branch_splits_the_accesses_through_a_local() {
+    let mut test = compile_wat(LOCAL_SET_IN_BRANCH_ACCESSES);
+    let addr0 = MEMORY_ADDR;
+    let addr1 = MEMORY_ADDR + 64;
+    let result = eval_wat(&mut test, &[addr0, addr1, 1], |read| {
+        assert_eq!(read(addr0), Some(7), "memory at {addr0:#x}");
+        assert_ne!(read(addr0 + 4), Some(9), "9 was stored through the stale base");
+    });
+    assert_eq!(result, 9);
 }
 
 /// Verifies that element-aligned accesses through a constant base materialized at each access
