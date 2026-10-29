@@ -159,7 +159,8 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 
 - Fixed pipeline at every level, on a function pass manager
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
-  SinkOperandDefs → Local2Reg → LiftControlFlowToSCF → Canonicalizer →
+  SinkOperandDefs → Local2Reg → LiftControlFlowToSCF → ShareBaseDivmod →
+  Canonicalizer →
   component-level LegalizeForMasm → final SinkOperandDefs. `ControlFlowSink` and
   DCE are commented out; there is no middle-end knob: `--optimize` sets only
   the guest LLVM level (`cargo_profile_opt_level`,
