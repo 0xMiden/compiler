@@ -1,22 +1,18 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, Op, Operation, OperationName,
-    OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec,
-    Spanned, Symbol, TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, FxHashMap, Op, OperationName, OperationRef, ProgramPoint,
+    RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Symbol, TraceTarget, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
-        debuginfo::{
-            DIBuilder, DebugDeclare, DebugInfoMutation, DebugInfoUpdate, DebugKill, DebugValue,
-            attributes::{ExpressionOp, FrameBase, INLINE_CALL_CHAIN_ATTR_NAME, Variable},
-        },
+        debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
-    patterns::{RewriterExt, RewriterImpl, TracingRewriterListener},
+    patterns::{RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
 };
 
-use crate::{LoadLocal, StoreLocal};
+use crate::{LoadLocal, LocalAddress, StoreLocal};
 
 /// The value `store` writes, read from the operation: a promotion earlier in the same run may have
 /// replaced it, and the operation, not a copy taken during the scan, holds the current one.
@@ -29,156 +25,7 @@ fn stored_value(store: OperationRef) -> ValueRef {
         .as_value_ref()
 }
 
-fn debug_variable(operation: &Operation) -> Option<Variable> {
-    let variable = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
-        declare.variable()
-    } else if let Some(value) = operation.downcast_ref::<DebugValue>() {
-        value.variable()
-    } else {
-        operation.downcast_ref::<DebugKill>()?.variable()
-    };
-    Some(variable.as_value().clone())
-}
-
-fn invalidate_debug_reference<R: Rewriter>(rewriter: &mut R, reference: OperationRef) {
-    let _debug_update = DebugInfoMutation::new(reference, DebugInfoUpdate::Invalidate);
-    let (variable, span) = {
-        let operation = reference.borrow();
-        (debug_variable(&operation).unwrap(), operation.span())
-    };
-    {
-        let mut scope = rewriter.with_inline_call_chain(reference);
-        let ip = *scope.insertion_point();
-        scope.set_insertion_point_before(reference);
-        let _ = scope.debug_kill(variable, span);
-        scope.restore_insertion_point(ip);
-    }
-    rewriter.erase_op(reference);
-}
-
-/// Rewrite debug references to `local` so they follow the promoted SSA values.
-///
-/// When a local is promoted to an SSA value (or its dead stores are erased), the memory slot the
-/// debug operation points at is no longer written, so a debugger following it would read stale or
-/// uninitialized memory. Direct local references become value records at their original positions
-/// and follow stores only while that binding is active. References that cannot be recovered accurately
-/// become kills, rather than keeping obsolete locations or preventing promotion.
-fn convert_debug_references_for_local<R: Rewriter>(
-    rewriter: &mut R,
-    function_op: OperationRef,
-    local: &LocalVariable,
-    stores: &[OperationRef],
-) {
-    let local_index = local.as_usize() as u32;
-    let mut references = SmallVec::<[OperationRef; 2]>::new();
-    function_op.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
-        let operation = op.borrow();
-        let expression = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
-            Some(declare.expression())
-        } else {
-            operation.downcast_ref::<DebugValue>().map(|value| value.expression())
-        };
-        if let Some(expr) = expression
-            && expr.as_value().operations.iter().any(|op| match op {
-                ExpressionOp::LocalSlot(index) => *index == local_index,
-                ExpressionOp::FrameBase {
-                    base: FrameBase::LocalSlot(index),
-                    ..
-                } => *index == local_index,
-                _ => false,
-            })
-        {
-            references.push(op);
-        }
-    });
-
-    if references.is_empty() {
-        return;
-    }
-
-    let _debug_update = DebugInfoMutation::for_operations(&references, DebugInfoUpdate::Salvage);
-
-    references.retain(|reference| {
-        let safe = {
-            let operation = reference.borrow();
-            let expression = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
-                declare.expression()
-            } else {
-                operation.downcast_ref::<DebugValue>().unwrap().expression()
-            };
-            matches!(expression.as_value().operations.as_slice(),
-                [ExpressionOp::LocalSlot(index)]
-                    | [ExpressionOp::LocalSlot(index), ExpressionOp::StackValue]
-                    if *index == local_index)
-        };
-        if !safe {
-            invalidate_debug_reference(rewriter, *reference);
-        }
-        safe
-    });
-
-    if references.is_empty() {
-        return;
-    }
-
-    let entry = function_op.borrow().downcast_ref::<Function>().unwrap().entry_block();
-    if entry.borrow().predecessors().next().is_some()
-        || references
-            .iter()
-            .chain(stores.iter())
-            .any(|operation| operation.parent() != Some(entry))
-        || entry.borrow().body().iter().any(|operation| {
-            !operation.regions().is_empty() || operation.implements::<dyn CallOpInterface>()
-        })
-    {
-        for reference in references {
-            invalidate_debug_reference(rewriter, reference);
-        }
-        return;
-    }
-
-    let mut replacements = SmallVec::<[(OperationRef, OperationRef, Option<ValueRef>); 4]>::new();
-    let mut active = SmallVec::<[OperationRef; 2]>::new();
-    let mut current_value = None;
-    for operation in entry.borrow().body() {
-        let operation_ref = operation.as_operation_ref();
-        if let Some(store) = operation.downcast_ref::<StoreLocal>()
-            && *store.get_local() == *local
-        {
-            current_value = Some(store.value().as_value_ref());
-            replacements
-                .extend(active.iter().map(|reference| (operation_ref, *reference, current_value)));
-            continue;
-        }
-        if let Some(variable) = debug_variable(&operation) {
-            let chain = operation.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
-            active.retain(|reference| {
-                let reference = reference.borrow();
-                debug_variable(&reference).unwrap().name != variable.name
-                    || reference.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME) != chain
-            });
-        }
-        if references.contains(&operation_ref) {
-            replacements.push((operation_ref, operation_ref, current_value));
-            active.push(operation_ref);
-        }
-    }
-
-    for (anchor, reference, value) in replacements {
-        let variable = debug_variable(&reference.borrow()).unwrap();
-        let span = anchor.borrow().span();
-        let mut scope = rewriter.with_inline_call_chain(reference);
-        scope.set_insertion_point_before(anchor);
-        if let Some(value) = value {
-            let _ = scope.debug_value(value, variable, span);
-        } else {
-            let _ = scope.debug_kill(variable, span);
-        }
-    }
-    for reference in references {
-        rewriter.erase_op(reference);
-    }
-}
+mod debug_info;
 
 #[derive(Default)]
 pub struct Local2Reg;
@@ -246,10 +93,13 @@ impl Pass for Local2Reg {
             .with_listener(TracingRewriterListener);
 
         let mut loaded = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
+        let mut address_taken = SmallVec::<[LocalVariable; 4]>::new();
         let mut stored = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
             let operation = op.borrow();
-            if let Some(load) = operation.downcast_ref::<LoadLocal>() {
+            if let Some(address) = operation.downcast_ref::<LocalAddress>() {
+                address_taken.push(*address.get_local());
+            } else if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
                 log::trace!(
                     target: &trace_target,
@@ -292,6 +142,10 @@ impl Pass for Local2Reg {
 
         let mut changed = PostPassStatus::Unchanged;
         'next_local: for local in locals {
+            // Indirect accesses and callees can observe or modify an address-taken slot.
+            if address_taken.contains(&local) {
+                continue;
+            }
             if let Some(loads) = loaded.get(&local) {
                 if loads.len() > 1 {
                     // Ignore locals that are loaded multiple times for now
@@ -398,7 +252,13 @@ impl Pass for Local2Reg {
                 //
                 // Any debug declaration pointing at the promoted slot must follow the value into
                 // its SSA register, since the slot will no longer be written.
-                convert_debug_references_for_local(&mut rewriter, op, &local, &[store]);
+                debug_info::convert(
+                    &mut rewriter,
+                    op,
+                    local,
+                    &[store],
+                    state.analysis_manager().clone(),
+                )?;
                 // Read before erasing: erasing an operation clears its operands
                 let value = stored_value(store);
                 rewriter.erase_op(store);
@@ -412,7 +272,13 @@ impl Pass for Local2Reg {
                 //
                 // We rely on region simplification/canonicalization to remove any ops/values made
                 // dead by erasing these stores.
-                convert_debug_references_for_local(&mut rewriter, op, &local, stores);
+                debug_info::convert(
+                    &mut rewriter,
+                    op,
+                    local,
+                    stores,
+                    state.analysis_manager().clone(),
+                )?;
                 for store in stores.iter() {
                     changed = PostPassStatus::Changed;
                     log::trace!(
@@ -442,14 +308,201 @@ mod tests {
     use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        Op, SourceSpan, Type, ValueRef,
+        Op, OpPrinter, RegionBranchOpInterface, RegionBranchPoint, RegionSuccessorInfo,
+        RegionSuccessorIter, SourceSpan, SuccessorOperandRange, Type, ValueRef,
+        derive::{OpPrinter, operation},
         dialects::builtin::{BuiltinOpBuilder, Function},
         print::AsmPrinter,
         testing::Test,
+        traits::{NoTerminator, ReturnLike, SingleBlock, Terminator},
     };
 
     use super::Local2Reg;
-    use crate::HirOpBuilder;
+    use crate::{HirDialect, HirOpBuilder};
+
+    // A test-only region owner without a control-flow interface exercises the pessimistic
+    // dense transfer without adding unsupported executable behavior to the interpreter.
+    #[derive(OpPrinter)]
+    #[operation(
+        dialect = HirDialect,
+        traits(SingleBlock, NoTerminator),
+        implements(OpPrinter)
+    )]
+    pub struct OpaqueRegion {
+        #[region]
+        body: midenc_hir::RegionRef,
+    }
+
+    // The parent exposes the loop's control flow, while its terminator deliberately omits the
+    // optional operand-mapping interface. Analyses must not guess its loop-carried values.
+    #[derive(OpPrinter)]
+    #[operation(
+        dialect = HirDialect,
+        traits(SingleBlock),
+        implements(RegionBranchOpInterface, OpPrinter)
+    )]
+    pub struct UnmappedLoop {
+        #[operand]
+        init: midenc_hir::traits::AnyType,
+        #[region]
+        body: midenc_hir::RegionRef,
+    }
+
+    impl RegionBranchOpInterface for UnmappedLoop {
+        fn get_entry_successor_operands(&self, _: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+            SuccessorOperandRange::forward(self.operands().all())
+        }
+
+        fn get_successor_regions(&self, _: RegionBranchPoint) -> RegionSuccessorIter<'_> {
+            RegionSuccessorIter::new(
+                self.as_operation(),
+                [RegionSuccessorInfo::Entering(self.body().as_region_ref())],
+            )
+        }
+    }
+
+    #[derive(OpPrinter)]
+    #[operation(dialect = HirDialect, traits(Terminator, ReturnLike), implements(OpPrinter))]
+    pub struct UnmappedContinue {
+        #[operand]
+        next: midenc_hir::traits::AnyType,
+    }
+
+    #[test]
+    fn unmapped_region_backedge_invalidates_previous_iteration_alias() {
+        use midenc_hir::{
+            Builder, BuilderExt,
+            dialects::debuginfo::{
+                DIBuilder, DebugKill,
+                attributes::{Expression, ExpressionOp, Variable},
+            },
+        };
+        let mut test = Test::new("unmapped_loop", &[Type::U32], &[Type::U32]);
+        let body;
+        {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let input = entry.borrow().arguments()[0] as ValueRef;
+            let local = builder.alloc_local(Type::U32);
+            builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            let owner = builder.builder_mut().create::<UnmappedLoop, _>(SourceSpan::UNKNOWN)(input)
+                .unwrap();
+            let region = owner.borrow().body().as_region_ref();
+            body = builder.builder_mut().create_block(region, None, &[Type::U32]);
+            builder.switch_to_block(body);
+            let argument = body.borrow().arguments()[0] as ValueRef;
+            builder
+                .builder_mut()
+                .debug_declare(
+                    Variable::default(),
+                    Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]),
+                    SourceSpan::UNKNOWN,
+                )
+                .unwrap();
+            builder.store_local(local, argument, SourceSpan::UNKNOWN).unwrap();
+            let next = builder.u32(7, SourceSpan::UNKNOWN);
+            builder.builder_mut().create::<UnmappedContinue, _>(SourceSpan::UNKNOWN)(next).unwrap();
+            builder.switch_to_block(entry);
+            builder.ret([input], SourceSpan::UNKNOWN).unwrap();
+        }
+        test.apply_pass::<Local2Reg>(true).unwrap();
+        assert!(
+            body.borrow().body().iter().next().unwrap().is::<DebugKill>(),
+            "the previous iteration's local must not be described by the new region argument"
+        );
+        assert!(body.borrow().body().iter().all(|op| !op.is::<crate::StoreLocal>()));
+    }
+
+    #[test]
+    fn unknown_region_invalidates_incoming_and_outgoing_local_recovery() {
+        use midenc_hir::{
+            Builder, BuilderExt,
+            dialects::debuginfo::{
+                DIBuilder, DebugKill,
+                attributes::{Expression, ExpressionOp, Variable},
+            },
+        };
+        let mut test = Test::new("opaque_region", &[Type::U32], &[Type::U32]);
+        let owner;
+        {
+            let mut builder = test.function_builder();
+            let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let local = builder.alloc_local(Type::U32);
+            let variable = Variable::default();
+            let expression = Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]);
+            builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            builder
+                .builder_mut()
+                .debug_declare(variable.clone(), expression.clone(), SourceSpan::UNKNOWN)
+                .unwrap();
+            owner =
+                builder.builder_mut().create::<OpaqueRegion, ()>(SourceSpan::UNKNOWN)().unwrap();
+            let entry = builder.entry_block();
+            let region = owner.borrow().body().as_region_ref();
+            let body = builder.builder_mut().create_block(region, None, &[]);
+            builder.switch_to_block(body);
+            builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            builder.switch_to_block(entry);
+            builder
+                .builder_mut()
+                .debug_declare(variable, expression, SourceSpan::UNKNOWN)
+                .unwrap();
+            builder.ret([input], SourceSpan::UNKNOWN).unwrap();
+        }
+        test.apply_pass::<Local2Reg>(true).unwrap();
+        assert!(
+            owner.borrow().body().entry().body().iter().any(|op| op.is::<DebugKill>()),
+            "an erased nested store must invalidate a possibly active incoming binding"
+        );
+        assert!(
+            owner.as_operation_ref().next().unwrap().borrow().is::<DebugKill>(),
+            "the unknown owner cannot preserve the incoming SSA recovery"
+        );
+    }
+
+    #[test]
+    fn preserves_address_taken_local_stores() {
+        use midenc_hir::dialects::debuginfo::{
+            DIBuilder, DebugDeclare,
+            attributes::{Expression, ExpressionOp, Variable},
+        };
+        for with_debug in [false, true] {
+            for with_direct_load in [false, true] {
+                let mut test = Test::new("address_taken", &[Type::U32], &[Type::U32]);
+                {
+                    let mut builder = test.function_builder();
+                    let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                    let local = builder.alloc_local(Type::U32);
+                    builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+                    if with_debug {
+                        builder
+                            .builder_mut()
+                            .debug_declare(
+                                Variable::default(),
+                                Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]),
+                                SourceSpan::UNKNOWN,
+                            )
+                            .unwrap();
+                    }
+                    if with_direct_load {
+                        builder.load_local(local, SourceSpan::UNKNOWN).unwrap();
+                    }
+                    let address = builder.local_address(local, SourceSpan::UNKNOWN).unwrap();
+                    let value = builder.load(address, SourceSpan::UNKNOWN).unwrap();
+                    builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+                }
+                test.apply_pass::<Local2Reg>(true).unwrap();
+                let mut stores = 0;
+                let mut declarations = 0;
+                test.function().borrow().as_operation().postwalk_all(|op| {
+                    stores += usize::from(op.is::<crate::StoreLocal>());
+                    declarations += usize::from(op.is::<DebugDeclare>());
+                });
+                assert_eq!(stores, 1, "an indirect read still depends on the store");
+                assert_eq!(declarations, usize::from(with_debug));
+            }
+        }
+    }
 
     #[test]
     fn promotes_fpi_inputs_and_preserves_semantic_operand_order() {

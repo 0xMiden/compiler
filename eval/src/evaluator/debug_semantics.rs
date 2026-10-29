@@ -9,7 +9,7 @@ use midenc_hir::{
         debuginfo::{
             DebugDeclare, DebugInfoMutation, DebugInfoUpdate, DebugKill, DebugValue,
             attributes::{
-                Expression, ExpressionOp, INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain,
+                Expression, ExpressionOp, FrameBase, INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain,
                 InlineCallChainAttr, Variable,
             },
         },
@@ -52,6 +52,7 @@ enum Location {
     Value {
         seed: Option<Value>,
         expression: Expression,
+        ty: Option<Type>,
     },
     Killed,
 }
@@ -110,6 +111,7 @@ impl DebugTrace {
                 Location::Value {
                     seed: Some(evaluator.get_value(&debug.value().as_value_ref())?),
                     expression: debug.expression().as_value().clone(),
+                    ty: debug.variable().as_value().ty.clone(),
                 },
             ))
         } else if let Some(debug) = operation.downcast_ref::<DebugDeclare>() {
@@ -118,6 +120,7 @@ impl DebugTrace {
                 Location::Value {
                     seed: None,
                     expression: debug.expression().as_value().clone(),
+                    ty: debug.variable().as_value().ty.clone(),
                 },
             ))
         } else {
@@ -134,6 +137,12 @@ impl DebugTrace {
                     if !matches!(
                         operator,
                         ExpressionOp::LocalSlot(_)
+                            | ExpressionOp::FrameBase {
+                                base: FrameBase::LocalSlot(_),
+                                ..
+                            }
+                            | ExpressionOp::Address { .. }
+                            | ExpressionOp::Deref
                             | ExpressionOp::ConstU64(_)
                             | ExpressionOp::PlusUConst(_)
                             | ExpressionOp::Plus
@@ -183,47 +192,107 @@ fn resolve(
     frame: &CallFrame,
     evaluator: &HirEvaluator,
 ) -> Result<Observation, Report> {
-    let Location::Value { seed, expression } = location else {
+    let Location::Value {
+        seed,
+        expression,
+        ty,
+    } = location
+    else {
         return Ok(Observation::Unavailable);
     };
-    let mut values = seed.iter().copied().collect::<Vec<_>>();
+    // A source-bearing expression supplies its own input. Otherwise the captured SSA value
+    // supplies the one missing operand, exactly as in debug expression lowering.
+    let mut depth = 0isize;
+    let mut required = 0isize;
     for operator in &expression.operations {
+        let (inputs, outputs) = match operator {
+            ExpressionOp::Plus | ExpressionOp::Minus => (2, 1),
+            ExpressionOp::PlusUConst(_) | ExpressionOp::Deref | ExpressionOp::StackValue => (1, 1),
+            _ => (0, 1),
+        };
+        required = required.max(inputs - depth);
+        depth += outputs - inputs;
+    }
+    let mut values = if expression.is_empty() || required == 1 {
+        seed.iter().map(|value| (*value, false)).collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let read_local = |index: u32| -> Result<Value, Report> {
+        let callee = frame.callee();
+        let function = callee.downcast_ref::<Function>().unwrap();
+        let local = function.iter_locals().nth(index as usize).ok_or_else(|| {
+            Report::msg(format!("debug semantic test references missing local {index}"))
+        })?;
+        frame.read_local(&local, evaluator.current_span(), &evaluator.context)
+    };
+    let read_address = |value: Value, ty: &Type| -> Result<Value, Report> {
+        let address = u32::try_from(unsigned(value)?)
+            .map_err(|_| Report::msg("debug address exceeds u32"))?;
+        evaluator.read_memory(address, ty)
+    };
+    for (index, operator) in expression.operations.iter().enumerate() {
         match operator {
-            ExpressionOp::LocalSlot(index) => {
-                let callee = frame.callee();
-                let function = callee.downcast_ref::<Function>().unwrap();
-                let local = function.iter_locals().nth(*index as usize).ok_or_else(|| {
-                    Report::msg(format!("debug semantic test references missing local {index}"))
-                })?;
-                values.push(frame.read_local(
-                    &local,
-                    evaluator.current_span(),
-                    &evaluator.context,
-                )?);
+            ExpressionOp::LocalSlot(index) => values.push((read_local(*index)?, false)),
+            ExpressionOp::FrameBase {
+                base: FrameBase::LocalSlot(index),
+                byte_offset,
+            } => {
+                let base = read_local(*index)?;
+                let address = unsigned(base)?.checked_add_signed(*byte_offset);
+                values.push((arithmetic_result(address, &base.ty())?, true));
             }
-            ExpressionOp::ConstU64(value) => values.push((*value).into()),
+            ExpressionOp::Address { address } => values.push(((*address).into(), true)),
+            ExpressionOp::ConstU64(value) => values.push(((*value).into(), false)),
             ExpressionOp::PlusUConst(offset) => {
-                let value = values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
+                let (value, address) =
+                    values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
                 let result = unsigned(value)?.checked_add(*offset);
-                values.push(arithmetic_result(result, &value.ty())?);
+                values.push((arithmetic_result(result, &value.ty())?, address));
             }
             ExpressionOp::Plus | ExpressionOp::Minus => {
-                let rhs = values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
-                let lhs = values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
-                let result = if matches!(operator, ExpressionOp::Plus) {
-                    unsigned(lhs)?.checked_add(unsigned(rhs)?)
+                let (rhs, rhs_address) =
+                    values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
+                let (lhs, lhs_address) =
+                    values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
+                let (result, address) = if matches!(operator, ExpressionOp::Plus) {
+                    if lhs_address && rhs_address {
+                        return Err(Report::msg("adding two debug addresses"));
+                    }
+                    (unsigned(lhs)?.checked_add(unsigned(rhs)?), lhs_address || rhs_address)
                 } else {
-                    unsigned(lhs)?.checked_sub(unsigned(rhs)?)
+                    if !lhs_address && rhs_address {
+                        return Err(Report::msg("subtracting address from debug value"));
+                    }
+                    (unsigned(lhs)?.checked_sub(unsigned(rhs)?), lhs_address && !rhs_address)
                 };
-                values.push(arithmetic_result(result, &lhs.ty())?);
+                values.push((arithmetic_result(result, &lhs.ty())?, address));
             }
-            ExpressionOp::StackValue => (),
+            ExpressionOp::Deref => {
+                let (value, address) =
+                    values.pop().ok_or_else(|| Report::msg("empty expression stack"))?;
+                // An intermediate dereference reads a byte-address pointer. A terminal scalar
+                // dereference uses the source type. Deref itself preserves the location kind.
+                let terminal = index + 1 == expression.operations.len();
+                let read_ty = if terminal && !address {
+                    ty.as_ref().unwrap_or(&Type::U32)
+                } else {
+                    &Type::U32
+                };
+                values.push((read_address(value, read_ty)?, address));
+            }
+            ExpressionOp::StackValue => {
+                values.last_mut().ok_or_else(|| Report::msg("empty expression stack"))?.1 = false;
+            }
             _ => unreachable!("expression operators were validated when recorded"),
         }
     }
     match values.as_slice() {
-        [Value::Immediate(value)] => Ok(Observation::Value((*value).into())),
-        [Value::Poison { .. }] => Ok(Observation::Unavailable),
+        [(Value::Poison { .. }, _)] => Ok(Observation::Unavailable),
+        [(value, true)] => {
+            Ok(Observation::Value(read_address(*value, ty.as_ref().unwrap_or(&Type::U32))?))
+        }
+        [(value, false)] => Ok(Observation::Value(*value)),
         _ => Err(Report::msg("debug semantic test expression must produce exactly one value")),
     }
 }
@@ -1407,5 +1476,206 @@ fn local_promotion_preserves_values_wider_than_one_felt() -> Result<(), Report> 
         .map(|value| vec![value.into()])
         .collect::<Vec<_>>();
     compare_rewrite(&scenario, &inputs, vec![Box::new(hir::transforms::Local2Reg)], &[])?;
+    Ok(())
+}
+
+#[test]
+fn local_promotion_recovers_at_program_points() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-program-points.hir");
+    for name in [
+        "with_call",
+        "same_join",
+        "semantic_join",
+        "region_join",
+        "unrelated_region",
+        "region_loop",
+        "matching_branch_bindings",
+        "loop_updates",
+        "loop_carried",
+        "nonentry_pair",
+    ] {
+        let scenario = Scenario::new(source, name)?;
+        compare_rewrite(
+            &scenario,
+            &[vec![7u32.into(), true.into()], vec![42u32.into(), false.into()]],
+            vec![Box::new(hir::transforms::Local2Reg)],
+            &[],
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn local_promotion_preserves_frame_base_address_semantics() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-frame-base.hir");
+    for (name, base, first, last) in [
+        ("zero", 16u32, 7u32, 99u32),
+        ("positive", 12, 7, 99),
+        ("negative", 20, 7, 99),
+        ("address", 12, 16, 16),
+        ("indirect", 8, 7, 99),
+        ("indirect_value", 8, 16, 16),
+    ] {
+        let scenario = Scenario::new(source, name)?;
+        let expected = scenario.evaluate(&[base.into()])?;
+        assert_eq!(
+            expected.snapshots[0].frames[0].variables[0].1,
+            Observation::Value(first.into())
+        );
+        assert_eq!(expected.snapshots[1].frames[0].variables[0].1, Observation::Value(last.into()));
+        compare_rewrite(
+            &scenario,
+            &[vec![base.into()]],
+            vec![Box::new(hir::transforms::Local2Reg)],
+            &[],
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn local_promotion_invalidates_ambiguous_joins() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-program-points.hir");
+    for name in ["ambiguous_value", "conditional_kill"] {
+        let scenario = Scenario::new(source, name)?;
+        let inputs = [vec![7u32.into(), true.into()], vec![42u32.into(), false.into()]];
+        let before = inputs
+            .iter()
+            .map(|args| scenario.evaluate(args))
+            .collect::<Result<Vec<_>, _>>()?;
+        scenario.rewrite(vec![Box::new(hir::transforms::Local2Reg)])?;
+        for (args, mut expected) in inputs.iter().zip(before) {
+            for snapshot in &mut expected.snapshots {
+                for (_, observation) in &mut snapshot.frames[0].variables {
+                    *observation = Observation::Unavailable;
+                }
+            }
+            expected.compare(&scenario.evaluate(args)?)?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn local_promotion_does_not_reuse_previous_iteration_arguments() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-program-points.hir");
+    let scenario = Scenario::new(source, "loop_stale_argument")?;
+    let args = [3u32.into(), true.into()];
+    let mut expected = scenario.evaluate(&args)?;
+    scenario.rewrite(vec![Box::new(hir::transforms::Local2Reg)])?;
+    let actual = scenario.evaluate(&args)?;
+    for (before, after) in expected.snapshots.iter_mut().zip(&actual.snapshots) {
+        let observation = &after.frames[0].variables[0].1;
+        if *observation == Observation::Unavailable {
+            before.frames[0].variables[0].1 = Observation::Unavailable;
+        }
+    }
+    expected.compare(&actual)?;
+    assert!(
+        actual
+            .snapshots
+            .iter()
+            .filter(|snapshot| snapshot.checkpoint == Checkpoint::Marker(1))
+            .all(|snapshot| snapshot.frames[0].variables[0].1 == Observation::Unavailable)
+    );
+    Ok(())
+}
+
+#[test]
+fn local_promotion_preserves_binding_lifetimes_and_inline_owners() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-debug-lifetimes.hir");
+    for (name, args) in [
+        ("after_kill", vec![7u32.into(), 42u32.into()]),
+        ("declaration_point", vec![7u32.into()]),
+        ("reused_slot", vec![7u32.into(), 42u32.into()]),
+        ("value_reassignment", vec![7u32.into(), 42u32.into(), 9u32.into()]),
+        ("updates_while_active", vec![7u32.into(), 42u32.into()]),
+        ("uninitialized", vec![7u32.into()]),
+        ("changes_storage", vec![7u32.into(), 42u32.into(), 9u32.into()]),
+        ("value_uses_slot_contents", vec![7u32.into(), 42u32.into(), 9u32.into()]),
+        ("inline_bindings", vec![7u32.into(), 42u32.into()]),
+        ("shadow_bindings", vec![7u32.into(), 42u32.into()]),
+    ] {
+        let scenario = Scenario::new(source, name)?;
+        compare_rewrite(&scenario, &[args], vec![Box::new(hir::transforms::Local2Reg)], &[])?;
+    }
+    Ok(())
+}
+
+#[test]
+fn local_promotion_executable_code_is_independent_of_debug_records() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-program-points.hir");
+    let stripped = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("di."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for name in [
+        "with_call",
+        "same_join",
+        "semantic_join",
+        "region_join",
+        "unrelated_region",
+        "region_loop",
+        "matching_branch_bindings",
+        "ambiguous_value",
+        "conditional_kill",
+        "loop_updates",
+        "loop_carried",
+        "loop_stale_argument",
+        "nonentry_pair",
+    ] {
+        let recorded = Scenario::new(source, name)?;
+        let plain = Scenario::new(&stripped, name)?;
+        recorded.rewrite(vec![Box::new(hir::transforms::Local2Reg)])?;
+        plain.rewrite(vec![Box::new(hir::transforms::Local2Reg)])?;
+        let executable = recorded
+            .function
+            .borrow()
+            .as_operation()
+            .to_string()
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("di."))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(executable, plain.function.borrow().as_operation().to_string(), "{name}");
+        recorded.function.borrow().as_operation().postwalk_all(|op| {
+            assert!(
+                !op.is::<hir::StoreLocal>() && !op.is::<hir::LoadLocal>(),
+                "{name}: executable local accesses remain"
+            );
+        });
+    }
+    Ok(())
+}
+
+#[test]
+fn local_promotion_resolves_chained_debug_operands_after_each_rewrite() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-chained-locals.hir");
+    let scenario = Scenario::new(source, "l2r_chain_debug")?;
+    compare_rewrite(
+        &scenario,
+        &[vec![7u32.into()], vec![u32::MAX.into()]],
+        vec![Box::new(hir::transforms::Local2Reg)],
+        &[],
+    )?;
+    Ok(())
+}
+
+#[test]
+fn local_promotion_preserves_wide_frame_base_reads() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-frame-base.hir");
+    let scenario = Scenario::new(source, "wide")?;
+    let value = 0x123456789abcdef0u64;
+    let before = compare_rewrite(
+        &scenario,
+        &[vec![16u32.into(), value.into()]],
+        vec![Box::new(hir::transforms::Local2Reg)],
+        &[],
+    )?;
+    assert_eq!(
+        before[0].snapshots[0].frames[0].variables[0].1,
+        Observation::Value(value.into())
+    );
     Ok(())
 }

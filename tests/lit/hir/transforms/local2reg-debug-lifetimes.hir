@@ -55,7 +55,7 @@ builtin.module public @local2reg_debug_lifetimes {
 
     // CHECK-LABEL: @cross_block(
     // CHECK-NEXT: cf.cond_br
-    // CHECK: di.debug_kill {{.*}}name = "x"
+    // CHECK: di.debug_value {{.*}}name = "x"
     builtin.function public extern("C") @cross_block(%0: u32, %1: i1) -> u32 {
         hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
         cf.cond_br %1 ^left, ^right : (i1);
@@ -125,7 +125,7 @@ builtin.module public @local2reg_debug_lifetimes {
 
     // CHECK-LABEL: @value_cross_block(
     // CHECK-NEXT: cf.cond_br
-    // CHECK: di.debug_kill {{.*}}name = "x"
+    // CHECK: di.debug_value {{.*}}name = "x"
     // CHECK-NEXT: builtin.ret
     builtin.function public extern("C") @value_cross_block(%0: u32, %1: i1) -> u32 {
         hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
@@ -146,6 +146,20 @@ builtin.module public @local2reg_debug_lifetimes {
         hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
         di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 110 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 110, column = 1, call_file = "test.rs", call_line = 115, call_column = 1 }]> };
         di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 112 }> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK-LABEL: @shadow_bindings(
+    // CHECK: di.debug_value {{.*}}name = "x"{{.*}}line = 120
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"{{.*}}line = 120
+    // CHECK-NEXT: di.debug_value {{.*}}name = "x"{{.*}}line = 121
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @shadow_bindings(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 120, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 120, ty = u32 }> }>;
+        di.debug_value %1 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 121, ty = u32 }>, expression = #di.expression<[]> }> : (u32);
         hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
         builtin.ret %1 : (u32);
     };

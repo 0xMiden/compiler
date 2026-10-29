@@ -1,0 +1,201 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(local2reg))' | filecheck %s
+builtin.module public @recovery {
+ builtin.function public extern("C") @identity(%0: u32) -> u32 { builtin.ret %0 : (u32); };
+// CHECK-LABEL: @with_call(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+ builtin.function public extern("C") @with_call(%0: u32, %1: i1) -> u32 {
+hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %2 = hir.exec ::@recovery::@identity(%0) : extern("C") (u32) -> u32;
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %2 : (u32);
+ };
+// CHECK-LABEL: @same_join(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+ builtin.function public extern("C") @same_join(%0: u32, %1: i1) -> u32 {
+hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.cond_br %1 ^left, ^right : (i1);
+ ^left: cf.br ^join;
+ ^right: cf.br ^join;
+ ^join:
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %0 : (u32);
+ };
+// CHECK-LABEL: @semantic_join(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+ builtin.function public extern("C") @semantic_join(%0: u32, %1: i1) -> u32 {
+cf.cond_br %1 ^left, ^right : (i1);
+ ^left: hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^join(%0 : u32);
+ ^right: %2 = arith.bnot %0;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^join(%2 : u32);
+ ^join(%3: u32):
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %3 : (u32);
+ };
+// CHECK-LABEL: @region_join(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+ builtin.function public extern("C") @region_join(%0: u32, %1: i1) -> u32 {
+%2 = scf.if %1 then {
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ scf.yield %0 : (u32);
+ } else {
+ %3 = arith.bnot %0;
+ hir.store_local %3 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ scf.yield %3 : (u32);
+ } : (i1) -> (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %2 : (u32);
+ };
+// CHECK-LABEL: @matching_branch_bindings(
+// CHECK: di.debug_value
+ builtin.function public extern("C") @matching_branch_bindings(%0: u32, %1: i1) -> u32 {
+hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.cond_br %1 ^left, ^right : (i1);
+ ^left:
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ cf.br ^join;
+ ^right:
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ cf.br ^join;
+ ^join:
+ %2 = arith.bnot %0;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ builtin.ret %2 : (u32);
+ };
+// CHECK-LABEL: @ambiguous_value(
+// CHECK: di.debug_kill
+ builtin.function public extern("C") @ambiguous_value(%0: u32, %1: i1) -> u32 {
+cf.cond_br %1 ^left, ^right : (i1);
+ ^left: hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^join;
+ ^right: %2 = arith.bnot %0;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^join;
+ ^join:
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %0 : (u32);
+ };
+// CHECK-LABEL: @conditional_kill(
+// CHECK: di.debug_kill
+ builtin.function public extern("C") @conditional_kill(%0: u32, %1: i1) -> u32 {
+hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ cf.cond_br %1 ^left, ^right : (i1);
+ ^left:
+ di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }> }>;
+ cf.br ^join;
+ ^right: cf.br ^join;
+ ^join:
+ %2 = arith.bnot %0;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ builtin.ret %2 : (u32);
+ };
+// CHECK-LABEL: @loop_updates(
+// CHECK: di.debug_value
+ builtin.function public extern("C") @loop_updates(%0: u32, %1: i1) -> u32 {
+%2 = arith.constant 0 : u32;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ cf.br ^loop(%2 : u32);
+ ^loop(%3: u32):
+ hir.store_local %3 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %4 = arith.constant 1 : u32;
+ %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+ %6 = arith.lt %5, %0;
+ cf.cond_br %6 ^loop(%5 : u32), ^exit : (i1);
+ ^exit: builtin.ret %0 : (u32);
+ };
+// CHECK-LABEL: @nonentry_pair(
+// CHECK: di.debug_value
+ builtin.function public extern("C") @nonentry_pair(%0: u32, %1: i1) -> u32 {
+cf.cond_br %1 ^left, ^right : (i1);
+ ^left: hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ %2 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ builtin.ret %2 : (u32);
+ ^right: builtin.ret %0 : (u32);
+ };
+// CHECK-LABEL: @loop_carried(
+// CHECK: di.debug_value
+builtin.function public extern("C") @loop_carried(%0: u32, %1: i1) -> u32 {
+ %2 = arith.constant 0 : u32;
+ %8 = hir.int_to_ptr %2 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^loop(%2 : u32);
+ ^loop(%3: u32):
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ hir.store %8, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %4 = arith.constant 1 : u32;
+ %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+ hir.store_local %5 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %6 = arith.lt %5, %0;
+ cf.cond_br %6 ^loop(%5 : u32), ^exit : (i1);
+ ^exit: builtin.ret %0 : (u32);
+};
+// CHECK-LABEL: @loop_stale_argument(
+// CHECK: di.debug_kill
+builtin.function public extern("C") @loop_stale_argument(%0: u32, %1: i1) -> u32 {
+ %2 = arith.constant 0 : u32;
+ %8 = hir.int_to_ptr %2 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^loop(%2 : u32);
+ ^loop(%3: u32):
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ hir.store %8, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %4 = arith.constant 1 : u32;
+ %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+ hir.store_local %3 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %6 = arith.lt %5, %0;
+ cf.cond_br %6 ^loop(%5 : u32), ^exit : (i1);
+ ^exit: builtin.ret %0 : (u32);
+};
+
+// CHECK-LABEL: @unrelated_region(
+// CHECK: scf.if
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @unrelated_region(%0: u32, %1: i1) -> u32 {
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %2 = scf.if %1 then { scf.yield %0 : (u32); } else { %3 = arith.bnot %0; scf.yield %3 : (u32); } : (i1) -> (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %2 : (u32);
+};
+// CHECK-LABEL: @region_loop(
+// CHECK: scf.while
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @region_loop(%0: u32, %1: i1) -> u32 {
+ %2 = arith.constant 0 : u32;
+ hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %3 = scf.while %2 before {
+ ^before(%4: u32):
+  %5 = arith.lt %4, %0;
+  scf.condition %5, %4 : (i1, u32);
+ } after {
+ ^after(%6: u32):
+  %7 = arith.constant 1 : u32;
+  %8 = arith.add %6, %7 <{ overflow = #builtin.overflow<unchecked> }>;
+  hir.store_local %8 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+  scf.yield %8 : (u32);
+ } : (u32) -> (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %3 : (u32);
+};
+// CHECK-LABEL: @external_call(
+// CHECK: hir.exec
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @external_call(%0: u32) -> u32 {
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ %1 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ %2 = hir.exec ::@recovery::@external(%1) : extern("C") (u32) -> u32;
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %2 : (u32);
+};
+builtin.function public extern("C") @external(%arg: u32) -> u32 {};
+};
