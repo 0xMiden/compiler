@@ -1,3 +1,4 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-record}))' | filecheck %s --check-prefix=RECORD
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=erase-record}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=move-record}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=preserve-all}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
@@ -23,6 +24,11 @@
 // CONTRACT: variable 'x'
 // INSERT: unhandled debug-info insertion
 // INSERT: variable 'x'
+
+// RECORD: arith.bxor
+// RECORD-NEXT: di.debug_kill {{.*}}name = "x"
+// RECORD-NEXT: di.debug_kill {{.*}}name = "x"
+// RECORD-NEXT: builtin.ret
 
 builtin.module public @debug_mutation_contract {
     // EQUIVALENT: @entrypoint(%[[FIRST:\d+]]: u32, %[[SECOND:\d+]]: u32)

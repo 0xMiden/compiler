@@ -89,8 +89,10 @@ impl RewritePattern for FoldRedundantYields {
             .reduce(|acc, region_yield_vals| acc.intersection(&region_yield_vals))
             .expect("Have already checked region_yields is non-empty.");
 
-        if redundant_yield_vals.is_empty() {
-            // No redundant values found.
+        let all_results_are_redundant = redundant_yield_vals.len() == op.num_results();
+        let can_erase_owner = all_results_are_redundant && op.is_memory_effect_free();
+        if redundant_yield_vals.is_empty() && !can_erase_owner {
+            // A zero-result owner is redundant only when it has no executable effects.
             return Ok(false);
         }
 
@@ -98,17 +100,7 @@ impl RewritePattern for FoldRedundantYields {
         let mut redundant_result_positions =
             redundant_yield_vals.iter().map(|(pos, _)| *pos).collect::<SmallVec<[_; 4]>>();
 
-        let all_results_are_redundant = redundant_yield_vals.len() == op.num_results();
-
-        let mut has_captures = false;
-        op_ref.raw_prewalk_all::<Forward, _>(|nested: OperationRef| {
-            let nested = nested.borrow();
-            has_captures |= nested.is::<midenc_hir::dialects::debuginfo::DebugValue>()
-                || nested.is::<midenc_hir::dialects::debuginfo::DebugDeclare>()
-                || nested.is::<midenc_hir::dialects::debuginfo::DebugKill>();
-        });
-
-        if all_results_are_redundant && op.is_memory_effect_free() && !has_captures {
+        if can_erase_owner {
             // The entire operation is actually redundant; just remove it.  Make sure the yield
             // vals are sorted first.
             let mut sorted_vals = redundant_yield_vals.into_vec();
@@ -120,6 +112,12 @@ impl RewritePattern for FoldRedundantYields {
 
             // Replace the operation.
             drop(op);
+            midenc_hir::dialects::debuginfo::transform::invalidate_debug_captures(
+                op_ref, rewriter,
+            )?;
+            // Nested captures have already been resolved by their own explicit kill mappings.
+            // Keep equivalent result replacement and producer disappearance in one scope so
+            // surviving records outside this owner retain their equivalent SSA locations.
             rewriter.replace_op_with_values_and_debug(
                 op_ref,
                 &some_vals,
@@ -931,7 +929,7 @@ mod terminal_region_tests {
                         rewriter.set_insertion_point_before(op);
                         let changed = FoldRedundantYields::new(test.context_rc())
                             .match_and_rewrite(op, &mut *rewriter)?;
-                        assert_eq!(changed, terminal_count == 0 && shape != ResultShape::Zero);
+                        assert_eq!(changed, terminal_count == 0);
                         if !changed {
                             assert_eq!(before, alloc::format!("{}", function.borrow()));
                         }

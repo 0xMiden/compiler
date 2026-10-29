@@ -24,12 +24,13 @@ use midenc_hir::{
             attributes::{LocalVariable, Signature},
         },
         debuginfo::{
-            DIBuilder, DebugDeclare, DebugKill, DebugValue,
+            DIBuilder,
             attributes::{
                 CompileUnitAttr, Expression, ExpressionOp, INLINE_CALL_CHAIN_ATTR_NAME,
                 InlineCallChain, InlineCallChainAttr, InlineCallFrame, SubprogramAttr,
                 Variable as DebugVariable,
             },
+            is_debug_record,
         },
     },
     interner::Symbol,
@@ -143,8 +144,7 @@ impl Listener for SSABuilderListener {
 
         let block = op.parent().expect("inserted operation has no parent block");
         if let Some(offset) = builder.debug_offset {
-            let is_record =
-                op.is::<DebugValue>() || op.is::<DebugDeclare>() || op.is::<DebugKill>();
+            let is_record = is_debug_record(op.as_operation_ref());
             builder
                 .debug_blocks
                 .entry(block)

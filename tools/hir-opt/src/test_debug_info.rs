@@ -7,6 +7,7 @@ use midenc_hir::{
         debuginfo::{
             DIBuilder, DebugDeclare, DebugInfoMutation, DebugInfoUpdate, DebugKill, DebugValue,
             attributes::{Expression, ExpressionOp},
+            is_debug_record,
         },
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
@@ -71,8 +72,7 @@ impl Pass for TestDebugInfoMutation {
         let mut store = None;
         root.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
             let operation = op.borrow();
-            if record.is_none() && (operation.is::<DebugValue>() || operation.is::<DebugDeclare>())
-            {
+            if record.is_none() && (is_debug_record(op) && !operation.is::<DebugKill>()) {
                 record = Some(op);
             }
             if operation.is::<DebugKill>() {
@@ -85,6 +85,12 @@ impl Pass for TestDebugInfoMutation {
         let mut record = record.ok_or_else(|| Report::msg("test requires a debug record"))?;
         let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(context);
         match self.action.as_str() {
+            "invalidate-record" => {
+                midenc_hir::dialects::debuginfo::transform::invalidate_debug_record_with(
+                    record,
+                    &mut rewriter,
+                );
+            }
             "erase-record" => record.borrow_mut().erase(),
             "move-record" | "preserve-all" | "move-record-checked" => {
                 let _debug_update = (self.action == "move-record-checked")

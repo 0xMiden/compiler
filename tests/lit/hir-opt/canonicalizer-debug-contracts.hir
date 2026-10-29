@@ -88,16 +88,14 @@ builtin.module public @canonicalizer_debug_contracts {
     };
 
     // CHECK-LABEL: @redundant_capture
-    // CHECK: scf.if
-    // CHECK: di.debug_value {{.*}}name = "branch"
-    // CHECK: } else {
-    // CHECK: di.debug_value {{.*}}name = "branch"
+    // CHECK-NOT: scf.if
+    // CHECK: di.debug_kill {{.*}}name = "branch"
+    // CHECK: di.debug_kill {{.*}}name = "branch"
     // CHECK: builtin.ret
     // REDUNDANT-LABEL: @redundant_capture
-    // REDUNDANT: scf.if
-    // REDUNDANT: di.debug_value {{.*}}name = "branch"
-    // REDUNDANT: } else {
-    // REDUNDANT: di.debug_value {{.*}}name = "branch"
+    // REDUNDANT-NOT: scf.if
+    // REDUNDANT: di.debug_kill {{.*}}name = "branch"
+    // REDUNDANT: di.debug_kill {{.*}}name = "branch"
     // REDUNDANT: builtin.ret
     builtin.function public extern("C") @redundant_capture(%condition: i1, %value: u32) -> u32 {
         %result = scf.if %condition then {

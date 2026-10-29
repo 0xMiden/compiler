@@ -15,6 +15,9 @@ bitflags! {
         const NONE = 0;
         /// Ignore source spans and inline-call chains, but retain semantic attributes.
         const IGNORE_LOCATIONS = 1;
+        /// Compare nested executable operations independently of debug capture events.
+        /// Callers must separately preserve, coalesce, or invalidate any discarded captures.
+        const IGNORE_DEBUG_RECORDS = 2;
     }
 }
 
@@ -393,7 +396,8 @@ fn is_region_equivalent_to(
     let mut rhs_values = FxHashSet::default();
     for (lhs_block, rhs_block) in lhs.body().iter().zip(rhs.body().iter()) {
         if lhs_block.arguments().len() != rhs_block.arguments().len()
-            || lhs_block.body().len() != rhs_block.body().len()
+            || lhs_block.body().iter().filter(|op| include_operation(op, flags)).count()
+                != rhs_block.body().iter().filter(|op| include_operation(op, flags)).count()
         {
             return false;
         }
@@ -409,7 +413,12 @@ fn is_region_equivalent_to(
             values.insert(lhs_addr, rhs_addr);
             rhs_values.insert(rhs_addr);
         }
-        for (lhs_op, rhs_op) in lhs_block.body().iter().zip(rhs_block.body().iter()) {
+        for (lhs_op, rhs_op) in lhs_block
+            .body()
+            .iter()
+            .filter(|op| include_operation(op, flags))
+            .zip(rhs_block.body().iter().filter(|op| include_operation(op, flags)))
+        {
             if lhs_op.num_results() != rhs_op.num_results() {
                 return false;
             }
@@ -432,7 +441,12 @@ fn is_region_equivalent_to(
     };
     let mapped_blocks = |lhs, rhs| blocks.get(&lhs).map_or(lhs == rhs, |mapped| *mapped == rhs);
     for (lhs_block, rhs_block) in lhs.body().iter().zip(rhs.body().iter()) {
-        for (lhs_op, rhs_op) in lhs_block.body().iter().zip(rhs_block.body().iter()) {
+        for (lhs_op, rhs_op) in lhs_block
+            .body()
+            .iter()
+            .filter(|op| include_operation(op, flags))
+            .zip(rhs_block.body().iter().filter(|op| include_operation(op, flags)))
+        {
             if !lhs_op.is_equivalent_with_mapping(&rhs_op, flags, &mapped_values, &mapped_blocks) {
                 return false;
             }
@@ -461,4 +475,9 @@ where
     }
 
     true
+}
+
+fn include_operation(op: &Operation, flags: OperationEquivalenceFlags) -> bool {
+    !flags.contains(OperationEquivalenceFlags::IGNORE_DEBUG_RECORDS)
+        || !crate::dialects::debuginfo::is_debug_record(op.as_operation_ref())
 }

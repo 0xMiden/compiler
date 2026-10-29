@@ -77,3 +77,16 @@ pub struct DebugInfoDialect {
     #[dialect(info)]
     info: DialectInfo,
 }
+
+/// Return the source variable described by a value, declaration, or lifetime-end record.
+/// Unlike the audit's private snapshots, this accessor has no mutation or ownership state.
+pub fn debug_record_variable(op: &crate::Operation) -> Option<attributes::Variable> {
+    if let Some(record) = op.downcast_ref::<DebugValue>() {
+        Some(record.variable().as_value().clone())
+    } else if let Some(record) = op.downcast_ref::<DebugDeclare>() {
+        Some(record.variable().as_value().clone())
+    } else {
+        op.downcast_ref::<DebugKill>()
+            .map(|record| record.variable().as_value().clone())
+    }
+}

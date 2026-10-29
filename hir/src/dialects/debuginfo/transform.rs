@@ -41,22 +41,26 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, DialectRegistration, Op, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
-    Spanned, ValueRef,
+    Builder, DialectRegistration, Op, OpBuilder, Operation, OperationRef, ProgramPoint, Report,
+    SmallVec, Spanned, ValueRef,
     dialects::debuginfo::attributes::ExpressionOp,
     patterns::{Rewriter, RewriterExt},
 };
 
-use super::{DIBuilder, DebugInfoMutation, DebugInfoUpdate, ops::DebugValue};
+use super::{
+    DIBuilder, DebugInfoMutation, DebugInfoUpdate, debug_record_variable, is_debug_record,
+    ops::DebugValue,
+};
 
 /// Reconcile inline-call locations when structurally equivalent operations are merged.
 ///
 /// Retain a chain only when both operations agree, including within corresponding regions.
-/// A shared operation cannot accurately describe two distinct inline call sites.
+/// A shared operation cannot accurately describe two distinct inline call sites. Debug records
+/// are skipped: their inline chains identify source binding ownership, not instruction provenance.
 pub fn merge_inline_call_locations(mut retained: OperationRef, discarded: OperationRef) {
     use super::attributes::INLINE_CALL_CHAIN_ATTR_NAME;
 
-    if OperationRef::ptr_eq(&retained, &discarded) {
+    if OperationRef::ptr_eq(&retained, &discarded) || is_debug_record(retained) {
         return;
     }
     let discarded = discarded.borrow();
@@ -76,7 +80,14 @@ pub fn merge_inline_call_locations(mut retained: OperationRef, discarded: Operat
                 .body()
                 .iter()
                 .map(|op| op.as_operation_ref())
-                .zip(discarded_block.body().iter().map(|op| op.as_operation_ref()))
+                .filter(|op| !is_debug_record(*op))
+                .zip(
+                    discarded_block
+                        .body()
+                        .iter()
+                        .map(|op| op.as_operation_ref())
+                        .filter(|op| !is_debug_record(*op)),
+                )
             {
                 merge_inline_call_locations(retained_op, discarded_op);
             }
@@ -208,11 +219,23 @@ pub fn erase_debug_info_with<R: ?Sized + Rewriter>(old_value: &ValueRef, rewrite
 /// Like [`erase_debug_value`], for use by a rewrite pattern: the `di.debug_kill` is created, and
 /// the `di.debug_value` erased, through `rewriter`.
 pub fn erase_debug_value_with<R: ?Sized + Rewriter>(debug_op: OperationRef, rewriter: &mut R) {
+    invalidate_debug_record_with(debug_op, rewriter);
+}
+
+/// Replace any location-bearing record with a kill at its original capture point.
+/// A kill already represents unavailability and is left in place.
+pub fn invalidate_debug_record_with<R: ?Sized + Rewriter>(
+    debug_op: OperationRef,
+    rewriter: &mut R,
+) {
+    if debug_op.name().is::<super::DebugKill>() {
+        return;
+    }
     let _debug_update = DebugInfoMutation::new(debug_op, DebugInfoUpdate::Invalidate);
     let (variable, span) = {
         let op = debug_op.borrow();
-        let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
-        (dv.variable().as_value().clone(), op.span())
+        let variable = debug_record_variable(&op).expect("expected a debug record");
+        (variable, op.span())
     };
     {
         // The kill belongs to the inline frame of the debug value it replaces, which is not
@@ -384,7 +407,7 @@ pub fn debug_value_users(value: &ValueRef) -> SmallVec<[OperationRef; 2]> {
     ops
 }
 
-/// Recursively collect all debug info operations within an operation's regions.
+/// Recursively collect source-variable capture records within an operation.
 pub fn collect_debug_ops(op: &OperationRef) -> Vec<OperationRef> {
     let mut debug_ops = Vec::new();
     collect_debug_ops_recursive(op, &mut debug_ops);
@@ -395,8 +418,132 @@ fn collect_debug_ops_recursive(op: &OperationRef, debug_ops: &mut Vec<OperationR
     use midenc_hir::{Forward, RawWalk};
 
     op.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
-        if is_debug_info_op(&op.borrow()) {
+        if is_debug_record(op) {
             debug_ops.push(op);
         }
     });
+}
+
+/// Source binding identities known to a rewrite, scoped by function and inline frame.
+///
+/// This is an inventory, not a data-flow claim about which binding is currently live. Reuse it
+/// across owner erasures when a transform does not introduce new source binding identities.
+/// Keeping it separate from the audit avoids exposing capture snapshots or mutation authority.
+pub struct DebugBindingInventory {
+    bindings: Vec<SourceBinding>,
+}
+
+#[derive(Clone, PartialEq, Eq)]
+struct SourceBinding {
+    variable: super::attributes::Variable,
+    inline_calls: Option<midenc_hir::AttributeRef>,
+    function: Option<OperationRef>,
+}
+
+impl SourceBinding {
+    fn of(record: OperationRef) -> Self {
+        let op = record.borrow();
+        Self {
+            variable: debug_record_variable(&op).expect("expected debug record"),
+            inline_calls: op.get_attribute(super::attributes::INLINE_CALL_CHAIN_ATTR_NAME),
+            function: enclosing_function(record),
+        }
+    }
+
+    fn same_visibility_slot(&self, other: &Self) -> bool {
+        self.variable.name == other.variable.name
+            && self.inline_calls == other.inline_calls
+            && self.function == other.function
+    }
+}
+
+fn enclosing_function(op: OperationRef) -> Option<OperationRef> {
+    let mut current = Some(op);
+    while let Some(op) = current {
+        if op.name().is::<crate::dialects::builtin::Function>() {
+            return Some(op);
+        }
+        current = op.parent_op();
+    }
+    None
+}
+
+impl DebugBindingInventory {
+    pub fn new(root: OperationRef) -> Self {
+        let mut bindings = Vec::new();
+        for record in collect_debug_ops(&root) {
+            let binding = SourceBinding::of(record);
+            if !bindings.contains(&binding) {
+                bindings.push(binding);
+            }
+        }
+        Self { bindings }
+    }
+
+    /// Invalidate captures at the original owner's program point before its erasure.
+    ///
+    /// Conditional capture effects cannot generally be hoisted. Invalidate every possible binding
+    /// in each affected visibility slot, including a prior binding a removed shadow could expose.
+    /// Each disappearing record has an exact origin/anchor mapping; additional kills only reduce
+    /// availability. Resolve record disappearance here, independently of later result RAUW.
+    pub fn invalidate_captures<R: ?Sized + Rewriter>(
+        &self,
+        owner: OperationRef,
+        rewriter: &mut R,
+    ) -> Result<(), Report> {
+        let records = collect_debug_ops(&owner)
+            .into_iter()
+            .map(|record| (record, SourceBinding::of(record)))
+            .collect::<Vec<_>>();
+        if records.is_empty() {
+            return Ok(());
+        }
+        let mut affected = Vec::new();
+        for (_, binding) in &records {
+            if !affected.contains(binding) {
+                affected.push(binding.clone());
+            }
+        }
+        for binding in &self.bindings {
+            if records.iter().any(|(_, original)| original.same_visibility_slot(binding))
+                && !affected.contains(binding)
+            {
+                affected.push(binding.clone());
+            }
+        }
+        // The owner scope also includes external records depending on its results. They remain
+        // unchanged here, so use Salvage for the mixed scope; each disappearing nested capture
+        // is still explicitly mapped to the exact kill we create below.
+        let mut update = DebugInfoMutation::new(owner, DebugInfoUpdate::Salvage);
+        for binding in affected {
+            let span = owner.borrow().span();
+            let ip = *rewriter.insertion_point();
+            let previous_chain = rewriter.replace_inline_call_chain(binding.inline_calls);
+            rewriter.set_insertion_point_before(owner);
+            let replacement = rewriter.debug_kill(binding.variable.clone(), span);
+            rewriter.restore_insertion_point(ip);
+            rewriter.replace_inline_call_chain(previous_chain);
+            let replacement = replacement?.as_operation_ref();
+            for (record, original) in &records {
+                if original == &binding {
+                    update.replace_capture(*record, replacement, owner)?;
+                    rewriter.erase_op(*record);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Invalidate an owner's captures using all binding identities in its containing function.
+/// Repeated erasures can reuse a [`DebugBindingInventory`] to avoid repeated function walks.
+pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
+    owner: OperationRef,
+    rewriter: &mut R,
+) -> Result<(), Report> {
+    if collect_debug_ops(&owner).is_empty() {
+        return Ok(());
+    }
+    DebugBindingInventory::new(enclosing_function(owner).unwrap_or(owner))
+        .invalidate_captures(owner, rewriter)
 }

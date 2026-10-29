@@ -462,7 +462,7 @@ const SOURCE: &str = include_str!("../../../tests/lit/hir-opt/debug-info-semanti
 #[test]
 fn canonicalizer_contracts_preserve_values_and_explicit_kills() -> Result<(), Report> {
     let source = include_str!("../../../tests/lit/hir-opt/canonicalizer-debug-contracts.hir");
-    for name in ["single_pred", "redundant_capture", "bool_compare", "bool_trunc", "bool_select"] {
+    for name in ["single_pred", "bool_compare", "bool_trunc", "bool_select"] {
         let scenario = Scenario::new(source, name)?;
         let inputs = [false, true]
             .into_iter()
@@ -550,7 +550,82 @@ fn aggressive_region_simplification_preserves_captured_arguments() -> Result<(),
 }
 
 #[test]
-fn cse_keeps_repeated_nested_captures() -> Result<(), Report> {
+fn redundant_yields_invalidate_captures_without_retaining_computation() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/canonicalizer-debug-contracts.hir");
+    for targeted in [false, true] {
+        let scenario = Scenario::new(source, "redundant_capture")?;
+        let inputs = [false, true]
+            .into_iter()
+            .map(|condition| vec![condition.into(), 7u32.into()])
+            .collect::<Vec<_>>();
+        let before = inputs
+            .iter()
+            .map(|args| scenario.evaluate(args))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut pass = Canonicalizer::default();
+        if targeted {
+            Pass::initialize_options(&mut pass, "enable-patterns=fold-redundant-yields")?;
+        }
+        scenario.rewrite(vec![Box::new(pass)])?;
+        let printed = scenario.function.borrow().as_operation().to_string();
+        assert!(!printed.contains("scf.if"), "{printed}");
+        for (args, expected) in inputs.iter().zip(before) {
+            let actual = scenario.evaluate(args)?;
+            assert_eq!(expected.results, actual.results);
+            assert!(
+                actual.snapshots.last().unwrap().frames[0]
+                    .variables
+                    .iter()
+                    .all(|(_, value)| *value == Observation::Unavailable)
+            );
+        }
+        let stripped = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("di."))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let plain = Scenario::new(&stripped, "redundant_capture")?;
+        let mut pass = Canonicalizer::default();
+        if targeted {
+            Pass::initialize_options(&mut pass, "enable-patterns=fold-redundant-yields")?;
+        }
+        plain.rewrite(vec![Box::new(pass)])?;
+        let executable = printed
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("di."))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(executable, plain.function.borrow().as_operation().to_string());
+    }
+    Ok(())
+}
+
+#[test]
+fn redundant_yields_preserve_external_result_captures() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/canonicalizer-debug-contracts.hir")
+        .replace(
+            "        builtin.ret %result : (u32);",
+            "        di.debug_value %result <{ variable = #di.variable<{ name = \"result\", file \
+             = \"test.rs\", line = 3 }>, expression = #di.expression<[]> }> : (u32);\n        \
+             builtin.ret %result : (u32);",
+        );
+    let scenario = Scenario::new(&source, "redundant_capture")?;
+    let mut pass = Canonicalizer::default();
+    Pass::initialize_options(&mut pass, "enable-patterns=fold-redundant-yields")?;
+    scenario.rewrite(vec![Box::new(pass)])?;
+    let result = scenario.evaluate(&[true.into(), 7u32.into()])?;
+    let value = result.snapshots.last().unwrap().frames[0]
+        .variables
+        .iter()
+        .find(|(binding, _)| binding.variable.name.as_str() == "result")
+        .unwrap();
+    assert_eq!(value.1, Observation::Value(7u32.into()));
+    assert!(!scenario.function.borrow().as_operation().to_string().contains("scf.if"));
+    Ok(())
+}
+
+#[test]
+fn cse_coalesces_redundant_nested_captures() -> Result<(), Report> {
     let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir");
     let scenario = Scenario::new(source, "nested_captures")?;
     let inputs = [false, true]
@@ -563,12 +638,372 @@ fn cse_keeps_repeated_nested_captures() -> Result<(), Report> {
         .collect::<Result<Vec<_>, _>>()?;
     scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
     let printed = scenario.function.borrow().as_operation().to_string();
-    assert_eq!(printed.matches("scf.if").count(), 2, "{printed}");
-    assert_eq!(printed.matches("di.debug_value").count(), 2, "{printed}");
-    assert_eq!(printed.matches("di.debug_kill").count(), 2, "{printed}");
+    assert_eq!(printed.matches("scf.if").count(), 1, "{printed}");
+    assert_eq!(printed.matches("di.debug_value").count(), 1, "{printed}");
+    assert_eq!(printed.matches("di.debug_kill").count(), 1, "{printed}");
     for (args, expected) in inputs.iter().zip(before) {
         expected.compare(&scenario.evaluate(args)?)?;
     }
+    Ok(())
+}
+
+#[test]
+fn cse_retains_live_declarations_across_stores() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir");
+    let scenario = Scenario::new(source, "nested_declarations")?;
+    let inputs = [false, true]
+        .into_iter()
+        .map(|condition| vec![condition.into(), 7u32.into(), 19u32.into()])
+        .collect::<Vec<_>>();
+    compare_rewrite(&scenario, &inputs, vec![Box::new(CommonSubexpressionElimination)], &[])?;
+    assert_eq!(
+        scenario.function.borrow().as_operation().to_string().matches("scf.if").count(),
+        1
+    );
+    let result = scenario.evaluate(&inputs[1])?;
+    assert_eq!(
+        result.snapshots.last().unwrap().frames[0].variables[0].1,
+        Observation::Value(19u32.into())
+    );
+    Ok(())
+}
+
+#[test]
+fn cse_invalidates_unproved_capture_effects_without_retaining_computation() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-capture-effects.hir");
+    for name in ["killed", "rebound", "asymmetric", "unmatched"] {
+        let scenario = Scenario::new(source, name)?;
+        let inputs = [false, true]
+            .into_iter()
+            .map(|condition| vec![condition.into(), 7u32.into(), 19u32.into()])
+            .collect::<Vec<_>>();
+        let before = inputs
+            .iter()
+            .map(|args| scenario.evaluate(args))
+            .collect::<Result<Vec<_>, _>>()?;
+        scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+        let printed = scenario.function.borrow().as_operation().to_string();
+        assert_eq!(printed.matches("scf.if").count(), 1, "{name}: {printed}");
+        for (args, expected) in inputs.iter().zip(before) {
+            let actual = scenario.evaluate(args)?;
+            assert_eq!(expected.results, actual.results);
+            for (binding, value) in &actual.snapshots.last().unwrap().frames[0].variables {
+                // A conservative fallback may lose availability, but may never report a stale value.
+                if *value != Observation::Unavailable {
+                    let expected_value = expected.snapshots.last().unwrap().frames[0]
+                        .variables
+                        .iter()
+                        .find(|(candidate, _)| candidate == binding)
+                        .map(|(_, value)| value);
+                    assert_eq!(expected_value, Some(value), "{name}: {binding:?}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn cse_executable_regions_are_independent_of_debug_records() -> Result<(), Report> {
+    for (source, names) in [
+        (
+            include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir"),
+            &["nested_captures", "nested_declarations"][..],
+        ),
+        (
+            include_str!("../../../tests/lit/hir-opt/cse-capture-effects.hir"),
+            &["killed", "rebound", "asymmetric", "unmatched"][..],
+        ),
+    ] {
+        let stripped = source
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("di."))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for name in names {
+            let recorded = Scenario::new(source, name)?;
+            let plain = Scenario::new(&stripped, name)?;
+            recorded.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+            plain.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+            let executable = recorded
+                .function
+                .borrow()
+                .as_operation()
+                .to_string()
+                .lines()
+                .filter(|line| !line.trim_start().starts_with("di."))
+                .collect::<Vec<_>>()
+                .join("\n");
+            assert_eq!(executable, plain.function.borrow().as_operation().to_string(), "{name}");
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn cse_maps_nested_ssa_captures() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir")
+        .replace(
+            "            di.debug_value %left",
+            "            %inner = arith.add %left, %right <{ overflow = \
+             #builtin.overflow<wrapping> }>;\n            di.debug_value %inner",
+        )
+        .replace("scf.yield %left", "scf.yield %inner");
+    // Select only the first function: the declaration fixture has no inner SSA definition.
+    let source = format!(
+        "{}\n}};",
+        source.split("    // CHECK-LABEL: @nested_declarations").next().unwrap()
+    );
+    let scenario = Scenario::new(&source, "nested_captures")?;
+    let inputs = [false, true]
+        .into_iter()
+        .map(|condition| vec![condition.into(), 7u32.into(), 19u32.into()])
+        .collect::<Vec<_>>();
+    compare_rewrite(&scenario, &inputs, vec![Box::new(CommonSubexpressionElimination)], &[])?;
+    assert_eq!(
+        scenario.function.borrow().as_operation().to_string().matches("scf.if").count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn cse_erases_queued_dead_descendants_with_their_redundant_owner() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir").replace(
+        "            di.debug_value %left",
+        "            %dead = arith.add %left, %right <{ overflow = #builtin.overflow<wrapping> \
+         }>;\n            di.debug_value %left",
+    );
+    let scenario = Scenario::new(&source, "nested_captures")?;
+    scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+    let printed = scenario.function.borrow().as_operation().to_string();
+    assert_eq!(printed.matches("scf.if").count(), 1, "{printed}");
+    assert_eq!(printed.matches("arith.add").count(), 1, "{printed}");
+    Ok(())
+}
+
+#[test]
+fn cse_conditional_shadow_fallback_invalidates_the_previous_binding() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-capture-effects.hir");
+    let start = source.find("    builtin.function public extern(\"C\") @asymmetric").unwrap();
+    let end = source[start..]
+        .find("    // CHECK-LABEL:")
+        .map_or(source.len() - 3, |pos| start + pos);
+    let function = &source[start..end];
+    let (first, second) = function.split_once("        %second").unwrap();
+    let second = second.replace("name = \"other\"", "name = \"branch\"");
+    let second = second
+        .replace("line = 1", "line = 2")
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("di.debug_kill"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = format!("builtin.module public @shadow {{\n{first}        %second{second}\n}};");
+    let scenario = Scenario::new(&source, "asymmetric")?;
+    scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+    let actual = scenario.evaluate(&[true.into(), 7u32.into(), 19u32.into()])?;
+    for (binding, value) in &actual.snapshots.last().unwrap().frames[0].variables {
+        assert_eq!(*value, Observation::Unavailable, "stale shadow binding: {binding:?}");
+    }
+    Ok(())
+}
+
+#[test]
+fn cse_preserves_capture_inline_ownership_when_merging_instruction_locations() -> Result<(), Report>
+{
+    use midenc_hir::dialects::debuginfo::{attributes::InlineCallFrame, is_debug_record};
+    for distinct_binding_frames in [false, true] {
+        let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir");
+        let scenario = Scenario::new(source, "nested_captures")?;
+        let mut owners = Vec::new();
+        scenario
+            .function
+            .as_operation_ref()
+            .raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+                if op.name().is::<midenc_dialect_scf::If>() {
+                    owners.push(op);
+                }
+            });
+        let mut first_records: Vec<(OperationRef, midenc_hir::AttributeRef)> = Vec::new();
+        for (index, mut owner) in owners.into_iter().enumerate() {
+            let chain = scenario
+                .context
+                .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(vec![
+                    InlineCallFrame {
+                        name: "inlined".into(),
+                        linkage_name: None,
+                        file: "callee.rs".into(),
+                        line: 1,
+                        column: 1,
+                        call_file: "caller.rs".into(),
+                        call_line: 10 + index as u32,
+                        call_column: 1,
+                    },
+                ]))
+                .as_attribute_ref();
+            owner.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+            owner.raw_prewalk_all::<Forward, _>(|mut op: OperationRef| {
+                if is_debug_record(op) {
+                    let binding_chain = if distinct_binding_frames || index == 0 {
+                        chain
+                    } else {
+                        first_records[0].1
+                    };
+                    op.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, binding_chain);
+                    if index == 0 {
+                        first_records.push((op, chain));
+                    }
+                }
+            });
+        }
+        let args = [true.into(), 7u32.into(), 19u32.into()];
+        let before = scenario.evaluate(&args)?;
+        scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+        assert_eq!(
+            scenario.function.borrow().as_operation().to_string().matches("scf.if").count(),
+            1
+        );
+        for (record, chain) in first_records {
+            assert!(record.parent().is_some());
+            assert_eq!(record.borrow().get_attribute(INLINE_CALL_CHAIN_ATTR_NAME), Some(chain));
+        }
+        let actual = scenario.evaluate(&args)?;
+        if !distinct_binding_frames {
+            before.compare(&actual)?;
+        } else {
+            assert_eq!(
+                actual.snapshots.last().unwrap().frames[0].variables[0].1,
+                Observation::Value(7u32.into())
+            );
+            assert_eq!(
+                actual.snapshots.last().unwrap().frames[0].variables[1].1,
+                Observation::Unavailable
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn cse_cross_block_capture_fallback_keeps_the_original_anchor() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir")
+        .replace("        %second", "        cf.br ^next;\n    ^next:\n        %second");
+    let scenario = Scenario::new(&source, "nested_captures")?;
+    let args = [true.into(), 7u32.into(), 19u32.into()];
+    let before = scenario.evaluate(&args)?;
+    scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+    let printed = scenario.function.borrow().as_operation().to_string();
+    assert_eq!(printed.matches("scf.if").count(), 1, "{printed}");
+    let actual = scenario.evaluate(&args)?;
+    assert_eq!(before.results, actual.results);
+    assert_eq!(
+        actual.snapshots.last().unwrap().frames[0].variables[0].1,
+        Observation::Unavailable
+    );
+    Ok(())
+}
+
+#[test]
+fn cse_capture_invalidation_stays_after_intervening_checkpoints() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-capture-effects.hir");
+    let mut marked = String::new();
+    for line in source.lines() {
+        if line.starts_with("        di.debug_kill") {
+            marked.push_str(
+                "        hir.store_local %left <{ local = #builtin.local_variable<0, u32> }> \
+                 attributes { test.debug_checkpoint = #builtin.u32<1> } : (u32);\n",
+            );
+            marked.push_str(line);
+            marked.push_str(
+                "\n        hir.store_local %right <{ local = #builtin.local_variable<0, u32> }> \
+                 attributes { test.debug_checkpoint = #builtin.u32<2> } : (u32);\n",
+            );
+        } else {
+            marked.push_str(line);
+            marked.push('\n');
+        }
+    }
+    let scenario = Scenario::new(&marked, "killed")?;
+    let args = [true.into(), 7u32.into(), 19u32.into()];
+    let before = scenario.evaluate(&args)?;
+    assert_eq!(before.snapshots.len(), 3);
+    assert_eq!(before.snapshots[0].frames[0].variables[0].1, Observation::Value(7u32.into()));
+    assert_eq!(before.snapshots[1].frames[0].variables[0].1, Observation::Unavailable);
+    scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+    let actual = scenario.evaluate(&args)?;
+    assert_eq!(actual.results, before.results);
+    assert_eq!(actual.snapshots.len(), 3);
+    assert_eq!(actual.snapshots[..2], before.snapshots[..2]);
+    assert_eq!(actual.snapshots[2].frames[0].variables[0].1, Observation::Unavailable);
+    Ok(())
+}
+
+#[test]
+fn cse_capture_invalidation_preserves_external_result_records() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-capture-effects.hir").replace(
+        "        %sum =",
+        "        di.debug_value %second <{ variable = #di.variable<{ name = \"result\", file = \
+         \"test.rs\", line = 3 }>, expression = #di.expression<[]> }> : (u32);\n        %sum =",
+    );
+    let scenario = Scenario::new(&source, "killed")?;
+    scenario.rewrite(vec![Box::new(CommonSubexpressionElimination)])?;
+    let actual = scenario.evaluate(&[true.into(), 7u32.into(), 19u32.into()])?;
+    let observed = &actual.snapshots.last().unwrap().frames[0].variables;
+    assert_eq!(
+        observed
+            .iter()
+            .find(|(binding, _)| binding.variable.name.as_str() == "result")
+            .unwrap()
+            .1,
+        Observation::Value(7u32.into())
+    );
+    assert_eq!(
+        observed
+            .iter()
+            .find(|(binding, _)| binding.variable.name.as_str() == "branch")
+            .unwrap()
+            .1,
+        Observation::Unavailable
+    );
+    assert_eq!(
+        scenario.function.borrow().as_operation().to_string().matches("scf.if").count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn cse_memory_scan_after_erased_read() -> Result<(), Report> {
+    check_cse_memory_scan_after_erased_read(false)
+}
+
+#[test]
+fn cse_memory_scan_after_erased_read_with_debug_records() -> Result<(), Report> {
+    check_cse_memory_scan_after_erased_read(true)
+}
+
+fn check_cse_memory_scan_after_erased_read(with_debug_records: bool) -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-memory-scan-cache.hir");
+    let source = source
+        .lines()
+        .filter(|line| with_debug_records || !line.trim_start().starts_with("di."))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let scenario = Scenario::new(&source, "three_reads")?;
+    let values = [(7u32, 19u32), (0, 1), (u32::MAX, 2), (1 << 31, u32::MAX)];
+    let inputs = values
+        .iter()
+        .map(|&(before, after)| vec![before.into(), after.into()])
+        .collect::<Vec<_>>();
+    for ((before, after), args) in values.iter().zip(&inputs) {
+        assert_eq!(
+            scenario.evaluate(args)?.results.as_slice(),
+            &[before.wrapping_mul(2).wrapping_add(*after).into()]
+        );
+    }
+    compare_rewrite(&scenario, &inputs, vec![Box::new(CommonSubexpressionElimination)], &[])?;
+    let printed = scenario.function.borrow().as_operation().to_string();
+    assert_eq!(printed.matches("hir.load_local").count(), 2, "{printed}");
     Ok(())
 }
 
