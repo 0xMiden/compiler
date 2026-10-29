@@ -1,10 +1,10 @@
-//! The `share-base-divmod` pass: one `arith.divmod` per base and divisor in a block.
+//! The `share-base-divmod` pass: divisions of one base plus constant offsets share one division.
 
 use alloc::{rc::Rc, vec::Vec};
 
 use midenc_dialect_arith::{Add, ArithOpBuilder, Divmod};
 use midenc_hir::{
-    BlockRef, Builder, ConstantIntRange, EntityMut, Forward, FxHashMap, FxHashSet, Immediate, Op,
+    BlockRef, Builder, ConstantIntRange, EntityMut, Forward, FxHashMap, Immediate, Op,
     OperationName, OperationRef, RawWalk, Report, Rewriter, Spanned, Symbol, TraceTarget, Type,
     ValueRef,
     dialects::builtin::{
@@ -27,8 +27,8 @@ use crate::{Bitcast, LoadLocal, LocalAddress, StoreLocal};
 ///
 /// A group is formed, within a block, by the divisions by the same constant divisor `d` of the same
 /// base `b`, either directly (`arith.divmod(b, d)`) or plus a constant offset `K` that is a multiple
-/// of `d` (`arith.divmod(arith.add(b, K) <checked>, d)`, the addition having no other use). A group
-/// of at least two divisions, at least one with an offset, is rewritten to divide `b + Kmax` once,
+/// of `d` (`arith.divmod(arith.add(b, K) <checked>, d)`, the addition being in the same block and
+/// having no other use). A group of at least two divisions is rewritten to divide `b + Kmax` once,
 /// where `Kmax` is the largest offset of the group, at the first operation of the group. Every
 /// division then takes the shared remainder, and the shared quotient minus `(Kmax - K) / d`.
 ///
@@ -38,9 +38,11 @@ use crate::{Bitcast, LoadLocal, LocalAddress, StoreLocal};
 /// operation of the group and then the access still fails, but with the overflow instead of a
 /// failure between them, and without the host events emitted between them.
 ///
-/// Bases are the same when they are the same SSA value, or when they are loaded (optionally through
-/// a `hir.bitcast`) from the same procedure local in the block with no store to that local between
-/// the loads. Locals whose address is taken are excluded, since memory writes may modify them.
+/// Bases are the same when they are the same SSA value, or when they are loaded from the same
+/// procedure local in the block, all directly or all through a `hir.bitcast`, with no store to that
+/// local between the loads, including stores nested in regions. A local is assumed to be written
+/// only by `hir.store_local`: a function that takes the address of any local with
+/// `hir.local_address` gets no such groups, since a memory write may then modify a local.
 ///
 /// Memory accesses with element-aligned offsets benefit: all accesses through one base share one
 /// conversion to the element address, and `remove-repeated-assertz` then drops the repeated
@@ -60,9 +62,8 @@ struct Candidate {
     /// The checked addition of `offset` producing the dividend, when `offset` is not zero.
     add: Option<OperationRef>,
     /// The operation and operand index holding the base: the addition, or the division itself.
-    ///
-    /// The base is read when needed rather than stored, since rewriting a group replaces the
-    /// quotient it produces, which may be the base of another group.
+    // The base is read when needed rather than stored: rewriting a group replaces the quotient it
+    // produces, which may be the base of another group.
     base_operand: (OperationRef, usize),
     /// The constant added to the base, a multiple of the divisor.
     offset: u32,
@@ -85,7 +86,8 @@ enum BaseKey {
     Local {
         /// The local the base is loaded from.
         local: LocalVariable,
-        /// The number of stores to `local` in the block before the load.
+        /// The number of stores to `local` in the block before the load, including stores nested
+        /// in regions.
         epoch: u32,
         /// Whether the loaded value is reinterpreted by a `hir.bitcast`.
         bitcast: bool,
@@ -94,6 +96,8 @@ enum BaseKey {
 
 /// The candidates of one block that divide the same base by the same divisor, in block order.
 struct Group {
+    /// The identity of the base.
+    key: BaseKey,
     /// The constant divisor, not zero.
     divisor: u32,
     /// The divisions, in block order.
@@ -101,9 +105,15 @@ struct Group {
 }
 
 impl Group {
-    /// Returns true if the group shares a division among several divisions, one with an offset.
+    /// Returns true if the group shares a division among several divisions.
     fn is_profitable(&self) -> bool {
-        self.candidates.len() > 1 && self.max_offset() != 0
+        self.candidates.len() > 1
+    }
+
+    /// Returns true if the range analysis may prove that the base plus the largest offset fits in 32
+    /// bits: there is an offset, and the base is not loaded from a local, whose range is unknown.
+    fn may_be_proven(&self) -> bool {
+        matches!(self.key, BaseKey::Value(_)) && self.max_offset() != 0
     }
 
     /// The largest offset of the group.
@@ -195,11 +205,18 @@ impl Pass for ShareBaseDivmod {
             return Ok(());
         }
 
-        let mut solver = DataFlowSolver::default();
-        solver.load::<IntegerRangeAnalysis>();
-        solver.initialize_and_run(function.as_operation(), state.analysis_manager().clone())?;
         // Decide every proof before the first rewrite: the solver only knows the original values.
-        let proven = groups.iter().map(|group| group.is_proven(&solver)).collect::<Vec<_>>();
+        let proven = if groups.iter().any(Group::may_be_proven) {
+            let mut solver = DataFlowSolver::default();
+            solver.load::<IntegerRangeAnalysis>();
+            solver.initialize_and_run(function.as_operation(), state.analysis_manager().clone())?;
+            groups
+                .iter()
+                .map(|group| group.may_be_proven() && group.is_proven(&solver))
+                .collect::<Vec<_>>()
+        } else {
+            alloc::vec![false; groups.len()]
+        };
 
         let context = function.as_operation().context_rc();
         drop(function);
@@ -225,13 +242,13 @@ impl Pass for ShareBaseDivmod {
 
 /// Collects the candidate divisions of `function`, grouped by block, base and divisor.
 fn collect_groups(function: OperationRef) -> Vec<Group> {
-    let mut address_taken = FxHashSet::<LocalVariable>::default();
+    // An address of one local reaches the others too (they are adjacent in the frame), so a memory
+    // write may then modify any local.
+    let mut takes_local_address = false;
     let mut blocks = Vec::<BlockRef>::new();
     function.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
         let op = op.borrow();
-        if let Some(local_address) = op.downcast_ref::<LocalAddress>() {
-            address_taken.insert(*local_address.get_local());
-        }
+        takes_local_address |= op.is::<LocalAddress>();
         for region in op.regions() {
             blocks.extend(region.body().iter().map(|block| block.as_block_ref()));
         }
@@ -248,7 +265,7 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
             let operation = op.borrow();
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
-                if !address_taken.contains(&local) {
+                if !takes_local_address {
                     load_epochs.insert(op, (local, epochs.get(&local).copied().unwrap_or(0)));
                 }
             } else if operation.has_regions() || operation.is::<StoreLocal>() {
@@ -267,6 +284,7 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
             let key = base_key(candidate.base(), &load_epochs);
             let index = *group_index.entry((key, divisor)).or_insert_with(|| {
                 groups.push(Group {
+                    key,
                     divisor,
                     candidates: Vec::new(),
                 });
@@ -325,11 +343,11 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
     let divisor = constant_u32(divmod.rhs().as_value_ref()).filter(|divisor| *divisor != 0)?;
 
     let offset_add = dividend.borrow().get_defining_op().and_then(|add_op| {
+        let add = add_op.borrow();
         // An addition with other uses stays, so splitting it off would not remove it.
-        if dividend.borrow().iter_uses().nth(1).is_some() {
+        if !add.has_exactly_one_use() {
             return None;
         }
-        let add = add_op.borrow();
         let add_ref = add.downcast_ref::<Add>()?;
         // The shared addition is placed before the group's first operation in this block, which
         // must stay on the paths through the original addition.
@@ -380,15 +398,26 @@ fn rewrite_group(
     let (first_op, first_candidate) = group.first_op();
     let base = first_candidate.base();
     let max_offset = group.max_offset();
-    let span = first_op.borrow().span();
+    // The shared operations report the location of the access whose overflow they check.
+    let source = group
+        .candidates
+        .iter()
+        .find(|candidate| candidate.offset == max_offset)
+        .map(|candidate| candidate.add.unwrap_or(candidate.divmod))
+        .expect("the largest offset belongs to a candidate");
+    let span = source.borrow().span();
     let (remainder, quotient) = {
-        let mut rewriter = rewriter.with_inline_call_chain(first_op);
+        let mut rewriter = rewriter.with_inline_call_chain(source);
         rewriter.set_insertion_point_before(first_op);
-        let offset = rewriter.imm(Immediate::U32(max_offset), span);
-        let dividend = if proven {
-            rewriter.add_unchecked(base, offset, span)?
+        let dividend = if max_offset == 0 {
+            base
         } else {
-            rewriter.add(base, offset, span)?
+            let offset = rewriter.imm(Immediate::U32(max_offset), span);
+            if proven {
+                rewriter.add_unchecked(base, offset, span)?
+            } else {
+                rewriter.add(base, offset, span)?
+            }
         };
         let divisor = rewriter.imm(Immediate::U32(group.divisor), span);
         let (quotient, remainder) = rewriter.divmod(dividend, divisor, span)?;

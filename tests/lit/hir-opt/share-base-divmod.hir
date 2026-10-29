@@ -8,15 +8,18 @@ builtin.module private @share_base_divmod {
     // runs before the first access; the other quotients subtract the difference in elements, and
     // the repeated alignment checks are removed.
     // CHECK: @unproven_offsets(%[[B:\d+]]: u32)
-    // CHECK: %[[S:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-DAG: %[[ONE:\d+]] = arith.constant 1 : u32;
+    // CHECK-DAG: %[[TWO:\d+]] = arith.constant 2 : u32;
+    // CHECK-DAG: %[[EIGHT:\d+]] = arith.constant 8 : u32;
+    // CHECK: %[[S:\d+]] = arith.add %[[B]], %[[EIGHT]] <{ overflow = #builtin.overflow<checked> }>;
     // CHECK-NEXT: %[[R:\d+]], %[[Q:\d+]] = arith.divmod %[[S]], %{{\d+}};
-    // CHECK-NEXT: %[[Q0:\d+]] = arith.sub %[[Q]], %{{\d+}} <{ overflow = #builtin.overflow<unchecked> }>;
+    // CHECK-NEXT: %[[Q0:\d+]] = arith.sub %[[Q]], %[[TWO]] <{ overflow = #builtin.overflow<unchecked> }>;
     // CHECK-NEXT: hir.assertz %[[R]] <{ code = #builtin.u32<250>
     // CHECK-NEXT: %[[P0:\d+]] = hir.int_to_ptr %[[Q0]]
     // CHECK-NEXT: hir.load %[[P0]];
     // CHECK-NEXT: %[[P8:\d+]] = hir.int_to_ptr %[[Q]]
     // CHECK-NEXT: hir.load %[[P8]];
-    // CHECK-NEXT: %[[Q4:\d+]] = arith.sub %[[Q]], %{{\d+}} <{ overflow = #builtin.overflow<unchecked> }>;
+    // CHECK-NEXT: %[[Q4:\d+]] = arith.sub %[[Q]], %[[ONE]] <{ overflow = #builtin.overflow<unchecked> }>;
     // CHECK-NEXT: %[[P4:\d+]] = hir.int_to_ptr %[[Q4]]
     // CHECK-NEXT: hir.load %[[P4]];
     // CHECK-NEXT: builtin.ret
@@ -300,6 +303,63 @@ builtin.module private @share_base_divmod {
         %6, %7 = arith.divmod %5, %4;
         hir.store %2, %1 : (ptr<u32, element>, u32);
         %8 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %9 = arith.constant 8 : u32;
+        %10 = arith.add %8, %9 <{ overflow = #builtin.overflow<checked> }>;
+        %11, %12 = arith.divmod %10, %4;
+        builtin.ret %7, %12 : (u32, u32);
+    };
+
+    // The offset may be on either side of the addition.
+    // CHECK: @constant_on_the_left(%[[B:\d+]]: u32)
+    // CHECK: %[[S:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: %{{\d+}}, %[[Q:\d+]] = arith.divmod %[[S]], %{{\d+}};
+    // CHECK-NEXT: %[[Q0:\d+]] = arith.sub %[[Q]], %{{\d+}} <{ overflow = #builtin.overflow<unchecked> }>;
+    // CHECK-NEXT: builtin.ret %[[Q0]], %[[Q]] : (u32, u32);
+    builtin.function public extern("C") @constant_on_the_left(%0: u32) -> (u32, u32) {
+        %1 = arith.constant 4 : u32;
+        %2, %3 = arith.divmod %0, %1;
+        %4 = arith.constant 8 : u32;
+        %5 = arith.add %4, %0 <{ overflow = #builtin.overflow<checked> }>;
+        %6, %7 = arith.divmod %5, %1;
+        builtin.ret %3, %7 : (u32, u32);
+    };
+
+    // Reloads of a local share one division even when no access has an offset.
+    // CHECK-LABEL: @zero_offsets(
+    // CHECK: %[[L:\d+]] = hir.load_local
+    // CHECK-NEXT: %[[R:\d+]], %[[Q:\d+]] = arith.divmod %[[L]], %{{\d+}};
+    // CHECK-NEXT: builtin.ret %[[Q]], %[[R]], %[[Q]] : (u32, u32, u32);
+    builtin.function public extern("C") @zero_offsets(%0: u32) -> (u32, u32, u32) {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %1 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %2 = arith.constant 4 : u32;
+        %3, %4 = arith.divmod %1, %2;
+        %5 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %6, %7 = arith.divmod %5, %2;
+        builtin.ret %4, %6, %7 : (u32, u32, u32);
+    };
+
+    // The address of one local reaches the adjacent ones, so a function that takes any local's
+    // address merges no loads: here a store through the address of local 0 writes local 1.
+    // CHECK-LABEL: @other_local_address(
+    // CHECK: %[[L:\d+]] = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+    // CHECK-NEXT: arith.add %[[L]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK: hir.store
+    // CHECK-NEXT: %[[L2:\d+]] = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+    // CHECK-NEXT: arith.add %[[L2]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    builtin.function public extern("C") @other_local_address(%0: u32, %1: u32) -> (u32, u32) {
+        %2 = hir.local_address <{ local = #builtin.local_variable<0, u32> }>;
+        hir.store_local %0 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+        %3 = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+        %4 = arith.constant 4 : u32;
+        %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<checked> }>;
+        %6, %7 = arith.divmod %5, %4;
+        %13 = hir.ptr_to_int %2 <{ ty = #builtin.type<u32> }>;
+        %14 = arith.constant 1 : u32;
+        %15 = arith.add %13, %14 <{ overflow = #builtin.overflow<checked> }>;
+        %16 = hir.int_to_ptr %15 <{ ty = #builtin.type<ptr<u32, element>> }>;
+        hir.store %16, %1 : (ptr<u32, element>, u32);
+        %8 = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
         %9 = arith.constant 8 : u32;
         %10 = arith.add %8, %9 <{ overflow = #builtin.overflow<checked> }>;
         %11, %12 = arith.divmod %10, %4;
