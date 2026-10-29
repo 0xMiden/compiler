@@ -1,16 +1,58 @@
-use alloc::collections::VecDeque;
+use alloc::{boxed::Box, collections::VecDeque};
 use core::{
     any::TypeId,
     cell::{Ref, RefCell},
+    hash::Hash,
     ptr::NonNull,
 };
 
-use midenc_hir::{EntityRef, SmallVec, adt::SmallSet, entity::RawEntity};
+use midenc_hir::{EntityRef, FxHashSet, SmallVec, entity::RawEntity};
 
 use super::*;
 use crate::{AnalysisQueue, LatticeAnchor, LatticeAnchorRef, solver::QueuedAnalysis};
 
 pub type Revision = u32;
+
+/// First-insertion order with allocation-free membership checks for up to four subscribers.
+/// Larger states keep a separate membership index to avoid quadratic subscription work.
+struct OrderedSubscriptions<T> {
+    items: SmallVec<[T; 4]>,
+    membership: Option<Box<FxHashSet<T>>>,
+}
+
+impl<T> Default for OrderedSubscriptions<T> {
+    fn default() -> Self {
+        Self {
+            items: SmallVec::new(),
+            membership: None,
+        }
+    }
+}
+
+impl<T: Copy + Eq + Hash> OrderedSubscriptions<T> {
+    fn insert(&mut self, item: T) -> bool {
+        if let Some(membership) = self.membership.as_mut() {
+            if !membership.insert(item) {
+                return false;
+            }
+        } else {
+            if self.items.contains(&item) {
+                return false;
+            }
+            if self.items.len() == self.items.inline_size() {
+                let mut membership: FxHashSet<T> = self.items.iter().copied().collect();
+                membership.insert(item);
+                self.membership = Some(Box::new(membership));
+            }
+        }
+        self.items.push(item);
+        true
+    }
+
+    fn as_slice(&self) -> &[T] {
+        self.items.as_slice()
+    }
+}
 
 pub struct AnalysisStateInfo {
     /// The immortal characteristics of the underlying analysis state:
@@ -31,7 +73,7 @@ pub struct AnalysisStateInfo {
     ///
     /// This is dynamically borrow-checked so that subscriptions can be recorded without requiring
     /// a mutable borrow of the analysis state itself.
-    pub(super) subscriptions: RefCell<SmallSet<AnalysisStateSubscription, 4>>,
+    subscriptions: RefCell<OrderedSubscriptions<AnalysisStateSubscription>>,
 }
 impl AnalysisStateInfo {
     #[inline]
@@ -108,6 +150,7 @@ impl AnalysisStateInfo {
     pub fn on_update_subscribers_count(&self) -> usize {
         self.subscriptions
             .borrow()
+            .as_slice()
             .iter()
             .filter(|sub| matches!(sub, AnalysisStateSubscription::OnUpdate { .. }))
             .count()
@@ -116,6 +159,7 @@ impl AnalysisStateInfo {
     pub fn on_update_subscribers(&self) -> SmallVec<[NonNull<dyn DataFlowAnalysis>; 4]> {
         self.subscriptions
             .borrow()
+            .as_slice()
             .iter()
             .filter_map(|sub| match sub {
                 AnalysisStateSubscription::OnUpdate { analysis } => Some(*analysis),
@@ -130,7 +174,7 @@ impl AnalysisStateInfo {
     }
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(PartialEq, Eq, Hash, Copy, Clone)]
 pub enum AnalysisStateSubscription {
     /// This subscribes `analysis` to state changes handled by the `on_update` callback of the
     /// analysis state.
@@ -319,5 +363,217 @@ pub fn on_require_analysis_fallback(
             analysis: current_analysis,
             point: dependent,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+    use core::{
+        cell::Cell,
+        hash::{Hash, Hasher},
+    };
+
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, pass::AnalysisManager, testing::Test,
+    };
+
+    use super::*;
+    use crate::{DataFlowSolver, Lattice};
+
+    #[repr(transparent)]
+    struct TestAnalysis<T>(T);
+
+    impl<T: 'static> DataFlowAnalysis for TestAnalysis<T> {
+        fn analysis_id(&self) -> TypeId {
+            TypeId::of::<Self>()
+        }
+
+        fn initialize(
+            &self,
+            _: &midenc_hir::Operation,
+            _: &mut DataFlowSolver,
+            _: AnalysisManager,
+        ) -> Result<(), midenc_hir::Report> {
+            Ok(())
+        }
+
+        fn visit(
+            &self,
+            _: &ProgramPoint,
+            _: &mut DataFlowSolver,
+        ) -> Result<(), midenc_hir::Report> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn subscriptions_preserve_identity_order_and_notification_deduplication() {
+        let mut test = Test::new("subscriptions", &[], &[Type::U32]);
+        let (value, constant, ret) = {
+            let mut builder = test.function_builder();
+            let value = builder.u32(7, SourceSpan::UNKNOWN);
+            let ret = builder.ret([value], SourceSpan::UNKNOWN).unwrap().as_operation_ref();
+            (value, value.borrow().get_defining_op().unwrap(), ret)
+        };
+        let solver = DataFlowSolver::default();
+        let anchor = solver.create_lattice_anchor(value);
+        let alloc = blink_alloc::Blink::new();
+        let mut descriptors = Default::default();
+        let key = AnalysisStateKey::new::<Lattice<u32>>(anchor);
+        let state =
+            RawAnalysisStateInfo::<Lattice<u32>>::alloc(&alloc, &mut descriptors, key, anchor);
+        let raw_info = RawAnalysisStateInfo::as_info_ptr(state);
+        let analysis = TestAnalysis(TestAnalysis(0u8));
+        let other = TestAnalysis(1u8);
+        let first = NonNull::from(&analysis as &dyn DataFlowAnalysis);
+        let same_address = NonNull::from(&analysis.0 as &dyn DataFlowAnalysis);
+        let second = NonNull::from(&other as &dyn DataFlowAnalysis);
+        // Both halves of the wide analysis pointer are part of subscription identity.
+        assert!(core::ptr::addr_eq(first.as_ptr(), same_address.as_ptr()));
+        assert!(!core::ptr::eq(first.as_ptr(), same_address.as_ptr()));
+        let before = ProgramPoint::before(constant);
+        let after = ProgramPoint::after(constant);
+        let expected = [
+            AnalysisStateSubscription::OnUpdate { analysis: first },
+            AnalysisStateSubscription::AtPoint {
+                analysis: first,
+                point: before,
+            },
+            AnalysisStateSubscription::Uses { analysis: first },
+            AnalysisStateSubscription::AtPoint {
+                analysis: first,
+                point: after,
+            },
+            AnalysisStateSubscription::OnUpdate {
+                analysis: same_address,
+            },
+            AnalysisStateSubscription::AtPoint {
+                analysis: same_address,
+                point: before,
+            },
+            AnalysisStateSubscription::AtPoint {
+                analysis: second,
+                point: before,
+            },
+            AnalysisStateSubscription::AtPoint {
+                analysis: first,
+                point: ProgramPoint::before(ret),
+            },
+        ];
+        {
+            let info = unsafe { raw_info.as_ref() };
+            for subscription in expected {
+                info.subscribe(subscription);
+                info.subscribe(subscription);
+            }
+            for subscription in expected.into_iter().rev() {
+                info.subscribe(subscription);
+            }
+            assert!(&*info.subscriptions() == expected);
+            assert_eq!(info.on_update_subscribers_count(), 2);
+            assert!(info.on_update_subscribers().as_slice() == [first, same_address]);
+        }
+
+        let worklist = Rc::new(RefCell::new(AnalysisQueue::new_in(Default::default())));
+        {
+            let mut state =
+                unsafe { AnalysisStateGuardMut::<Lattice<u32>>::new(raw_info, worklist.clone()) };
+            *state.value_mut() = 1;
+        }
+        let queue = worklist.borrow();
+        let expected_notifications = [
+            (before, first),
+            (ProgramPoint::after(ret), first),
+            (after, first),
+            (before, same_address),
+            (before, second),
+            (ProgramPoint::before(ret), first),
+            (ProgramPoint::after(ret), first),
+            (ProgramPoint::after(ret), same_address),
+        ];
+        assert_eq!(queue.len(), expected_notifications.len());
+        for (actual, (point, analysis)) in queue.iter().zip(expected_notifications) {
+            assert_eq!(actual.point, point);
+            assert!(core::ptr::eq(actual.analysis.as_ptr(), analysis.as_ptr()));
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    struct Counted<'a> {
+        value: usize,
+        equalities: &'a Cell<usize>,
+        hashes: &'a Cell<usize>,
+    }
+
+    impl PartialEq for Counted<'_> {
+        fn eq(&self, other: &Self) -> bool {
+            self.equalities.set(self.equalities.get() + 1);
+            self.value == other.value
+        }
+    }
+
+    impl Eq for Counted<'_> {}
+
+    impl Hash for Counted<'_> {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            self.hashes.set(self.hashes.get() + 1);
+            self.value.hash(state);
+        }
+    }
+
+    #[test]
+    fn subscription_membership_stays_inline_until_fifth_unique_item() {
+        let equalities = Cell::new(0);
+        let hashes = Cell::new(0);
+        let item = |value| Counted {
+            value,
+            equalities: &equalities,
+            hashes: &hashes,
+        };
+        let mut subscriptions = OrderedSubscriptions::default();
+        assert!(!subscriptions.items.spilled());
+        assert!(subscriptions.membership.is_none());
+        for value in 0..4 {
+            assert!(subscriptions.insert(item(value)));
+            assert!(!subscriptions.items.spilled());
+            assert!(subscriptions.membership.is_none());
+        }
+        assert!(!subscriptions.insert(item(3)));
+        assert!(!subscriptions.items.spilled());
+        assert!(subscriptions.membership.is_none());
+        assert_eq!(hashes.get(), 0);
+
+        assert!(subscriptions.insert(item(4)));
+        assert!(subscriptions.items.spilled());
+        assert!(subscriptions.membership.is_some());
+        for value in (0..5).rev() {
+            assert!(!subscriptions.insert(item(value)));
+        }
+        assert!(subscriptions.as_slice().iter().map(|item| item.value).eq(0..5));
+    }
+
+    #[test]
+    fn subscription_fanout_has_bounded_membership_work() {
+        const FANOUT: usize = 4096;
+        let equalities = Cell::new(0);
+        let hashes = Cell::new(0);
+        let mut subscriptions = OrderedSubscriptions::default();
+        for value in (0..FANOUT).chain((0..FANOUT).rev()) {
+            subscriptions.insert(Counted {
+                value,
+                equalities: &equalities,
+                hashes: &hashes,
+            });
+        }
+        assert_eq!(subscriptions.as_slice().len(), FANOUT);
+        assert!(subscriptions.as_slice().iter().map(|item| item.value).eq(0..FANOUT));
+        assert!(
+            equalities.get() < 32 * FANOUT,
+            "{} equality checks for {FANOUT} subscribers",
+            equalities.get()
+        );
+        assert!(hashes.get() < 16 * FANOUT, "{} hashes for {FANOUT} subscribers", hashes.get());
     }
 }
