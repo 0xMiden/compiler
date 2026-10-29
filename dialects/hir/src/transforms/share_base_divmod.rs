@@ -1,9 +1,12 @@
+//! The `share-base-divmod` pass: one `arith.divmod` per base and divisor in a block.
+
 use alloc::{rc::Rc, vec::Vec};
 
 use midenc_dialect_arith::{Add, ArithOpBuilder, Divmod};
 use midenc_hir::{
-    BlockRef, Builder, EntityMut, Forward, FxHashMap, FxHashSet, Immediate, Op, OperationName,
-    OperationRef, RawWalk, Report, Rewriter, Spanned, Symbol, TraceTarget, Type, ValueRef,
+    BlockRef, Builder, ConstantIntRange, EntityMut, Forward, FxHashMap, FxHashSet, Immediate, Op,
+    OperationName, OperationRef, RawWalk, Report, Rewriter, Spanned, Symbol, TraceTarget, Type,
+    ValueRef,
     dialects::builtin::{
         Function,
         attributes::{LocalVariable, Overflow},
@@ -17,27 +20,29 @@ use midenc_hir_analysis::{
     analyses::{IntegerRangeAnalysis, integer_range::value_range},
 };
 
-use crate::{Bitcast, HirOpBuilder, LoadLocal, LocalAddress, StoreLocal};
+use crate::{Bitcast, LoadLocal, LocalAddress, StoreLocal};
 
-/// Shares one `u32` `arith.divmod` of a base value among the divisions of that base plus constant
-/// offsets in a block.
+/// Shares one `u32` `arith.divmod` among the divisions of one base plus constant offsets in a
+/// block.
 ///
-/// Within a block, every `arith.divmod(arith.add(b, K) <checked>, d)` whose constant offset `K` is
-/// a multiple of the constant divisor `d`, and every `arith.divmod(b, d)`, is rewritten to use a
-/// single `arith.divmod(b, d)` placed at the first of them: the remainder is the shared one, and
-/// the quotient is the shared quotient plus `K / d`, added without a check.
+/// A group is formed, within a block, by the divisions by the same constant divisor `d` of the same
+/// base `b`, either directly (`arith.divmod(b, d)`) or plus a constant offset `K` that is a multiple
+/// of `d` (`arith.divmod(arith.add(b, K) <checked>, d)`, the addition having no other use). A group
+/// of at least two divisions, at least one with an offset, is rewritten to divide `b + Kmax` once,
+/// where `Kmax` is the largest offset of the group, at the first operation of the group. Every
+/// division then takes the shared remainder, and the shared quotient minus `(Kmax - K) / d`.
+///
+/// The addition of `Kmax` traps when `b + Kmax` overflows, like the addition it replaces, unless
+/// the integer range analysis proves that it cannot overflow. That trap may now happen earlier in
+/// the block than the access to `b + Kmax` would have: any execution that reaches the first
+/// operation of the group and then the access still fails, but with the overflow instead of a
+/// failure between them, and without the host events emitted between them.
 ///
 /// Bases are the same when they are the same SSA value, or when they are loaded (optionally through
 /// a `hir.bitcast`) from the same procedure local in the block with no store to that local between
 /// the loads. Locals whose address is taken are excluded, since memory writes may modify them.
 ///
-/// The checked addition traps when `b + K` overflows, and that trap is preserved. An offset is
-/// applied without a check only when the integer range analysis proves that `b + K` cannot
-/// overflow, or when an overflow check of `b` plus the largest unproven offset of the block,
-/// emitted at the first division of the group, has passed. That check may trap earlier in the block
-/// than the access it guards would have, which is unobservable: a trap aborts the whole execution.
-///
-/// Memory accesses with an element-aligned offset benefit: all accesses through one base share one
+/// Memory accesses with element-aligned offsets benefit: all accesses through one base share one
 /// conversion to the element address, and `remove-repeated-assertz` then drops the repeated
 /// alignment checks of the shared remainder.
 #[derive(Default)]
@@ -48,23 +53,23 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Sha
     "share one divmod of a base value among divmods of that base plus constant offsets"
 ));
 
-/// A `divmod` of `base + offset` by `divisor`.
+/// A `divmod` of `base + offset` by the divisor of its group.
 struct Candidate {
+    /// The division.
     divmod: OperationRef,
-    /// The checked addition producing the dividend, when `offset` is not zero.
+    /// The checked addition of `offset` producing the dividend, when `offset` is not zero.
     add: Option<OperationRef>,
-    /// The operation and operand index that hold the base: the addition, or the division itself.
+    /// The operation and operand index holding the base: the addition, or the division itself.
     ///
-    /// The base is read from the IR when the group is rewritten, because rewriting an earlier group
-    /// may have replaced it (e.g. when the base is the quotient of a shared division).
+    /// The base is read when needed rather than stored, since rewriting a group replaces the
+    /// quotient it produces, which may be the base of another group.
     base_operand: (OperationRef, usize),
+    /// The constant added to the base, a multiple of the divisor.
     offset: u32,
-    /// Whether the range analysis proves that `base + offset` does not overflow.
-    proven: bool,
 }
 
 impl Candidate {
-    /// The base of this candidate, read from the IR.
+    /// The base of this candidate.
     fn base(&self) -> ValueRef {
         let (op, index) = self.base_operand;
         op.borrow().operands()[index].borrow().as_value_ref()
@@ -74,48 +79,42 @@ impl Candidate {
 /// Identifies the runtime value of a base within a block.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum BaseKey {
+    /// The base is this SSA value.
     Value(ValueRef),
-    /// A value loaded from `local` in the block, possibly through a `hir.bitcast`. `epoch` counts
-    /// the stores to `local` in the block before the load, so loads with equal keys read the same
-    /// value.
+    /// The base is loaded from a local, and loads with equal keys read the same value.
     Local {
+        /// The local the base is loaded from.
         local: LocalVariable,
+        /// The number of stores to `local` in the block before the load.
         epoch: u32,
+        /// Whether the loaded value is reinterpreted by a `hir.bitcast`.
         bitcast: bool,
     },
 }
 
 /// The candidates of one block that divide the same base by the same divisor, in block order.
 struct Group {
+    /// The constant divisor, not zero.
     divisor: u32,
+    /// The divisions, in block order.
     candidates: Vec<Candidate>,
 }
 
 impl Group {
-    /// A base of the group, for diagnostics.
-    fn base(&self) -> ValueRef {
-        self.candidates[0].base()
-    }
-
-    /// Returns true if sharing the division saves work: it replaces at least one checked offset
-    /// and either merges several divisions or needs no overflow check.
+    /// Returns true if the group shares a division among several divisions, one with an offset.
     fn is_profitable(&self) -> bool {
-        let has_offset = self.candidates.iter().any(|candidate| candidate.offset != 0);
-        has_offset && (self.candidates.len() > 1 || self.unproven_max_offset() == 0)
+        self.candidates.len() > 1 && self.max_offset() != 0
     }
 
-    /// The largest offset whose addition is not proven to be free of overflow, or zero.
-    fn unproven_max_offset(&self) -> u32 {
-        self.candidates
-            .iter()
-            .filter(|candidate| !candidate.proven)
-            .map(|candidate| candidate.offset)
-            .max()
-            .unwrap_or(0)
+    /// The largest offset of the group.
+    fn max_offset(&self) -> u32 {
+        self.candidates.iter().map(|candidate| candidate.offset).max().unwrap_or(0)
     }
 
     /// The first operation of the group in block order, and the candidate it belongs to.
     fn first_op(&self) -> (OperationRef, &Candidate) {
+        // A candidate's addition precedes its division in the same block (see `match_candidate`),
+        // and may precede the divisions of the earlier candidates too.
         self.candidates
             .iter()
             .flat_map(|candidate| {
@@ -133,6 +132,22 @@ impl Group {
                 }
             })
             .expect("groups are never empty")
+    }
+
+    /// Returns true if the range analysis proves that the base plus the largest offset fits in 32
+    /// bits.
+    fn is_proven(&self, solver: &DataFlowSolver) -> bool {
+        let offset = ConstantIntRange::constant(Immediate::U32(self.max_offset()));
+        // The bases of the group hold the same value, so a proof for any of them holds for all.
+        self.candidates.iter().any(|candidate| {
+            value_range(solver, candidate.base()).is_some_and(|range| {
+                range.is_proven()
+                    && range
+                        .range()
+                        .and_then(|range| range.add_unsigned_without_overflow(&offset))
+                        .is_some()
+            })
+        })
     }
 }
 
@@ -168,7 +183,13 @@ impl Pass for ShareBaseDivmod {
             .with_topic(self.name())
             .with_relevant_symbol(function.name().as_str());
 
-        if function.is_declaration() {
+        let groups = if function.is_declaration() {
+            Vec::new()
+        } else {
+            collect_groups(function.as_operation_ref())
+        };
+        let groups = groups.into_iter().filter(Group::is_profitable).collect::<Vec<_>>();
+        if groups.is_empty() {
             state.preserved_analyses_mut().preserve_all();
             state.set_post_pass_status(PostPassStatus::Unchanged);
             return Ok(());
@@ -176,54 +197,34 @@ impl Pass for ShareBaseDivmod {
 
         let mut solver = DataFlowSolver::default();
         solver.load::<IntegerRangeAnalysis>();
-        // Without a completed solve, ranges prove nothing and every offset gets a runtime check.
-        let solver = match solver
-            .initialize_and_run(function.as_operation(), state.analysis_manager().clone())
-        {
-            Ok(()) => Some(solver),
-            Err(err) => {
-                log::debug!(
-                    target: &trace_target,
-                    sym = trace_target.relevant_symbol();
-                    "integer range analysis did not complete, nothing is proven: {err}"
-                );
-                None
-            }
-        };
+        solver.initialize_and_run(function.as_operation(), state.analysis_manager().clone())?;
+        // Decide every proof before the first rewrite: the solver only knows the original values.
+        let proven = groups.iter().map(|group| group.is_proven(&solver)).collect::<Vec<_>>();
 
-        let op = function.as_operation_ref();
         let context = function.as_operation().context_rc();
         drop(function);
 
-        let groups = collect_groups(op, solver.as_ref());
         let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(context)
             .with_listener(TracingRewriterListener);
-        let mut changed = false;
-        for group in groups.iter().filter(|group| group.is_profitable()) {
+        for (group, proven) in groups.iter().zip(proven) {
             log::debug!(
                 target: &trace_target,
                 sym = trace_target.relevant_symbol();
-                "sharing the division of {} by {} among {} divisions",
-                group.base(),
+                "sharing the division of {} by {} among {} divisions (proven: {proven})",
+                group.candidates[0].base(),
                 group.divisor,
                 group.candidates.len()
             );
-            rewrite_group(&mut rewriter, group)?;
-            changed = true;
+            rewrite_group(&mut rewriter, group, proven)?;
         }
 
-        if changed {
-            state.set_post_pass_status(PostPassStatus::Changed);
-        } else {
-            state.preserved_analyses_mut().preserve_all();
-            state.set_post_pass_status(PostPassStatus::Unchanged);
-        }
+        state.set_post_pass_status(PostPassStatus::Changed);
         Ok(())
     }
 }
 
 /// Collects the candidate divisions of `function`, grouped by block, base and divisor.
-fn collect_groups(function: OperationRef, solver: Option<&DataFlowSolver>) -> Vec<Group> {
+fn collect_groups(function: OperationRef) -> Vec<Group> {
     let mut address_taken = FxHashSet::<LocalVariable>::default();
     let mut blocks = Vec::<BlockRef>::new();
     function.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
@@ -260,18 +261,10 @@ fn collect_groups(function: OperationRef, solver: Option<&DataFlowSolver>) -> Ve
             }
             drop(operation);
 
-            let Some((divisor, mut candidate)) = match_candidate(op) else {
+            let Some((divisor, candidate)) = match_candidate(op) else {
                 continue;
             };
-            let base = candidate.base();
-            candidate.proven = candidate.offset == 0
-                || solver.and_then(|solver| value_range(solver, base)).is_some_and(|range| {
-                    range.is_proven()
-                        && range.range().is_some_and(|range| {
-                            range.umax() + u128::from(candidate.offset) <= u128::from(u32::MAX)
-                        })
-                });
-            let key = base_key(base, &load_epochs);
+            let key = base_key(candidate.base(), &load_epochs);
             let index = *group_index.entry((key, divisor)).or_insert_with(|| {
                 groups.push(Group {
                     divisor,
@@ -285,8 +278,8 @@ fn collect_groups(function: OperationRef, solver: Option<&DataFlowSolver>) -> Ve
     groups
 }
 
-/// Returns the key of `base`: the local and epoch of the load in the block that produces it, if
-/// any, otherwise the value itself.
+/// Returns the key of `base`: the local and epoch of the load in the block that produces it,
+/// directly or through a `hir.bitcast`, if any, otherwise the value itself.
 fn base_key(
     base: ValueRef,
     load_epochs: &FxHashMap<OperationRef, (LocalVariable, u32)>,
@@ -320,7 +313,7 @@ fn base_key(
 /// Matches a `u32` `arith.divmod` by a non-zero constant, returning its divisor and the candidate.
 ///
 /// The dividend is split into a base and an offset when it is a checked addition of a constant
-/// that is a multiple of the divisor, defined in the same block.
+/// that is a multiple of the divisor, defined in the same block and used only by the division.
 fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
     let operation = op.borrow();
     let divmod = operation.downcast_ref::<Divmod>()?;
@@ -332,8 +325,14 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
     let divisor = constant_u32(divmod.rhs().as_value_ref()).filter(|divisor| *divisor != 0)?;
 
     let offset_add = dividend.borrow().get_defining_op().and_then(|add_op| {
+        // An addition with other uses stays, so splitting it off would not remove it.
+        if dividend.borrow().iter_uses().nth(1).is_some() {
+            return None;
+        }
         let add = add_op.borrow();
         let add_ref = add.downcast_ref::<Add>()?;
+        // The shared addition is placed before the group's first operation in this block, which
+        // must stay on the paths through the original addition.
         if *add_ref.get_overflow() != Overflow::Checked || add.parent() != Some(block) {
             return None;
         }
@@ -356,7 +355,6 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
             add,
             base_operand,
             offset,
-            proven: false,
         },
     ))
 }
@@ -370,28 +368,30 @@ fn constant_u32(value: ValueRef) -> Option<u32> {
     }
 }
 
-/// Rewrites the divisions of `group` to share one division of the base.
+/// Rewrites the divisions of `group` to share one division of the base plus the largest offset,
+/// whose addition is checked unless `proven`.
 fn rewrite_group(
     rewriter: &mut RewriterImpl<TracingRewriterListener>,
     group: &Group,
+    proven: bool,
 ) -> Result<(), Report> {
     // Every base of the group holds the same value; the one of the first operation is defined
     // before it.
     let (first_op, first_candidate) = group.first_op();
     let base = first_candidate.base();
+    let max_offset = group.max_offset();
     let span = first_op.borrow().span();
     let (remainder, quotient) = {
         let mut rewriter = rewriter.with_inline_call_chain(first_op);
         rewriter.set_insertion_point_before(first_op);
-        let check_offset = group.unproven_max_offset();
-        if check_offset != 0 {
-            // `base` plus every unproven offset fits in 32 bits once `base + check_offset` does.
-            let offset = rewriter.imm(Immediate::U32(check_offset), span);
-            let (overflowed, _) = rewriter.add_overflowing(base, offset, span)?;
-            rewriter.assertz(overflowed, span)?;
-        }
+        let offset = rewriter.imm(Immediate::U32(max_offset), span);
+        let dividend = if proven {
+            rewriter.add_unchecked(base, offset, span)?
+        } else {
+            rewriter.add(base, offset, span)?
+        };
         let divisor = rewriter.imm(Immediate::U32(group.divisor), span);
-        let (quotient, remainder) = rewriter.divmod(base, divisor, span)?;
+        let (quotient, remainder) = rewriter.divmod(dividend, divisor, span)?;
         (remainder, quotient)
     };
 
@@ -401,22 +401,21 @@ fn rewrite_group(
             let divmod = op.downcast_ref::<Divmod>().expect("candidates are divmods");
             (divmod.remainder().as_value_ref(), divmod.quotient().as_value_ref(), op.span())
         };
-        let new_quotient = if candidate.offset == 0 {
+        let new_quotient = if candidate.offset == max_offset {
             quotient
         } else {
             let mut rewriter = rewriter.with_inline_call_chain(candidate.divmod);
             rewriter.set_insertion_point_before(candidate.divmod);
-            // No overflow: the quotient is at most `(base + offset) / divisor`, which is proven or
-            // checked to fit in 32 bits.
-            let offset = rewriter.imm(Immediate::U32(candidate.offset / group.divisor), span);
-            rewriter.add_unchecked(quotient, offset, span)?
+            // Both offsets are multiples of the divisor, so this is exactly
+            // `(base + offset) / divisor`, and it cannot underflow.
+            let difference = (max_offset - candidate.offset) / group.divisor;
+            let difference = rewriter.imm(Immediate::U32(difference), span);
+            rewriter.sub_unchecked(quotient, difference, span)?
         };
         rewriter.replace_all_uses_of_value_with(old_remainder, remainder);
         rewriter.replace_all_uses_of_value_with(old_quotient, new_quotient);
         rewriter.erase_op(candidate.divmod);
-        if let Some(add) = candidate.add
-            && !add.borrow().is_used()
-        {
+        if let Some(add) = candidate.add {
             rewriter.erase_op(add);
         }
     }

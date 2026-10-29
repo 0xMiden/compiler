@@ -142,9 +142,9 @@ fn overhead() {
     // relative to a direct call]
     expect![[r#"
         [
-            9848,
+            9713,
             478,
-            67,
+            78,
         ]
     "#]]
     .assert_debug_eq(&[

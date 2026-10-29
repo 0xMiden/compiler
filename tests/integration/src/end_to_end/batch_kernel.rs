@@ -500,42 +500,42 @@ fn batch_kernel() {
     check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
 
     expect![[r#"
-        MAST bytes: 99207
+        MAST bytes: 98419
         VM cycles:
-        two transactions: 24086
-        partial erasure: 21008
-        all inputs erased: 16640
-        no notes: 8937
-        eight transactions, 64 notes: 222291
-        tampered batch: 1044
-        tampered header: 2170
-        tampered input preimage: 12972
-        tampered output preimage: 14719
+        two transactions: 23706
+        partial erasure: 20731
+        all inputs erased: 16386
+        no notes: 8781
+        eight transactions, 64 notes: 219445
+        tampered batch: 1039
+        tampered header: 2173
+        tampered input preimage: 12827
+        tampered output preimage: 14545
         empty batch: 331
         too many transactions: 317
         unaligned transactions: 298
-        short header: 1774
-        long header: 1774
-        too many input notes: 12591
-        too many output notes: 14335
-        unaligned input preimage: 12572
-        unaligned output preimage: 14324
-        missing input list: 13060
-        duplicated input list: 5552
-        descending input list: 5405
-        phantom input list: 23613
-        oversized input list: 3623
-        unaligned input list: 3604
-        missing output list: 21210
-        duplicated output list: 7477
-        descending output list: 7330
-        phantom output list: 23188
-        oversized output list: 5538
-        unaligned output list: 5519
-        input note id mismatch: 17926
-        phantom erasure: 19267
-        consume before create: 12601
-        same transaction erasure: 11524
+        short header: 1777
+        long header: 1777
+        too many input notes: 12441
+        too many output notes: 14156
+        unaligned input preimage: 12422
+        unaligned output preimage: 14145
+        missing input list: 12915
+        duplicated input list: 5489
+        descending input list: 5342
+        phantom input list: 23244
+        oversized input list: 3592
+        unaligned input list: 3573
+        missing output list: 20894
+        duplicated output list: 7383
+        descending output list: 7236
+        phantom output list: 22819
+        oversized output list: 5475
+        unaligned output list: 5456
+        input note id mismatch: 17677
+        phantom erasure: 19013
+        consume before create: 12434
+        same transaction erasure: 11374
     "#]]
     .assert_eq(&metrics);
 }
