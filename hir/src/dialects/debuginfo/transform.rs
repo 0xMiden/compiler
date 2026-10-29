@@ -41,15 +41,15 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, FxHashMap, FxHashSet, Op, OpBuilder, OperationRef, ProgramPoint, Report, SmallVec,
-    Spanned, ValueRef,
+    Builder, FxHashMap, Op, OpBuilder, OperationRef, ProgramPoint, Report, SmallVec, Spanned,
+    ValueRef,
     dialects::debuginfo::attributes::ExpressionOp,
     patterns::{Rewriter, RewriterExt},
 };
 
 use super::{
     DIBuilder, DebugInfoMutation, DebugInfoUpdate,
-    bindings::{SourceBinding, VisibilitySlot, enclosing_function},
+    bindings::{SourceBinding, enclosing_function},
     debug_record_variable, is_debug_record,
     ops::DebugValue,
 };
@@ -423,121 +423,11 @@ fn collect_debug_ops_recursive(op: &OperationRef, debug_ops: &mut Vec<OperationR
     });
 }
 
-/// Source binding identities known to a rewrite, scoped by function and inline frame.
-///
-/// This is an inventory, not a data-flow claim about which binding is currently live. Reuse it
-/// across owner erasures when a transform does not introduce new source binding identities.
-/// Keeping it separate from the audit avoids exposing capture snapshots or mutation authority.
-pub struct DebugBindingInventory {
-    bindings: Vec<SourceBinding>,
-    visibility: FxHashMap<VisibilitySlot, Vec<usize>>,
-}
+pub use super::capture_invalidation::{
+    CaptureInvalidationPhase, capture_invalidation_barrier, is_pending_capture,
+};
 
-impl DebugBindingInventory {
-    pub fn new(root: OperationRef) -> Self {
-        #[cfg(test)]
-        tests::BUILDS.with(|count| count.set(count.get() + 1));
-        let mut bindings = Vec::new();
-        let mut visibility: FxHashMap<VisibilitySlot, Vec<usize>> = FxHashMap::default();
-        let mut seen = FxHashSet::default();
-        for record in collect_debug_ops(&root) {
-            let binding = SourceBinding::of(record).expect("expected debug record");
-            if seen.insert(binding.clone()) {
-                visibility.entry(binding.visibility()).or_default().push(bindings.len());
-                bindings.push(binding);
-            }
-        }
-        Self {
-            bindings,
-            visibility,
-        }
-    }
-
-    /// Invalidate captures at the original owner's program point before its erasure.
-    ///
-    /// Conditional capture effects cannot generally be hoisted. Invalidate every possible binding
-    /// in each affected visibility slot, including a prior binding a removed shadow could expose.
-    /// Each disappearing record has an exact origin/anchor mapping; additional kills only reduce
-    /// availability. Resolve record disappearance here, independently of later result RAUW.
-    pub fn invalidate_captures<R: ?Sized + Rewriter>(
-        &self,
-        owner: OperationRef,
-        rewriter: &mut R,
-    ) -> Result<(), Report> {
-        self.invalidate_records(owner, collect_debug_ops(&owner), rewriter)
-    }
-
-    fn invalidate_records<R: ?Sized + Rewriter>(
-        &self,
-        owner: OperationRef,
-        records: Vec<OperationRef>,
-        rewriter: &mut R,
-    ) -> Result<(), Report> {
-        if records.is_empty() {
-            return Ok(());
-        }
-        let mut originals: FxHashMap<SourceBinding, Vec<OperationRef>> = FxHashMap::default();
-        let mut affected = Vec::new();
-        let mut slots = FxHashSet::default();
-        for &record in &records {
-            let binding = SourceBinding::of(record).expect("expected debug record");
-            if !originals.contains_key(&binding) {
-                slots.insert(binding.visibility());
-                affected.push(binding.clone());
-            }
-            originals.entry(binding).or_default().push(record);
-        }
-        // Preserve the old deterministic order: owner identities first, then inventory order.
-        let mut additional = slots
-            .iter()
-            .filter_map(|slot| self.visibility.get(slot))
-            .flatten()
-            .copied()
-            .collect::<Vec<_>>();
-        additional.sort_unstable();
-        for index in additional {
-            let binding = &self.bindings[index];
-            if !originals.contains_key(binding) {
-                affected.push(binding.clone());
-            }
-        }
-        // The owner scope also includes external records depending on its results. They remain
-        // unchanged here, so use Salvage for the mixed scope; each disappearing nested capture
-        // is still explicitly mapped to the exact kill we create below.
-        let mut update = DebugInfoMutation::new(owner, DebugInfoUpdate::Salvage);
-        for binding in affected {
-            let span = owner.borrow().span();
-            let ip = *rewriter.insertion_point();
-            let previous_chain = rewriter.replace_inline_call_chain(
-                binding.identity.inline_calls.clone().map(|chain| {
-                    rewriter
-                        .context_rc()
-                        .create_attribute::<super::attributes::InlineCallChainAttr, _>(chain)
-                        .as_attribute_ref()
-                }),
-            );
-            rewriter.set_insertion_point_before(owner);
-            let replacement = rewriter.debug_kill(binding.identity.variable.clone(), span);
-            rewriter.restore_insertion_point(ip);
-            rewriter.replace_inline_call_chain(previous_chain);
-            let replacement = replacement?.as_operation_ref();
-            if let Some(records) = originals.get(&binding) {
-                for record in records {
-                    update.replace_capture(*record, replacement, owner)?;
-                }
-            }
-        }
-        // Keep the anchor attached until every replacement has been inserted, including when
-        // the owner itself is a record and its slot contains several shadow declarations.
-        for record in records {
-            rewriter.erase_op(record);
-        }
-        Ok(())
-    }
-}
-
-/// Invalidate an owner's captures using all binding identities in its containing function.
-/// Repeated erasures can reuse a [`DebugBindingInventory`] to avoid repeated function walks.
+/// Replace disappearing captures immediately, then clear surviving shadows at phase completion.
 pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
     owner: OperationRef,
     rewriter: &mut R,
@@ -546,49 +436,59 @@ pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
     if records.is_empty() {
         return Ok(());
     }
-    let root = enclosing_function(owner).unwrap_or(owner);
-    let inventory = match rewriter.debug_binding_inventory_cache() {
-        Some(cache) => cache.inventory(root),
-        None => alloc::rc::Rc::new(DebugBindingInventory::new(root)),
+    let context = owner.borrow().context_rc();
+    let phase = if super::capture_invalidation::active(&context) {
+        None
+    } else {
+        Some(CaptureInvalidationPhase::begin(
+            enclosing_function(owner).unwrap_or(owner),
+            None,
+        )?)
     };
-    inventory.invalidate_records(owner, records, rewriter)
+    let result = invalidate_records(owner, records, rewriter);
+    if let Err(error) = &result {
+        super::capture_invalidation::poison(
+            &context,
+            alloc::format!("capture replacement failed: {error}"),
+        );
+    }
+    let finish = phase.map(|phase| phase.finish_with(rewriter)).transpose();
+    match (result, finish) {
+        (Err(body), Err(finish)) => Err(Report::msg(alloc::format!("{body}; {finish}"))),
+        (Err(error), _) | (_, Err(error)) => Err(error),
+        _ => Ok(()),
+    }
 }
 
-/// Rewrite-local inventory storage. Reuse is enabled only by a driver with an explicit lifecycle.
-/// Ordinary rewriters and arbitrary patterns always receive a fresh inventory.
-#[derive(Default)]
-pub struct DebugBindingInventoryCache {
-    enabled: bool,
-    preserving: bool,
-    inventory: Option<(OperationRef, alloc::rc::Rc<DebugBindingInventory>)>,
-}
-
-impl DebugBindingInventoryCache {
-    pub(crate) fn enable(&mut self) {
-        self.enabled = true;
-    }
-
-    pub(crate) fn invalidate(&mut self) {
-        self.inventory = None;
-    }
-
-    pub(crate) fn enter(&mut self, preserving: bool) -> bool {
-        core::mem::replace(&mut self.preserving, preserving)
-    }
-
-    pub(crate) fn inventory(&mut self, root: OperationRef) -> alloc::rc::Rc<DebugBindingInventory> {
-        if !self.enabled || !self.preserving {
-            return alloc::rc::Rc::new(DebugBindingInventory::new(root));
+fn invalidate_records<R: ?Sized + Rewriter>(
+    owner: OperationRef,
+    records: Vec<OperationRef>,
+    rewriter: &mut R,
+) -> Result<(), Report> {
+    let mut originals: FxHashMap<SourceBinding, Vec<OperationRef>> = FxHashMap::default();
+    let mut affected = Vec::new();
+    for &record in &records {
+        let binding = SourceBinding::of(record).expect("expected debug record");
+        if !originals.contains_key(&binding) {
+            affected.push(binding.clone());
         }
-        if let Some((owner, inventory)) = &self.inventory
-            && *owner == root
-        {
-            return inventory.clone();
-        }
-        let inventory = alloc::rc::Rc::new(DebugBindingInventory::new(root));
-        self.inventory = Some((root, inventory.clone()));
-        inventory
+        originals.entry(binding).or_default().push(record);
     }
+    // External records depending on owner results stay unchanged; every disappearing nested
+    // capture still has an exact newly inserted witness under this mixed-scope guard.
+    let mut update = DebugInfoMutation::new(owner, DebugInfoUpdate::Salvage);
+    for binding in affected {
+        super::capture_invalidation::emit(rewriter, &binding, owner)?;
+        let replacement = owner.prev().expect("new mandatory kill");
+        for &record in &originals[&binding] {
+            update.replace_capture(record, replacement, owner)?;
+        }
+        super::capture_invalidation::submit(replacement);
+    }
+    for record in records {
+        rewriter.erase_op(record);
+    }
+    Ok(())
 }
 
 #[cfg(test)]

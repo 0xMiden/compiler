@@ -17,6 +17,29 @@ use crate::{
     traits::{ConstantLike, Foldable, IsolatedFromAbove, Transparent},
 };
 
+/// Nonconvergence preserves the partial rewrite effect; hard failures must propagate.
+#[derive(Debug)]
+pub enum GreedyRewriteError<T> {
+    NonConverged(T),
+    Failed(Report),
+}
+impl<T: core::fmt::Debug> core::fmt::Display for GreedyRewriteError<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NonConverged(effect) => {
+                write!(f, "greedy rewrite did not converge (effect={effect:?})")
+            }
+            Self::Failed(error) => write!(f, "{error}"),
+        }
+    }
+}
+impl<T> From<Report> for GreedyRewriteError<T> {
+    fn from(error: Report) -> Self {
+        Self::Failed(error)
+    }
+}
+use crate::dialects::debuginfo::transform::CaptureInvalidationPhase;
+
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the
 /// highest benefit patterns in a greedy worklist driven manner until a fixpoint is reached.
 ///
@@ -39,7 +62,7 @@ pub fn apply_patterns_and_fold_region_greedily(
     region: RegionRef,
     patterns: Rc<FrozenRewritePatternSet>,
     mut config: GreedyRewriteConfig,
-) -> Result<bool, bool> {
+) -> Result<bool, GreedyRewriteError<bool>> {
     // The top-level operation must be known to be isolated from above to prevent performing
     // canonicalizations on operations defined at or above the region containing 'op'.
     let context = {
@@ -94,18 +117,24 @@ pub fn apply_patterns_and_fold_greedily(
     op: OperationRef,
     patterns: Rc<FrozenRewritePatternSet>,
     config: GreedyRewriteConfig,
-) -> Result<bool, bool> {
+) -> Result<bool, GreedyRewriteError<bool>> {
     let mut any_region_changed = false;
     let mut failed = false;
-    let op = op.borrow();
-    let mut cursor = op.regions().front();
-    while let Some(region) = cursor.as_pointer() {
-        cursor.move_next();
+    let regions = op
+        .borrow()
+        .regions()
+        .iter()
+        .map(|region| region.as_region_ref())
+        .collect::<Vec<_>>();
+    for region in regions {
         match apply_patterns_and_fold_region_greedily(region, patterns.clone(), config.clone()) {
             Ok(region_changed) => {
                 any_region_changed |= region_changed;
             }
-            Err(region_changed) => {
+            Err(GreedyRewriteError::Failed(error)) => {
+                return Err(GreedyRewriteError::Failed(error));
+            }
+            Err(GreedyRewriteError::NonConverged(region_changed)) => {
                 any_region_changed |= region_changed;
                 failed = true;
             }
@@ -113,7 +142,7 @@ pub fn apply_patterns_and_fold_greedily(
     }
 
     if failed {
-        Err(any_region_changed)
+        Err(GreedyRewriteError::NonConverged(any_region_changed))
     } else {
         Ok(any_region_changed)
     }
@@ -131,7 +160,7 @@ pub enum ApplyPatternsAndFoldEffect {
 }
 
 pub type ApplyPatternsAndFoldResult =
-    Result<ApplyPatternsAndFoldEffect, ApplyPatternsAndFoldEffect>;
+    Result<ApplyPatternsAndFoldEffect, GreedyRewriteError<ApplyPatternsAndFoldEffect>>;
 
 /// Rewrite the specified ops by repeatedly applying the highest benefit patterns in a greedy
 /// worklist driven manner until a fixpoint is reached.
@@ -184,7 +213,13 @@ pub fn apply_patterns_and_fold(
     let mut driver = MultiOpPatternRewriteDriver::new(context, patterns, config, ops);
     let converged = driver.simplify(ops);
     let changed = match converged.as_ref() {
-        Ok(changed) | Err(changed) => *changed,
+        Ok(changed) | Err(GreedyRewriteError::NonConverged(changed)) => *changed,
+        Err(GreedyRewriteError::Failed(_)) => {
+            let Err(GreedyRewriteError::Failed(error)) = converged else {
+                unreachable!()
+            };
+            return Err(GreedyRewriteError::Failed(error));
+        }
     };
     let erased = driver.inner.surviving_ops.borrow().is_empty();
     let effect = if erased {
@@ -198,7 +233,7 @@ pub fn apply_patterns_and_fold(
         Ok(effect)
     } else {
         log::trace!(target: "pattern-rewrite-driver", "pattern rewrite did not converge after {max_rewrites} rewrites");
-        Err(effect)
+        Err(GreedyRewriteError::NonConverged(effect))
     }
 }
 
@@ -449,9 +484,6 @@ impl GreedyPatternRewriteDriver {
         log::debug!(target: "pattern-rewrite-driver", "starting processing of greedy pattern rewrite driver worklist");
         let mut rewriter =
             PatternRewriter::new_with_listener(self.context.clone(), Rc::clone(&self));
-        // This rewriter lives for exactly one worklist run. CFG cleanup between runs cannot
-        // leave a reusable inventory behind; only declared preserving patterns can use it.
-        rewriter.debug_binding_inventory_cache().unwrap().enable();
 
         let mut changed = false;
         let mut num_rewrites = 0u32;
@@ -513,7 +545,6 @@ impl GreedyPatternRewriteDriver {
             let mut results = SmallVec::<[OpFoldResult; 1]>::default();
             log::trace!(target: "pattern-rewrite-driver", "attempting to fold operation..");
             if op.fold(&mut results).is_ok() {
-                rewriter.debug_binding_inventory_cache().unwrap().invalidate();
                 if results.is_empty() {
                     // Op was modified in-place
                     self.notify_operation_modified(op_ref);
@@ -876,11 +907,26 @@ impl RegionPatternRewriteDriver {
     /// Simplify ops inside `self.region`, and simplify the region itself.
     ///
     /// Returns `Ok(changed)` if the transformation converged, with `changed` indicating whether or
-    /// not the IR was changed. Otherwise, `Err(changed)` is returned.
-    pub fn simplify(&mut self) -> Result<bool, bool> {
+    /// not the IR was changed. Budget exhaustion returns `NonConverged(changed)`;
+    /// capture materialization and lifecycle errors return `Failed(report)`.
+    pub fn simplify(&mut self) -> Result<bool, GreedyRewriteError<bool>> {
+        let phase = CaptureInvalidationPhase::begin(
+            self.region.parent().unwrap(),
+            Some(self.driver.clone()),
+        )?;
+        let result = self.simplify_body();
+        let changed = phase.finish()?;
+        match result {
+            Ok(effect) => Ok(effect || changed),
+            Err(effect) => Err(GreedyRewriteError::NonConverged(effect || changed)),
+        }
+    }
+
+    fn simplify_body(&mut self) -> Result<bool, bool> {
         use crate::matchers::Matcher;
 
         let mut continue_rewrites = false;
+        let mut changed = false;
         let mut iteration = 0;
 
         while self.driver.config.max_iterations.is_none_or(|max| iteration < max.get()) {
@@ -957,6 +1003,7 @@ impl RegionPatternRewriteDriver {
                 log::debug!(target: "pattern-rewrite-driver", "region simplification was disabled, skipping simplification rewrites");
             }
 
+            changed |= continue_rewrites;
             if !continue_rewrites {
                 log::trace!(target: "pattern-rewrite-driver", "region pattern rewrites have converged");
                 break;
@@ -966,9 +1013,9 @@ impl RegionPatternRewriteDriver {
         // If `continue_rewrites` is false, then the rewrite converged, i.e. the IR wasn't changed
         // in the last iteration.
         if !continue_rewrites {
-            Ok(iteration > 1)
+            Ok(changed)
         } else {
-            Err(iteration > 1)
+            Err(changed)
         }
     }
 }
@@ -1007,7 +1054,18 @@ impl MultiOpPatternRewriteDriver {
         }
     }
 
-    pub fn simplify(&mut self, ops: &[OperationRef]) -> Result<bool, bool> {
+    pub fn simplify(&mut self, ops: &[OperationRef]) -> Result<bool, GreedyRewriteError<bool>> {
+        let root = self.driver.config.scope.and_then(|region| region.parent()).unwrap_or(ops[0]);
+        let phase = CaptureInvalidationPhase::begin(root, Some(self.driver.clone()))?;
+        let result = self.simplify_body(ops);
+        let changed = phase.finish()?;
+        match result {
+            Ok(effect) => Ok(effect || changed),
+            Err(effect) => Err(GreedyRewriteError::NonConverged(effect || changed)),
+        }
+    }
+
+    fn simplify_body(&mut self, ops: &[OperationRef]) -> Result<bool, bool> {
         // Populate the initial worklist
         for op in ops.iter().copied() {
             self.driver.add_single_op_to_worklist(op);

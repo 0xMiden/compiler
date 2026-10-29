@@ -1,130 +1,19 @@
 use alloc::{boxed::Box, rc::Rc};
-use core::cell::Cell;
 
 use super::*;
 use crate::{
-    Context, SourceSpan, Type,
+    FxHashSet, RegionKindInterface, SourceSpan, Type,
     dialects::{
         builtin::BuiltinOpBuilder,
         debuginfo::{DebugKill, attributes::Variable},
+        test::TestDialect,
     },
     patterns::{
-        FrozenRewritePatternSet, Pattern, PatternApplicator, PatternBenefit, PatternInfo,
-        PatternKind, RewritePattern, RewritePatternSet, RewriterImpl,
+        FrozenRewritePatternSet, Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern,
+        RewritePatternSet, RewriterImpl,
     },
     testing::Test,
 };
-
-std::thread_local! { pub(super) static BUILDS: Cell<usize> = const { Cell::new(0) }; }
-
-#[derive(Clone, Copy)]
-enum Action {
-    Invalidate,
-    Introduce,
-    NoMatch,
-    Error,
-}
-struct CapturePattern {
-    info: PatternInfo,
-    action: Action,
-}
-impl Pattern for CapturePattern {
-    fn info(&self) -> &PatternInfo {
-        &self.info
-    }
-
-    fn preserves_debug_bindings(&self) -> bool {
-        matches!(self.action, Action::Invalidate)
-    }
-}
-impl RewritePattern for CapturePattern {
-    fn match_and_rewrite(
-        &self,
-        op: OperationRef,
-        rewriter: &mut dyn Rewriter,
-    ) -> Result<bool, Report> {
-        match self.action {
-            Action::Invalidate => {
-                invalidate_debug_captures(op, rewriter)?;
-                Ok(true)
-            }
-            Action::Introduce => {
-                let value =
-                    op.borrow().downcast_ref::<DebugValue>().unwrap().value().as_value_ref();
-                rewriter.set_insertion_point_before(op);
-                rewriter.debug_value(
-                    value,
-                    Variable::new("x".into(), "test.rs".into(), 2, None),
-                    SourceSpan::UNKNOWN,
-                )?;
-                Ok(true)
-            }
-            Action::NoMatch => Ok(false),
-            Action::Error => Err(Report::msg("deliberate rewrite error")),
-        }
-    }
-}
-
-fn apply(context: Rc<Context>, rewriter: &mut RewriterImpl, op: OperationRef, action: Action) {
-    let pattern = CapturePattern {
-        info: PatternInfo::new(
-            context.clone(),
-            "capture-test",
-            PatternKind::Any,
-            PatternBenefit::MIN,
-        ),
-        action,
-    };
-    let patterns =
-        RewritePatternSet::from_iter(context, [Box::new(pattern) as Box<dyn RewritePattern>]);
-    let mut applicator = PatternApplicator::new(Rc::new(FrozenRewritePatternSet::new(patterns)));
-    applicator.apply_default_cost_model();
-    let result = applicator.match_and_rewrite(op, rewriter, |_| true, |_| {}, |_| Ok(()));
-    assert_eq!(result.is_ok(), !matches!(action, Action::NoMatch | Action::Error));
-}
-
-#[test]
-fn inventory_reuse_tracks_successful_source_identity_changes() -> Result<(), Report> {
-    let mut test = Test::new("inventory", &[Type::U32], &[Type::U32]);
-    let mut records = Vec::new();
-    {
-        let mut builder = test.function_builder();
-        let value = builder.current_block().borrow().arguments()[0] as ValueRef;
-        for _ in 0..4 {
-            records.push(
-                BuiltinOpBuilder::builder_mut(&mut builder)
-                    .debug_value(
-                        value,
-                        Variable::new("x".into(), "test.rs".into(), 1, None),
-                        SourceSpan::UNKNOWN,
-                    )?
-                    .as_operation_ref(),
-            );
-        }
-        builder.ret([value], SourceSpan::UNKNOWN)?;
-    }
-    let context = test.context_rc();
-    let mut rewriter = RewriterImpl::new(context.clone());
-    rewriter.debug_binding_inventory_cache().unwrap().enable();
-    BUILDS.set(0);
-    apply(context.clone(), &mut rewriter, records[0], Action::Invalidate);
-    apply(context.clone(), &mut rewriter, records[1], Action::NoMatch);
-    apply(context.clone(), &mut rewriter, records[1], Action::Invalidate);
-    assert_eq!(BUILDS.get(), 1, "nonmatches must not defeat inventory reuse");
-    apply(context.clone(), &mut rewriter, records[2], Action::Introduce);
-    apply(context.clone(), &mut rewriter, records[2], Action::Invalidate);
-    assert_eq!(BUILDS.get(), 2, "new source identities require a fresh inventory");
-    let kills = collect_debug_ops(&test.function().as_operation_ref())
-        .into_iter()
-        .filter(|op| op.borrow().is::<DebugKill>())
-        .map(|op| debug_record_variable(&op.borrow()).unwrap().line)
-        .collect::<Vec<_>>();
-    assert_eq!(kills, [1, 1, 1, 2], "the introduced shadow must also be invalidated");
-    apply(context.clone(), &mut rewriter, records[3], Action::Error);
-    apply(context, &mut rewriter, records[3], Action::Invalidate);
-    assert_eq!(BUILDS.get(), 3, "error paths must discard the reusable inventory");
-    Ok(())
-}
 
 #[test]
 fn source_keys_use_semantic_frames_and_distinct_identity_relations() -> Result<(), Report> {
@@ -168,7 +57,6 @@ fn source_keys_use_semantic_frames_and_distinct_identity_relations() -> Result<(
         !seen.insert(b.clone()),
         "independently allocated equal frame attributes are one source identity"
     );
-    assert_eq!(DebugBindingInventory::new(test.function().as_operation_ref()).bindings.len(), 1);
     second.borrow_mut().remove_attribute(INLINE_CALL_CHAIN_ATTR_NAME);
     assert_ne!(
         a,
@@ -193,5 +81,690 @@ fn source_keys_use_semantic_frames_and_distinct_identity_relations() -> Result<(
         recovery.binding, other.binding,
         "changing recovery does not change source identity"
     );
+    Ok(())
+}
+
+#[test]
+fn greedy_capture_invalidation_output_is_bounded() -> Result<(), Report> {
+    use crate::patterns::{GreedyRewriteConfig, apply_patterns_and_fold_greedily};
+    struct EraseCapture(PatternInfo);
+    impl Pattern for EraseCapture {
+        fn info(&self) -> &PatternInfo {
+            &self.0
+        }
+    }
+    impl RewritePattern for EraseCapture {
+        fn match_and_rewrite(
+            &self,
+            op: OperationRef,
+            rewriter: &mut dyn Rewriter,
+        ) -> Result<bool, Report> {
+            if !op.name().is::<DebugValue>() {
+                return Ok(false);
+            }
+            invalidate_debug_captures(op, rewriter)?;
+            Ok(true)
+        }
+    }
+    for audited in [false, true] {
+        for top_down in [false, true] {
+            for count in [16, 32] {
+                for repeated in [false, true] {
+                    let mut test = Test::new("bounded", &[Type::U32], &[Type::U32]);
+                    {
+                        let mut builder = test.function_builder();
+                        let value = builder.current_block().borrow().arguments()[0] as ValueRef;
+                        for i in 0..count {
+                            BuiltinOpBuilder::builder_mut(&mut builder).debug_value(
+                                value,
+                                Variable::new(
+                                    alloc::format!("x{}", if repeated { i % 8 } else { i }).into(),
+                                    "test.rs".into(),
+                                    i + 1,
+                                    None,
+                                ),
+                                SourceSpan::UNKNOWN,
+                            )?;
+                        }
+                        builder.ret([value], SourceSpan::UNKNOWN)?;
+                    }
+                    let context = test.context_rc();
+                    let root = test.function().as_operation_ref();
+                    let audit =
+                        audited.then(|| super::super::mutation::DebugInfoAudit::begin(root));
+                    let pattern = EraseCapture(PatternInfo::new(
+                        context.clone(),
+                        "erase-capture",
+                        PatternKind::Any,
+                        PatternBenefit::MIN,
+                    ));
+                    let patterns =
+                        Rc::new(FrozenRewritePatternSet::new(RewritePatternSet::from_iter(
+                            context,
+                            [Box::new(pattern) as Box<dyn RewritePattern>],
+                        )));
+                    let mut config = GreedyRewriteConfig::default();
+                    config.with_top_down_traversal(top_down);
+                    super::super::capture_invalidation::stats::COUNTS
+                        .with(|counts| *counts.borrow_mut() = Default::default());
+                    assert!(apply_patterns_and_fold_greedily(root, patterns, config).is_ok());
+                    super::super::capture_invalidation::stats::COUNTS.with(|counts| {
+                        let counts = counts.borrow();
+                        assert_eq!(counts.requests, count as usize);
+                        assert_eq!(counts.bindings, 0);
+                        assert!(counts.nodes <= count as usize * 3 + 8, "{counts:?}");
+                        assert!(counts.edges <= count as usize * 3 + 8, "{counts:?}");
+                    });
+                    if let Some(audit) = audit {
+                        audit.finish()?;
+                    }
+                    let records = collect_debug_ops(&root);
+                    assert!(records.iter().all(|op| op.name().is::<DebugKill>()));
+                    assert_eq!(
+                        records.len(),
+                        count as usize,
+                        "audited={audited}, top_down={top_down}, repeated={repeated}, \
+                         count={count}"
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn capture_fixture(lines: &[u32]) -> Result<(Test, Vec<OperationRef>, ValueRef), Report> {
+    let mut test = Test::new("capture_phase", &[Type::U32], &[Type::U32]);
+    let mut records = Vec::new();
+    let value;
+    {
+        let mut builder = test.function_builder();
+        value = builder.current_block().borrow().arguments()[0] as ValueRef;
+        for &line in lines {
+            records.push(
+                BuiltinOpBuilder::builder_mut(&mut builder)
+                    .debug_value(
+                        value,
+                        Variable::new("x".into(), "test.rs".into(), line, None),
+                        SourceSpan::UNKNOWN,
+                    )?
+                    .as_operation_ref(),
+            );
+        }
+        builder.ret([value], SourceSpan::UNKNOWN)?;
+    }
+    Ok((test, records, value))
+}
+fn kill_lines(root: OperationRef) -> Vec<u32> {
+    collect_debug_ops(&root)
+        .into_iter()
+        .filter(|op| op.name().is::<DebugKill>())
+        .map(|op| debug_record_variable(&op.borrow()).unwrap().line)
+        .collect()
+}
+fn phase(root: OperationRef) -> Result<CaptureInvalidationPhase, Report> {
+    CaptureInvalidationPhase::begin(root, Some(Rc::new(crate::patterns::NoopRewriterListener)))
+}
+
+#[test]
+fn surviving_bindings_stop_at_first_clear_and_restart_at_rebind() -> Result<(), Report> {
+    for audited in [false, true] {
+        for rebind in [false, true] {
+            for reverse in [false, true] {
+                let (test, records, _) =
+                    capture_fixture(if rebind { &[1, 2, 1, 3] } else { &[1, 2, 3] })?;
+                let root = test.function().as_operation_ref();
+                let audit = audited.then(|| super::super::mutation::DebugInfoAudit::begin(root));
+                let phase = phase(root)?;
+                let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+                let mut removed = [records[1], *records.last().unwrap()];
+                if reverse {
+                    removed.reverse();
+                }
+                for record in removed {
+                    invalidate_debug_captures(record, &mut rewriter)?;
+                }
+                assert!(phase.finish()?);
+                assert_eq!(
+                    kill_lines(root),
+                    if rebind {
+                        alloc::vec![1, 2, 1, 3]
+                    } else {
+                        alloc::vec![1, 2, 3]
+                    }
+                );
+                if let Some(audit) = audit {
+                    audit.finish()?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn current_flow_includes_new_bindings_and_respects_function_return() -> Result<(), Report> {
+    for prior in [false, true] {
+        let (test, records, value) = capture_fixture(&[2, 1])?;
+        let root = test.function().as_operation_ref();
+        let phase = phase(root)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+        invalidate_debug_captures(records[0], &mut rewriter)?;
+        if prior {
+            let anchor = collect_debug_ops(&root)[0];
+            rewriter.set_insertion_point_before(anchor);
+            rewriter.debug_value(
+                value,
+                Variable::new("x".into(), "test.rs".into(), 1, None),
+                SourceSpan::UNKNOWN,
+            )?;
+            rewriter.debug_value(
+                value,
+                Variable::new("x".into(), "test.rs".into(), 3, None),
+                SourceSpan::UNKNOWN,
+            )?;
+        }
+        phase.finish()?;
+        assert_eq!(
+            kill_lines(root),
+            if prior {
+                alloc::vec![1, 3, 2]
+            } else {
+                alloc::vec![2]
+            },
+            "a later bind cannot reach backward through a function return"
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn pending_anchor_replacement_and_coalescence_are_checked_without_audit() -> Result<(), Report> {
+    for audited in [false, true] {
+        let (test, records, _) = capture_fixture(&[1, 2])?;
+        let root = test.function().as_operation_ref();
+        let audit = audited.then(|| super::super::mutation::DebugInfoAudit::begin(root));
+        let phase = phase(root)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+        invalidate_debug_captures(records[1], &mut rewriter)?;
+        let anchor = collect_debug_ops(&root)[1];
+        assert!(is_pending_capture(anchor));
+        {
+            let mut update = DebugInfoMutation::for_operations(
+                &[anchor, records[0]],
+                DebugInfoUpdate::Equivalent,
+            );
+            assert!(update.coalesce_capture(anchor, records[0], &[]).is_err());
+        }
+        invalidate_debug_captures(anchor, &mut rewriter)?;
+        assert!(!is_pending_capture(anchor));
+        phase.finish()?;
+        assert_eq!(kill_lines(root), [1, 2]);
+        if let Some(audit) = audit {
+            audit.finish()?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn orphaned_or_changed_pending_anchors_are_hard_failures() -> Result<(), Report> {
+    for erase in [false, true] {
+        let (test, records, _) = capture_fixture(&[1, 2])?;
+        let root = test.function().as_operation_ref();
+        let phase = phase(root)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+        invalidate_debug_captures(records[1], &mut rewriter)?;
+        let mut anchor = collect_debug_ops(&root)[1];
+        if erase {
+            anchor.borrow_mut().erase();
+        } else {
+            let variable = test
+                .context_rc()
+                .create_attribute::<super::super::attributes::InlineCallChainAttr, _>(
+                    super::super::attributes::InlineCallChain::new(alloc::vec![]),
+                )
+                .as_attribute_ref();
+            anchor
+                .borrow_mut()
+                .set_attribute(super::super::attributes::INLINE_CALL_CHAIN_ATTR_NAME, variable);
+        }
+        assert!(phase.finish().is_err());
+        assert!(!super::super::capture_invalidation::active(test.context()));
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_barrier_notifies_originating_listener_and_outer_phase_resumes() -> Result<(), Report> {
+    use core::cell::Cell;
+
+    use crate::{Listener, ProgramPoint};
+    struct Insertions(Cell<usize>);
+    impl Listener for Insertions {
+        fn kind(&self) -> crate::ListenerType {
+            crate::ListenerType::Rewriter
+        }
+
+        fn notify_operation_inserted(&self, _: OperationRef, _: ProgramPoint) {
+            self.0.set(self.0.get() + 1);
+        }
+    }
+    impl crate::patterns::RewriterListener for Insertions {}
+    let (test, records, _) = capture_fixture(&[1, 2, 1, 3])?;
+    let root = test.function().as_operation_ref();
+    let outer_audit = super::super::mutation::DebugInfoAudit::begin(root);
+    let listener = Rc::new(Insertions(Cell::new(0)));
+    let outer = CaptureInvalidationPhase::begin(root, Some(listener.clone()))?;
+    let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+    invalidate_debug_captures(records[1], &mut rewriter)?;
+    let inner = phase(root)?;
+    assert_eq!(listener.0.get(), 1);
+    assert_eq!(kill_lines(root), [1, 2]);
+    let inner_audit = super::super::mutation::DebugInfoAudit::begin(root);
+    inner.finish()?;
+    inner_audit.finish()?;
+    invalidate_debug_captures(records[3], &mut rewriter)?;
+    outer.finish()?;
+    assert_eq!(listener.0.get(), 2);
+    assert_eq!(kill_lines(root), [1, 2, 1, 3]);
+    outer_audit.finish()?;
+    Ok(())
+}
+
+#[test]
+fn empty_phase_completion_does_not_scan_borrowed_ir() -> Result<(), Report> {
+    let (test, ..) = capture_fixture(&[1])?;
+    let root = test.function().as_operation_ref();
+    let phase = phase(root)?;
+    let mut root = root;
+    let _borrow = root.borrow_mut();
+    assert!(!phase.finish()?);
+    Ok(())
+}
+
+#[test]
+fn pending_discard_requires_its_container_to_disappear() -> Result<(), Report> {
+    for discard_block in [false, true] {
+        let (test, records, value) = capture_fixture(&[1])?;
+        let root = test.function().as_operation_ref();
+        let region = records[0].parent().unwrap().parent().unwrap();
+        let mut builder = test.context_rc().builder();
+        let mut block = builder.create_block(region, None, &[]);
+        let record = builder
+            .debug_value(
+                value,
+                Variable::new("x".into(), "test.rs".into(), 2, None),
+                SourceSpan::UNKNOWN,
+            )?
+            .as_operation_ref();
+        let phase = phase(root)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+        invalidate_debug_captures(record, &mut rewriter)?;
+        {
+            let _guard =
+                DebugInfoMutation::for_blocks(&[block], DebugInfoUpdate::DiscardUnreachable);
+            if discard_block {
+                block.borrow_mut().erase();
+            } else {
+                let mut anchor = block.borrow().body().front().as_pointer().unwrap();
+                anchor.borrow_mut().erase();
+            }
+        }
+        assert_eq!(phase.finish().is_ok(), discard_block);
+        assert!(!super::super::capture_invalidation::active(test.context()));
+    }
+    Ok(())
+}
+
+#[test]
+fn greedy_budget_and_materialization_failures_have_distinct_results() -> Result<(), Report> {
+    use crate::patterns::{
+        ApplyPatternsAndFoldEffect, GreedyRewriteConfig, GreedyRewriteError,
+        apply_patterns_and_fold,
+    };
+    struct Rewrite {
+        info: PatternInfo,
+        break_anchor: bool,
+    }
+    impl Pattern for Rewrite {
+        fn info(&self) -> &PatternInfo {
+            &self.info
+        }
+    }
+    impl RewritePattern for Rewrite {
+        fn match_and_rewrite(
+            &self,
+            op: OperationRef,
+            rewriter: &mut dyn Rewriter,
+        ) -> Result<bool, Report> {
+            if !op.name().is::<DebugValue>() {
+                return Ok(false);
+            }
+            let next = op.next().unwrap();
+            invalidate_debug_captures(op, rewriter)?;
+            if self.break_anchor {
+                next.prev().unwrap().borrow_mut().erase();
+            }
+            Ok(true)
+        }
+    }
+    for break_anchor in [false, true] {
+        let (test, records, _) = capture_fixture(&[1, 2, 3])?;
+        let context = test.context_rc();
+        let root = test.function().as_operation_ref();
+        let pattern = Rewrite {
+            info: PatternInfo::new(
+                context.clone(),
+                "budget-capture",
+                PatternKind::Any,
+                PatternBenefit::MIN,
+            ),
+            break_anchor,
+        };
+        let patterns = Rc::new(FrozenRewritePatternSet::new(RewritePatternSet::from_iter(
+            context,
+            [Box::new(pattern) as Box<dyn RewritePattern>],
+        )));
+        let mut config = GreedyRewriteConfig::default();
+        config.with_max_rewrites(1);
+        let result = apply_patterns_and_fold(&records[1..], patterns, config);
+        if break_anchor {
+            assert!(matches!(result, Err(GreedyRewriteError::Failed(_))));
+        } else {
+            assert!(matches!(
+                result,
+                Err(GreedyRewriteError::NonConverged(ApplyPatternsAndFoldEffect::Changed))
+            ));
+            assert!(!kill_lines(root).is_empty());
+        }
+        assert!(!super::super::capture_invalidation::active(test.context()));
+    }
+    Ok(())
+}
+
+#[test]
+fn nested_pass_direct_helper_finishes_before_return_on_success_and_error() -> Result<(), Report> {
+    use crate::{
+        EntityMut, OperationName,
+        dialects::builtin::Function,
+        pass::{Pass, PassExecutionState},
+    };
+    struct Nested(bool);
+    impl Pass for Nested {
+        type Target = Function;
+
+        fn name(&self) -> &'static str {
+            "nested-capture"
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Function>,
+            _: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let root = op.as_operation_ref();
+            let context = op.as_operation().context_rc();
+            drop(op);
+            let records = collect_debug_ops(&root);
+            let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+            invalidate_debug_captures(records[1], &mut rewriter)?;
+            if self.0 {
+                Err(Report::msg("deliberate nested pass failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    for error in [false, true] {
+        let (test, ..) = capture_fixture(&[1, 2])?;
+        let root = test.function().as_operation_ref();
+        let outer = phase(root)?;
+        assert_eq!(test.apply_boxed_pass(Box::new(Nested(error)), false).is_err(), error);
+        assert_eq!(kill_lines(root), [1, 2], "nested pass returned with unresolved outer requests");
+        outer.finish()?;
+    }
+    Ok(())
+}
+
+#[crate::derive::operation(dialect = TestDialect)]
+pub struct OpaqueCaptureOwner {
+    #[region]
+    body: crate::Region,
+}
+#[crate::derive::operation(dialect = TestDialect, implements(RegionKindInterface))]
+pub struct GraphCaptureOwner {
+    #[region]
+    body: crate::Region,
+}
+impl crate::RegionKindInterface for GraphCaptureOwner {
+    fn kind(&self) -> crate::RegionKind {
+        crate::RegionKind::Graph
+    }
+}
+
+#[test]
+fn opaque_and_graph_regions_conservatively_repeat_in_linear_space() -> Result<(), Report> {
+    use crate::BuilderExt;
+    for graph in [false, true] {
+        for count in [8, 16] {
+            let (test, records, value) = capture_fixture(&[1])?;
+            let root = test.function().as_operation_ref();
+            let mut builder = test.context_rc().builder();
+            builder.set_insertion_point_before(records[0]);
+            let mut owner = if graph {
+                builder.create::<GraphCaptureOwner, ()>(SourceSpan::UNKNOWN)()?.as_operation_ref()
+            } else {
+                builder.create::<OpaqueCaptureOwner, ()>(SourceSpan::UNKNOWN)()?.as_operation_ref()
+            };
+            for _ in 1..count {
+                owner.borrow_mut().regions_mut().push_back(test.context_rc().create_region());
+            }
+            let regions =
+                owner.borrow().regions().iter().map(|r| r.as_region_ref()).collect::<Vec<_>>();
+            let mut removed = None;
+            for (i, region) in regions.into_iter().enumerate() {
+                builder.create_block(region, None, &[]);
+                if i == 0 {
+                    removed = Some(
+                        builder
+                            .debug_value(
+                                value,
+                                Variable::new("x".into(), "test.rs".into(), 2, None),
+                                SourceSpan::UNKNOWN,
+                            )?
+                            .as_operation_ref(),
+                    );
+                }
+                builder.debug_value(
+                    value,
+                    Variable::new("x".into(), "test.rs".into(), 3, None),
+                    SourceSpan::UNKNOWN,
+                )?;
+            }
+            let phase = phase(root)?;
+            let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+            invalidate_debug_captures(removed.unwrap(), &mut rewriter)?;
+            super::super::capture_invalidation::stats::COUNTS
+                .with(|counts| *counts.borrow_mut() = Default::default());
+            phase.finish()?;
+            assert_eq!(kill_lines(root), [3, 2]);
+            super::super::capture_invalidation::stats::COUNTS.with(|counts| {
+                assert!(
+                    counts.borrow().edges < count * 12 + 20,
+                    "unknown region flow must use a linear hub: {:?}",
+                    counts.borrow()
+                );
+            });
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn pending_relocation_uses_final_capture_position() -> Result<(), Report> {
+    for audited in [false, true] {
+        let (test, records, _) = capture_fixture(&[2, 1])?;
+        let root = test.function().as_operation_ref();
+        let audit = audited.then(|| super::super::mutation::DebugInfoAudit::begin(root));
+        let phase = phase(root)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+        invalidate_debug_captures(records[0], &mut rewriter)?;
+        let anchor = collect_debug_ops(&root)[0];
+        {
+            let _guard = DebugInfoMutation::new(anchor, DebugInfoUpdate::Relocate);
+            rewriter.move_op_after(anchor, records[1]);
+        }
+        phase.finish()?;
+        assert_eq!(kill_lines(root), [1, 2]);
+        if let Some(audit) = audit {
+            audit.finish()?;
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn inline_frames_are_isolated_and_equal_chains_share_flow() -> Result<(), Report> {
+    use super::super::attributes::{
+        INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain, InlineCallChainAttr,
+    };
+    for equal in [false, true] {
+        let (test, mut records, _) = capture_fixture(&[1, 2])?;
+        let root = test.function().as_operation_ref();
+        let context = test.context_rc();
+        let chain = context
+            .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(alloc::vec![]))
+            .as_attribute_ref();
+        records[0].borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+        if equal {
+            let chain = context
+                .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(alloc::vec![]))
+                .as_attribute_ref();
+            records[1].borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+        }
+        let audit = super::super::mutation::DebugInfoAudit::begin(root);
+        let phase = phase(root)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+        invalidate_debug_captures(records[1], &mut rewriter)?;
+        phase.finish()?;
+        assert_eq!(
+            kill_lines(root),
+            if equal {
+                alloc::vec![1, 2]
+            } else {
+                alloc::vec![2]
+            }
+        );
+        audit.finish()?;
+    }
+    Ok(())
+}
+
+#[test]
+fn shared_phase_keeps_functions_separate_and_discards_whole_function() -> Result<(), Report> {
+    use crate::dialects::builtin::FunctionBuilder;
+    for discard in [false, true] {
+        let mut test = Test::named("functions").in_module("test");
+        test.with_function("first", &[Type::U32], &[Type::U32]);
+        let first = test.function();
+        let second = test.define_function("second", &[Type::U32], &[Type::U32]);
+        let module = first.as_operation_ref().parent_op().unwrap();
+        let context = test.context_rc();
+        let mut records = Vec::new();
+        for (function, line) in [(first, 1), (second, 2)] {
+            let mut builder = context.clone().builder();
+            let mut builder = FunctionBuilder::new(function, &mut builder);
+            let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            records.push(
+                BuiltinOpBuilder::builder_mut(&mut builder)
+                    .debug_value(
+                        value,
+                        Variable::new("x".into(), "test.rs".into(), line, None),
+                        SourceSpan::UNKNOWN,
+                    )?
+                    .as_operation_ref(),
+            );
+            builder.ret([value], SourceSpan::UNKNOWN)?;
+        }
+        let audit = super::super::mutation::DebugInfoAudit::begin(module);
+        let phase = phase(module)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+        invalidate_debug_captures(records[1], &mut rewriter)?;
+        if discard {
+            rewriter.erase_op_with_debug(
+                second.as_operation_ref(),
+                DebugInfoUpdate::DiscardUnreachable,
+            );
+        }
+        phase.finish()?;
+        assert_eq!(
+            kill_lines(module),
+            if discard {
+                alloc::vec![]
+            } else {
+                alloc::vec![2]
+            }
+        );
+        audit.finish()?;
+    }
+    Ok(())
+}
+
+#[test]
+fn discard_cannot_cancel_a_pending_anchor_moved_into_another_live_function() -> Result<(), Report> {
+    use crate::dialects::builtin::FunctionBuilder;
+    let mut test = Test::named("functions").in_module("test");
+    test.with_function("first", &[Type::U32], &[Type::U32]);
+    let first = test.function();
+    let second = test.define_function("second", &[Type::U32], &[Type::U32]);
+    let context = test.context_rc();
+    let record;
+    {
+        let mut builder = context.clone().builder();
+        let mut builder = FunctionBuilder::new(second, &mut builder);
+        let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+        record = BuiltinOpBuilder::builder_mut(&mut builder)
+            .debug_value(
+                value,
+                Variable::new("x".into(), "test.rs".into(), 1, None),
+                SourceSpan::UNKNOWN,
+            )?
+            .as_operation_ref();
+        builder.ret([value], SourceSpan::UNKNOWN)?;
+    }
+    let root = first.as_operation_ref().parent_op().unwrap();
+    let phase = phase(root)?;
+    let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+    invalidate_debug_captures(record, &mut rewriter)?;
+    let source = second.borrow().entry_block();
+    let destination = first.borrow().entry_block();
+    {
+        let _guard = DebugInfoMutation::for_blocks(&[source], DebugInfoUpdate::DiscardUnreachable);
+        rewriter.move_block_before(source, destination);
+    }
+    assert!(phase.finish().is_err());
+    Ok(())
+}
+
+#[test]
+fn raw_function_detach_does_not_discard_pending_obligations() -> Result<(), Report> {
+    let (test, records, _) = capture_fixture(&[1, 2])?;
+    let context = test.context_rc();
+    let mut root = test.function().as_operation_ref();
+    let mut builder = context.clone().builder();
+    let module = builder.create_module(crate::Ident::with_empty_span("module".into()))?;
+    let region = module.borrow().body().as_region_ref();
+    let mut block = builder.create_block(region, None, &[]);
+    block.borrow_mut().body_mut().push_back(root);
+    let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+    let phase = phase(root)?;
+    invalidate_debug_captures(records[1], &mut rewriter)?;
+    root.borrow_mut().erase();
+    assert!(phase.finish().is_err());
     Ok(())
 }

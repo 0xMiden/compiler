@@ -30,6 +30,8 @@ use crate::{
 pub struct Context {
     pub(crate) debug_info_mutations:
         RefCell<crate::dialects::debuginfo::mutation::DebugInfoMutationState>,
+    pub(crate) capture_invalidation:
+        RefCell<crate::dialects::debuginfo::capture_invalidation::CaptureInvalidationState>,
     session: Rc<Session>,
     allocator: Rc<Blink>,
     registered_dialects: RefCell<FxHashMap<interner::Symbol, Rc<dyn Dialect>>>,
@@ -81,6 +83,7 @@ impl Context {
         let allocator = Rc::new(Blink::new());
         Self {
             debug_info_mutations: RefCell::default(),
+            capture_invalidation: RefCell::default(),
             session,
             allocator,
             registered_dialects: RefCell::new(registered_dialects),

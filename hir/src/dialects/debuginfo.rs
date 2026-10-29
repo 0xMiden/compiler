@@ -54,6 +54,7 @@
 pub mod attributes;
 pub mod bindings;
 mod builders;
+pub(crate) mod capture_invalidation;
 pub mod mutation;
 mod ops;
 pub mod transform;

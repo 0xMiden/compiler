@@ -81,6 +81,11 @@ pub(crate) mod testing {
             rewrites,
             GreedyRewriteConfig::new_with_listener(BorrowingListener),
         )
-        .map_err(|_| Report::msg("the greedy rewrite did not converge"))
+        .map_err(|error| match error {
+            patterns::GreedyRewriteError::Failed(report) => report,
+            patterns::GreedyRewriteError::NonConverged(_) => {
+                Report::msg("the greedy rewrite did not converge")
+            }
+        })
     }
 }

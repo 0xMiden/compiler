@@ -9,7 +9,10 @@ use midenc_hir::{
         DebugInfoMutation, DebugInfoUpdate,
         bindings::VisibilitySlot,
         is_debug_record,
-        transform::{DebugBindingInventory, collect_debug_ops},
+        transform::{
+            CaptureInvalidationPhase, collect_debug_ops, invalidate_debug_captures,
+            is_pending_capture,
+        },
     },
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
     effects::MemoryEffect,
@@ -59,18 +62,30 @@ impl Pass for CommonSubexpressionElimination {
         };
 
         let dominfo = state.analysis_manager().get_analysis::<DominanceInfo>()?;
-        let mut rewriter = RewriterImpl::<TracingRewriterListener>::new(context)
-            .with_listener(TracingRewriterListener);
+        let listener = Rc::new(TracingRewriterListener);
+        let mut rewriter =
+            RewriterImpl::<TracingRewriterListener>::new(context).with_listener(listener.clone());
+        let phase = CaptureInvalidationPhase::begin(op, Some(listener))?;
 
         let mut driver = CSEDriver {
             rewriter: &mut rewriter,
             domtree: dominfo,
             ops_to_erase: Default::default(),
             mem_effects_cache: Default::default(),
-            debug_bindings: DebugBindingInventory::new(op),
         };
 
-        let status = driver.simplify(op)?;
+        let result = driver.simplify(op);
+        let finish = phase.finish();
+        let status = match (result, finish) {
+            (Ok(mut status), Ok(changed)) => {
+                status |= PostPassStatus::from(changed);
+                status
+            }
+            (Err(body), Err(finish)) => {
+                return Err(Report::msg(alloc::format!("{body}; {finish}")));
+            }
+            (Err(error), _) | (_, Err(error)) => return Err(error),
+        };
 
         if status.ir_changed() {
             // CSE only replaces uses and erases operations; it does not change the CFG of
@@ -88,10 +103,9 @@ impl Pass for CommonSubexpressionElimination {
 
 /// Simple common sub-expression elimination.
 struct CSEDriver<'a> {
-    rewriter: &'a mut RewriterImpl<TracingRewriterListener>,
+    rewriter: &'a mut RewriterImpl<Rc<TracingRewriterListener>>,
     /// Operations marked as dead and to be erased.
     ops_to_erase: Vec<OperationRef>,
-    debug_bindings: DebugBindingInventory,
     /// Dominance info provided by the current analysis state
     domtree: Rc<DominanceInfo>,
     /// Cache holding MemoryEffect information between two operations.
@@ -204,7 +218,7 @@ impl CSEDriver<'_> {
         // If the operation is already trivially dead just add it to the erase list.
         if operation.is_trivially_dead() {
             drop(operation);
-            self.debug_bindings.invalidate_captures(op, self.rewriter)?;
+            invalidate_debug_captures(op, self.rewriter)?;
             self.ops_to_erase.push(op);
             return Ok(PostPassStatus::Changed);
         }
@@ -481,6 +495,10 @@ impl CSEDriver<'_> {
             return Ok(());
         }
         if has_ssa_dominance
+            && !collect_debug_ops(&original)
+                .into_iter()
+                .chain(collect_debug_ops(&retained))
+                .any(is_pending_capture)
             && capture_state_unchanged(retained, original)
             && let Some((captures, values)) = corresponding_captures(original, retained)
         {
@@ -493,7 +511,7 @@ impl CSEDriver<'_> {
                 self.rewriter.erase_op(old);
             }
         } else {
-            self.debug_bindings.invalidate_captures(original, self.rewriter)?;
+            invalidate_debug_captures(original, self.rewriter)?;
         }
         Ok(())
     }
@@ -2001,3 +2019,7 @@ mod region_equivalence_tests;
 #[cfg(test)]
 #[path = "cse/scan_tests.rs"]
 mod scan_tests;
+
+#[cfg(test)]
+#[path = "cse/capture_phase_tests.rs"]
+mod capture_phase_tests;

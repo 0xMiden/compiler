@@ -27,10 +27,6 @@ impl FoldRedundantYields {
 }
 
 impl Pattern for FoldRedundantYields {
-    fn preserves_debug_bindings(&self) -> bool {
-        true
-    }
-
     fn info(&self) -> &PatternInfo {
         &self.info
     }
@@ -821,8 +817,7 @@ mod tests {
     }
     }}} */
     #[test]
-    fn redundant_yield_inventory_includes_bindings_authored_by_another_pattern()
-    -> Result<(), Report> {
+    fn redundant_yield_clears_bindings_authored_during_the_phase() -> Result<(), Report> {
         use core::cell::Cell;
 
         use midenc_hir::{
@@ -872,9 +867,9 @@ mod tests {
         let context = Rc::new(Context::default());
         let function = parse::parse::<Function>(
             ParserConfig::new(context.clone()),
-            Uri::new("inventory.hir"),
+            Uri::new("capture-phase.hir"),
             r#"
-            builtin.function public extern("C") @inventory(%c: i1, %v: u32) -> (u32, u32) {
+            builtin.function public extern("C") @capture_phase(%c: i1, %v: u32) -> (u32, u32) {
                 %first = scf.if %c then {
                     di.debug_value %v <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
                     scf.yield %v : (u32);
@@ -904,8 +899,8 @@ mod tests {
                 Box::new(FoldRedundantYields::new(context.clone())),
             ],
         );
-        // The greedy driver visits siblings in source order. The first fold builds an inventory;
-        // the intervening successful pattern introduces a new same-slot source identity.
+        // The intervening pattern introduces a surviving binding after the first clear.
+        // Fresh phase flow must kill it immediately before the second mandatory kill.
         let rewrites = Rc::new(FrozenRewritePatternSet::new(patterns));
         let mut passes = PassManager::on::<Function>(context, Nesting::Implicit);
         passes.add_pass(Box::new(SingleCanonicalizerPass {
@@ -922,7 +917,7 @@ mod tests {
             .filter(|op| op.borrow().is::<DebugKill>())
             .map(|op| debug_record_variable(&op.borrow()).unwrap().line)
             .collect::<Vec<_>>();
-        assert_eq!(kills, [1, 1, 2], "the later fold must invalidate the newly authored shadow");
+        assert_eq!(kills, [1, 2, 1], "the later fold must invalidate the newly authored shadow");
         assert!(!format!("{}", function.borrow().as_operation()).contains("scf.if"));
         Ok(())
     }

@@ -651,6 +651,15 @@ pub struct DebugInfoMutation {
     audit_records: FxHashMap<u64, FxHashSet<OperationRef>>,
     id: u64,
     active: bool,
+    roots: Vec<OperationRef>,
+    pending: Vec<PendingCaptureMutation>,
+}
+
+struct PendingCaptureMutation {
+    anchor: OperationRef,
+    binding: super::bindings::SourceBinding,
+    witnesses: Vec<CaptureOwner>,
+    parent: Option<OperationRef>,
 }
 
 impl DebugInfoMutation {
@@ -675,7 +684,49 @@ impl DebugInfoMutation {
             audit_records: FxHashMap::default(),
             id: 0,
             active,
+            roots: if super::capture_invalidation::has_pending(root.context_ref()) {
+                roots.to_vec()
+            } else {
+                Vec::new()
+            },
+            pending: Vec::new(),
         };
+        if super::capture_invalidation::has_pending(&mutation.context) {
+            let mut seen = FxHashSet::default();
+            for &root in roots {
+                for anchor in super::transform::collect_debug_ops(&root) {
+                    if super::capture_invalidation::is_pending_capture(anchor)
+                        && seen.insert(anchor)
+                    {
+                        let witnesses = roots
+                            .iter()
+                            .copied()
+                            .filter(|root| {
+                                root.borrow().has_regions()
+                                    && root.parent().is_some()
+                                    && is_under(anchor, *root)
+                            })
+                            .map(CaptureOwner::Operation)
+                            .collect();
+                        if !super::capture_invalidation::validate_anchor(anchor) {
+                            super::capture_invalidation::poison(
+                                &mutation.context,
+                                "pending capture changed before its mutation guard",
+                            );
+                        }
+                        let binding =
+                            super::capture_invalidation::expected_binding(anchor).unwrap();
+                        let parent = binding.function.and_then(|function| function.parent_op());
+                        mutation.pending.push(PendingCaptureMutation {
+                            anchor,
+                            binding,
+                            witnesses,
+                            parent,
+                        });
+                    }
+                }
+            }
+        }
         if !active {
             return mutation;
         }
@@ -868,6 +919,11 @@ impl DebugInfoMutation {
         retained: OperationRef,
         values: &[(ValueRef, ValueRef)],
     ) -> Result<(), Report> {
+        if super::capture_invalidation::is_pending_capture(original)
+            || super::capture_invalidation::is_pending_capture(retained)
+        {
+            return Err(Report::msg("cannot coalesce a pending capture clear"));
+        }
         if !self.active {
             return Ok(());
         }
@@ -911,6 +967,20 @@ impl DebugInfoMutation {
         owner: OperationRef,
     ) -> Result<(), Report> {
         if !self.active {
+            if super::capture_invalidation::is_pending_capture(original) {
+                if !matches!(self.update, DebugInfoUpdate::Salvage | DebugInfoUpdate::Invalidate)
+                    || replacement.next() != Some(owner)
+                    || !(owner == original || self.roots.contains(&owner))
+                    || !is_under(original, owner)
+                {
+                    super::capture_invalidation::poison(
+                        &self.context,
+                        "invalid pending owner-anchored replacement",
+                    );
+                    return Err(Report::msg("invalid pending owner-anchored replacement"));
+                }
+                super::capture_invalidation::transfer(original, replacement)?;
+            }
             return Ok(());
         }
         let invalid = || Report::msg("invalid debug-info owner-anchored capture replacement");
@@ -955,7 +1025,8 @@ impl DebugInfoMutation {
             return Err(invalid());
         }
         drop(state);
-        self.map_capture(original, replacement, after)
+        self.map_capture(original, replacement, after)?;
+        super::capture_invalidation::transfer(original, replacement)
     }
 
     fn map_capture(
@@ -1040,6 +1111,16 @@ impl DebugInfoMutation {
         (!operations.is_empty()).then(|| {
             let mut mutation = Self::for_operations(&operations, update);
             if update == DebugInfoUpdate::DiscardUnreachable {
+                for PendingCaptureMutation {
+                    anchor, witnesses, ..
+                } in &mut mutation.pending
+                {
+                    for &block in blocks {
+                        if is_in_owner(*anchor, CaptureOwner::Block(block)) {
+                            witnesses.push(CaptureOwner::Block(block));
+                        }
+                    }
+                }
                 for &record in mutation.records.keys() {
                     for &block in blocks {
                         if is_in_owner(record, CaptureOwner::Block(block)) {
@@ -1059,6 +1140,50 @@ impl DebugInfoMutation {
 
 impl Drop for DebugInfoMutation {
     fn drop(&mut self) {
+        for PendingCaptureMutation {
+            anchor,
+            binding,
+            witnesses,
+            parent,
+        } in &self.pending
+        {
+            if !super::capture_invalidation::is_pending_capture(*anchor) {
+                continue;
+            }
+            let root = binding.function;
+            let attached = root.is_some_and(|root| is_under(*anchor, root));
+            if self.update == DebugInfoUpdate::Relocate
+                && let Some(current) = super::bindings::SourceBinding::of(*anchor)
+                && current.identity == binding.identity
+                && current.function.is_some()
+            {
+                super::capture_invalidation::relocated(*anchor, current);
+                continue;
+            }
+            if self.update == DebugInfoUpdate::DiscardUnreachable
+                && witnesses.iter().any(|owner| match owner {
+                    CaptureOwner::Operation(owner) => {
+                        owner.parent_op().is_none()
+                            && (!attached
+                                || root.is_some_and(|root| *owner == root && parent.is_some()))
+                    }
+                    CaptureOwner::Block(block) => {
+                        !attached && block.parent().and_then(|r| r.parent()).is_none()
+                    }
+                    CaptureOwner::Region(_) => false,
+                })
+            {
+                super::capture_invalidation::cancel(*anchor);
+            } else if !attached
+                || super::bindings::SourceBinding::of(*anchor).as_ref() != Some(binding)
+            {
+                super::capture_invalidation::poison(
+                    &self.context,
+                    "pending capture changed or disappeared without an exact mapping or \
+                     unreachable owner",
+                );
+            }
+        }
         if !self.active {
             return;
         }
@@ -1266,6 +1391,7 @@ pub(crate) fn register_debug_record(op: OperationRef) {
 }
 
 pub(crate) struct DebugInfoAudit {
+    phase_generation: u64,
     context: Rc<Context>,
     active: bool,
     id: u64,
@@ -1283,6 +1409,7 @@ impl DebugInfoAudit {
         state.audits.push(audit);
         drop(state);
         Self {
+            phase_generation: super::capture_invalidation::generation(&context),
             context,
             active: true,
             id,
@@ -1297,6 +1424,13 @@ impl DebugInfoAudit {
         let mut state = self.context.debug_info_mutations.borrow_mut();
         let index = state.audits.iter().position(|audit| audit.id == self.id).unwrap();
         let mut audit = state.audits.remove(index);
+        if let Err(error) = super::capture_invalidation::audit_boundary(
+            &self.context,
+            audit.root,
+            self.phase_generation,
+        ) {
+            audit.errors.push(format!("{error}"));
+        }
         for permission in &mut state.permissions {
             if permission.audits.remove(&self.id) {
                 audit.errors.push("debug-info rewrite guard outlived its audit".into());

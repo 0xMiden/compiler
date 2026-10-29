@@ -17,13 +17,6 @@ use crate::{
 /// rewriting the IR after it is initially constructed. It is the basis on which the pattern
 /// rewriter infrastructure is built.
 pub trait Rewriter: Builder + RewriterListener {
-    /// Optional inventory storage managed by the pattern driver's source-identity lifecycle.
-    fn debug_binding_inventory_cache(
-        &mut self,
-    ) -> Option<&mut crate::dialects::debuginfo::transform::DebugBindingInventoryCache> {
-        None
-    }
-
     /// Replace an operation with an explicit debug-info recovery contract.
     fn replace_op_with_debug(
         &mut self,
@@ -1374,54 +1367,6 @@ impl<L> DerefMut for PatternRewriter<L> {
     }
 }
 
-/// Restricts inventory reuse to the currently executing pattern; failure/error paths restore scope.
-pub(crate) struct DebugBindingInventoryGuard<'a, R: ?Sized + Rewriter> {
-    rewriter: &'a mut R,
-    previous: Option<bool>,
-    preserve: bool,
-}
-
-impl<'a, R: ?Sized + Rewriter> DebugBindingInventoryGuard<'a, R> {
-    pub fn new(rewriter: &'a mut R, preserving: bool) -> Self {
-        let previous =
-            rewriter.debug_binding_inventory_cache().map(|cache| cache.enter(preserving));
-        Self {
-            rewriter,
-            previous,
-            preserve: false,
-        }
-    }
-
-    pub fn preserve(&mut self) {
-        self.preserve = true;
-    }
-}
-
-impl<R: ?Sized + Rewriter> Deref for DebugBindingInventoryGuard<'_, R> {
-    type Target = R;
-
-    fn deref(&self) -> &R {
-        self.rewriter
-    }
-}
-impl<R: ?Sized + Rewriter> DerefMut for DebugBindingInventoryGuard<'_, R> {
-    fn deref_mut(&mut self) -> &mut R {
-        self.rewriter
-    }
-}
-impl<R: ?Sized + Rewriter> Drop for DebugBindingInventoryGuard<'_, R> {
-    fn drop(&mut self) {
-        if let Some(previous) = self.previous
-            && let Some(cache) = self.rewriter.debug_binding_inventory_cache()
-        {
-            if !self.preserve {
-                cache.invalidate();
-            }
-            cache.enter(previous);
-        }
-    }
-}
-
 /// Restores the enclosing rewrite's inline-call chain, including on early returns.
 pub struct InlineCallChainGuard<'a, R: ?Sized + Rewriter> {
     rewriter: &'a mut R,
@@ -1453,7 +1398,6 @@ pub struct RewriterImpl<L = NoopRewriterListener> {
     listener: Option<L>,
     ip: ProgramPoint,
     inline_call_chain: Option<AttributeRef>,
-    debug_bindings: crate::dialects::debuginfo::transform::DebugBindingInventoryCache,
 }
 
 impl<L> RewriterImpl<L> {
@@ -1463,7 +1407,6 @@ impl<L> RewriterImpl<L> {
             listener: None,
             ip: ProgramPoint::default(),
             inline_call_chain: None,
-            debug_bindings: Default::default(),
         }
     }
 
@@ -1476,7 +1419,6 @@ impl<L> RewriterImpl<L> {
             listener: Some(listener),
             ip: self.ip,
             inline_call_chain: self.inline_call_chain,
-            debug_bindings: self.debug_bindings,
         }
     }
 }
@@ -1490,7 +1432,6 @@ impl<L: RewriterListener> From<OpBuilder<L>> for RewriterImpl<L> {
             listener,
             ip,
             inline_call_chain: None,
-            debug_bindings: Default::default(),
         }
     }
 }
@@ -1539,12 +1480,6 @@ impl<L: Listener> Builder for RewriterImpl<L> {
 }
 
 impl<L: RewriterListener> Rewriter for RewriterImpl<L> {
-    fn debug_binding_inventory_cache(
-        &mut self,
-    ) -> Option<&mut crate::dialects::debuginfo::transform::DebugBindingInventoryCache> {
-        Some(&mut self.debug_bindings)
-    }
-
     fn replace_inline_call_chain(&mut self, chain: Option<AttributeRef>) -> Option<AttributeRef> {
         core::mem::replace(&mut self.inline_call_chain, chain)
     }
