@@ -13,4 +13,4 @@ debug = true
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"
-miden-standards-wallets-basic-wallet = "0.17.0"
+miden-standards-wallets-basic-wallet = "0.17.2"
