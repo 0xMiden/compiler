@@ -11,7 +11,7 @@ fn mem_grow_and_size_have_u32_publication() {
     assert_eq!(stack[0].ty(), midenc_hir::Type::U32);
 }
 
-/// Independent fixtures enumerate all fifteen public registrations.
+/// Independent fixtures enumerate all seventeen memory registrations.
 pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
     let mut out = vec![];
     for op in ["load", "store", "mem_set", "mem_cpy", "mem_move", "mem_grow", "mem_size"] {
@@ -92,6 +92,14 @@ pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
     ] {
         let mut f = parse(&alloc::format!(
             "builtin.function public extern(\"C\") @{op}({args}){result} {{ {body} }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        out.push((f, false));
+    }
+    for op in ["alloca", "local_byte_address"] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @{op}() -> ptr<u32, byte> {{ %p = hir.{op} <{{ \
+             local = #builtin.local_variable<0, u32> }}>; builtin.ret %p : (ptr<u32, byte>); }};"
         ));
         f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
         out.push((f, false));
@@ -444,7 +452,7 @@ fn mutated_memory_calls_control_and_publication_reject() {
         let unit = selected.segments.iter_mut().flat_map(|s| &mut s.units).next().unwrap();
         unit.effects.may_trap = false;
         // LocalAddress has no trap; its effect mutation is handled separately by coverage.
-        if function.name().as_str() != "local_address" {
+        if !matches!(function.name().as_str(), "local_address" | "alloca" | "local_byte_address") {
             assert!(
                 check_selection(
                     selected,
@@ -1057,6 +1065,245 @@ fn shared_memory_and_arithmetic_result_verifier_diagnoses_malformed_results() {
         assert_eq!(result.is_ok(), matches!(mutation, 0 | 3), "mutation {mutation}");
         if mutation == 1 {
             assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        }
+    }
+}
+
+#[test]
+fn byte_local_address_forms_select_and_replay() {
+    for name in ["alloca", "local_byte_address"] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function public extern(\"sigma\") @test() -> ptr<u32, byte> {{ %r = \
+             hir.{name} <{{ local = #builtin.local_variable<0, u32> }}>; builtin.ret %r : \
+             (ptr<u32, byte>); }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        verify::verify(&plan, &frame, body).unwrap();
+    }
+}
+
+fn unit_environment(f: &Parsed) -> SelectEnv<'static> {
+    SelectEnv {
+        byte_addressing: crate::lower::unit::UnitFacts::derive(f.borrow().as_operation(), &[])
+            .byte_addressing,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn byte_local_store_and_load_use_derived_wide_policy() {
+    for name in ["alloca", "local_byte_address"] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function private extern(\"sigma\") @test(%v: u32) -> u32 {{ %p = hir.{name} \
+             <{{ local = #builtin.local_variable<0, u32> }}>; hir.store %p, %v : (ptr<u32, byte>, \
+             u32); %r = hir.load %p; builtin.ret %r : (u32); }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        let env = unit_environment(&f);
+        assert_eq!(env.byte_addressing, crate::emit::addressing::ByteAddressing::Wide);
+        execute_linked_memory_env(&f, &env, &[0xabcdef12], &[0xabcdef12], "", "", |_| {}).unwrap();
+    }
+}
+
+#[test]
+fn retyped_pointer_memory_loads_a_wide_byte_address() {
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        AddressSpace, PointerType, SourceSpan, Symbol, Type, ValueRef, Visibility,
+        dialects::builtin::BuiltinOpBuilder, testing::Test,
+    };
+    for source in [None, Some(AddressSpace::Byte), Some(AddressSpace::Element)] {
+        for destination in [AddressSpace::Byte, AddressSpace::Element] {
+            let pointer =
+                |pointee, space| Type::from(PointerType::new_with_address_space(pointee, space));
+            let input_type = source.map_or(Type::U32, |space| pointer(Type::U32, space));
+            let mut test = Test::new("pointer_memory", &[input_type], &[Type::U32]);
+            test.function().borrow_mut().set_visibility(Visibility::Private);
+            {
+                let mut builder = test.function_builder();
+                let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                let target = pointer(pointer(Type::U32, AddressSpace::Byte), destination);
+                let retyped = if source.is_some() {
+                    builder.bitcast(input, target, SourceSpan::UNKNOWN).unwrap()
+                } else {
+                    builder.inttoptr(input, target, SourceSpan::UNKNOWN).unwrap()
+                };
+                let wide = builder.load(retyped, SourceSpan::UNKNOWN).unwrap();
+                let value = builder.load(wide, SourceSpan::UNKNOWN).unwrap();
+                builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+            }
+            let f = Parsed {
+                context: test.context_rc(),
+                function: test.function(),
+            };
+            let env = unit_environment(&f);
+            // Transparent casts preserve the numeric base. The selected destination space
+            // determines which cell contains the stored byte pointer, whose target is above 2^32.
+            let input = if destination == AddressSpace::Byte {
+                256
+            } else {
+                64
+            };
+            execute_linked_memory_env(
+                &f,
+                &env,
+                &[input],
+                &[123],
+                "push.4294967296 mem_store.64 push.123 mem_store.1073741824",
+                "",
+                |_| {},
+            )
+            .unwrap();
+        }
+    }
+}
+
+pub(super) fn gep_fixture(
+    space: midenc_hir::AddressSpace,
+    element: midenc_hir::Type,
+    index: usize,
+    load: bool,
+) -> Parsed {
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        ArrayType, PointerType, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
+    };
+    let ptr = Type::from(PointerType::new_with_address_space(
+        Type::from(ArrayType::new(element.clone(), 3)),
+        space,
+    ));
+    let result = if load {
+        element.clone()
+    } else {
+        Type::from(PointerType::new_with_address_space(element, space))
+    };
+    let mut test = Test::new("gep", &[ptr], &[result]);
+    {
+        let mut builder = test.function_builder();
+        let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+        let addr = builder.getelementptr(input, &[index], SourceSpan::UNKNOWN).unwrap();
+        let result = if load {
+            builder.load(addr, SourceSpan::UNKNOWN).unwrap()
+        } else {
+            addr
+        };
+        builder.ret([result], SourceSpan::UNKNOWN).unwrap();
+    }
+    Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    }
+}
+
+#[test]
+fn gep_crosses_narrow_boundary_and_scales_element_offsets() {
+    use midenc_hir::{AddressSpace, Type};
+    let f = gep_fixture(AddressSpace::Byte, Type::U32, 1, true);
+    let env = unit_environment(&f);
+    assert_eq!(env.byte_addressing, crate::emit::addressing::ByteAddressing::Wide);
+    execute_linked_memory_env(
+        &f,
+        &env,
+        &[0xffff_fffc],
+        &[123],
+        "push.123 mem_store.1073741824",
+        "",
+        |_| {},
+    )
+    .unwrap();
+    let f = gep_fixture(AddressSpace::Element, Type::U32, 2, true);
+    execute_linked_memory_env(
+        &f,
+        &unit_environment(&f),
+        &[64],
+        &[456],
+        "push.456 mem_store.66",
+        "",
+        |_| {},
+    )
+    .unwrap();
+}
+
+#[test]
+fn zero_gep_alias_and_malformed_gep_contracts() {
+    use midenc_hir::{AddressSpace, Type, Value};
+    let f = gep_fixture(AddressSpace::Element, Type::U32, 0, false);
+    let selected = select_function(&f.borrow(), &SelectEnv::default()).unwrap();
+    assert!(
+        selected
+            .segments
+            .iter()
+            .flat_map(|s| &s.units)
+            .all(|u| u.stack_inputs.is_empty())
+    );
+    execute(&f, &SelectEnv::default(), &[64], &[64]);
+    let f = gep_fixture(AddressSpace::Element, Type::U8, 1, false);
+    assert_eq!(
+        unit_environment(&f).byte_addressing,
+        crate::emit::addressing::ByteAddressing::Wide
+    );
+    assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    for index in [0, 1] {
+        let f = gep_fixture(AddressSpace::Byte, Type::U32, index, false);
+        f.borrow().as_operation().prewalk_all(|op| {
+            if op.is::<crate::hir::GetElementPtr>() {
+                let mut result = op.results()[0];
+                result.borrow_mut().set_type(Type::U32);
+            }
+        });
+        assert_eq!(
+            unit_environment(&f).byte_addressing,
+            crate::emit::addressing::ByteAddressing::Wide
+        );
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    }
+}
+
+#[test]
+fn aggregate_local_gep_reads_each_struct_field() {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        AddressSpace, SourceSpan, StructType, Type, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
+    };
+    for space in [AddressSpace::Byte, AddressSpace::Element] {
+        for field in 0..4 {
+            let mut test = Test::new("fields", &[], &[Type::U32]);
+            {
+                let mut builder = test.function_builder();
+                let local = builder.alloc_local(Type::from(StructType::new(vec![Type::U32; 4])));
+                let base = if space == AddressSpace::Byte {
+                    builder.local_byte_address(local, Default::default()).unwrap()
+                } else {
+                    builder.local_address(local, Default::default()).unwrap()
+                };
+                let mut fields = vec![];
+                for index in 0..4 {
+                    let addr = builder.getelementptr(base, &[index], SourceSpan::UNKNOWN).unwrap();
+                    let value = builder.u32(100 + index as u32, SourceSpan::UNKNOWN);
+                    builder.store(addr, value, SourceSpan::UNKNOWN).unwrap();
+                    fields.push(addr);
+                }
+                let value = builder.load(fields[field], SourceSpan::UNKNOWN).unwrap();
+                builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+            }
+            let f = Parsed {
+                context: test.context_rc(),
+                function: test.function(),
+            };
+            execute_linked_memory_env(
+                &f,
+                &unit_environment(&f),
+                &[],
+                &[100 + field],
+                "",
+                "",
+                |_| {},
+            )
+            .unwrap();
         }
     }
 }

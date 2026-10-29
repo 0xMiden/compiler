@@ -3404,3 +3404,40 @@ fn source_convention_survives_masm_and_manifest() {
         CallConv::Extern("sigma".into())
     );
 }
+
+#[test]
+fn supporting_byte_address_maker_widens_component_memory_selection() {
+    let context = Rc::new(Context::default());
+    let root = parse(
+        &context,
+        r#"
+        builtin.world {
+            builtin.component private @test {
+                builtin.module private @m {
+                    builtin.function private extern("C") @load(%p: ptr<u32, byte>) -> u32 {
+                        %r = hir.load %p; builtin.ret %r : (u32);
+                    };
+                };
+            };
+            builtin.module private @support {
+                builtin.function private extern("C") @address() -> ptr<u32, byte> {
+                    %r = hir.local_byte_address <{ local = #builtin.local_variable<0, u32> }>;
+                    builtin.ret %r : (ptr<u32, byte>);
+                };
+            };
+        };
+    "#,
+    );
+    let mut address = None;
+    root.borrow().prewalk_all(|op| {
+        if let Some(function) = op.downcast_ref::<builtin::Function>()
+            && function.name().as_str() == "address"
+        {
+            address = Some(function.as_function_ref());
+        }
+    });
+    address.unwrap().borrow_mut().alloc_local(midenc_hir::Type::U32);
+    let lowered = lower_world(root.try_downcast_op::<builtin::World>().unwrap()).unwrap();
+    let assembly = lowered.modules.iter().map(|module| module.to_string()).collect::<String>();
+    assert!(assembly.contains("u32split"), "{assembly}");
+}

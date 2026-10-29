@@ -3,8 +3,13 @@ use core::fmt;
 use smallvec::SmallVec;
 
 use crate::{
-    AttrPrinter, attributes::InferAttributeValueType, derive::DialectAttribute,
-    dialects::builtin::BuiltinDialect, formatter::DisplayValues, print::AsmPrinter,
+    AttrPrinter,
+    attributes::{AttrParser, InferAttributeValueType},
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
+    formatter::DisplayValues,
+    parse::ParserExt,
+    print::AsmPrinter,
 };
 
 #[derive(DialectAttribute)]
@@ -236,6 +241,21 @@ impl<T: Clone + InferAttributeValueType> InferAttributeValueType for Array<T> {
         } else {
             <T as InferAttributeValueType>::infer_type_from_value(&self.0[0])
         }
+    }
+}
+
+impl AttrParser for U32ArrayAttr {
+    fn parse(
+        parser: &mut dyn crate::parse::Parser<'_>,
+    ) -> crate::parse::ParseResult<crate::AttributeRef> {
+        let mut indices = Array::from_iter([]);
+        if let Some(index) = parser.parse_optional_decimal_integer::<u32>()? {
+            indices.push(index.into_inner());
+            while parser.parse_optional_comma()? {
+                indices.push(parser.parse_decimal_integer::<u32>()?.into_inner());
+            }
+        }
+        Ok(parser.context_rc().create_attribute::<Self, _>(indices).as_attribute_ref())
     }
 }
 

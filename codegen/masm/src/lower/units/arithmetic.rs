@@ -8,7 +8,8 @@ use alloc::{collections::BTreeSet, string::String, sync::Arc, vec, vec::Vec};
 
 use miden_core::Felt;
 use midenc_hir::{
-    Immediate, OpExt, Operation, Overflow, PointerType, Report, Spanned, SymbolTable, Type, Value,
+    Immediate, Op, OpExt, Operation, Overflow, PointerType, Report, Spanned, SymbolTable, Type,
+    Value,
 };
 
 use super::*;
@@ -87,6 +88,7 @@ pub(crate) enum Kind {
     ConstantPointer,
     GlobalSymbol,
     Poison,
+    Gep,
 }
 
 /// A snapshot of a source-checked, storage-free construction.
@@ -119,6 +121,7 @@ impl Arithmetic {
             op.operands().all().iter().map(|v| v.borrow().ty().clone()).collect::<Vec<_>>();
         let outputs =
             op.results().all().iter().map(|v| v.borrow().ty().clone()).collect::<Vec<_>>();
+        let mut gep_offset_value = 0;
         let mut overflow = Overflow::Unchecked;
         let mut target = None;
         let mut source = None;
@@ -143,6 +146,11 @@ impl Arithmetic {
             }};
         }
         match kind {
+            Gep => {
+                let gep = op.downcast_ref::<hir::GetElementPtr>().unwrap();
+                gep_offset_value = gep_offset(gep)?;
+                target = Some(outputs[0].clone());
+            }
             Add => overflow!(arith::Add),
             Sub => overflow!(arith::Sub),
             Mul => overflow!(arith::Mul),
@@ -228,6 +236,7 @@ impl Arithmetic {
         );
         let mut order = (0..inputs.len()).collect::<Vec<_>>();
         let expected = match kind {
+            Gep if unary => vec![target.clone().unwrap()],
             ConstantPointer | GlobalSymbol | Poison if inputs.is_empty() => {
                 vec![target.clone().unwrap()]
             }
@@ -452,6 +461,14 @@ impl Arithmetic {
         {
             let mut e = OpEmitter::new(&mut invoked, &mut body, &mut stack);
             match kind {
+                Gep => {
+                    e.pop();
+                    e.emit(
+                        masm::Instruction::AddImm(Felt::new_unchecked(gep_offset_value).into()),
+                        span,
+                    );
+                    e.push(target.clone().unwrap());
+                }
                 Add | AddOverflowing => e.add(overflow, span),
                 Sub | SubOverflowing => e.sub(overflow, span),
                 Mul | MulOverflowing => e.mul(overflow, span),
@@ -1131,4 +1148,40 @@ fn argument_lanes(kind: Kind, ty: &Type, site: usize, arguments: usize) -> Vec<(
         Cast => vec![(2, 0), (3, 1)],
         _ => (0..arguments).map(|i| (i, i)).collect(),
     }
+}
+
+/// Validate both nonzero arithmetic and zero-offset aliases against one source contract.
+pub(crate) fn gep_offset(gep: &hir::GetElementPtr) -> Result<u64, Report> {
+    let op = gep.as_operation();
+    if op.num_operands() != 1 || op.num_results() != 1 {
+        return Err(invalid("GEP requires one pointer operand and one result").into());
+    }
+    let Type::Ptr(pointer) = gep.addr().ty() else {
+        return Err(invalid("GEP operand is not a pointer").into());
+    };
+    let (bytes, pointee) = gep.get_element()?;
+    let expected = Type::from(PointerType::new_with_address_space(pointee, pointer.addrspace()));
+    if gep.result().ty() != &expected {
+        return Err(invalid("GEP result disagrees with selected pointee or address space").into());
+    }
+    let offset = if pointer.is_byte_pointer() {
+        bytes
+    } else {
+        if !bytes.is_multiple_of(4) {
+            return Err(
+                invalid("element-pointer GEP requires a byte offset divisible by four").into()
+            );
+        }
+        bytes / 4
+    };
+    let offset = u64::try_from(offset).map_err(|_| invalid("GEP offset exceeds address domain"))?;
+    let limit = if pointer.is_byte_pointer() {
+        (1u64 << 34) - 1
+    } else {
+        u32::MAX as u64
+    };
+    if offset > limit {
+        return Err(invalid("GEP offset exceeds address domain").into());
+    }
+    Ok(offset)
 }

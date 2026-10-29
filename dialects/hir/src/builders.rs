@@ -730,6 +730,53 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Allocate a local of `ty` and return its byte-address-space pointer.
+    fn alloca(&mut self, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
+        let containing_op = self
+            .builder()
+            .insertion_block()
+            .and_then(|block| block.grandparent())
+            .ok_or_else(|| Report::msg("cannot insert an 'alloca' outside of a function"))?;
+        let mut function = containing_op
+            .try_downcast_op::<Function>()
+            .ok()
+            .or_else(|| containing_op.borrow().nearest_parent_op::<Function>())
+            .ok_or_else(|| Report::msg("cannot insert an 'alloca' outside of a function"))?;
+        let local = function.borrow_mut().alloc_local(ty);
+        let op = self.builder_mut().create::<crate::Alloca, _>(span)(local)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Get the byte-address-space pointer to a procedure local.
+    fn local_byte_address(
+        &mut self,
+        local: LocalVariable,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op = self.builder_mut().create::<crate::LocalByteAddress, _>(span)(local)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Derive a pointer by selecting array elements or struct fields. Invalid indices and
+    /// overflowing byte offsets return diagnostics.
+    fn getelementptr(
+        &mut self,
+        ptr: ValueRef,
+        indices: &[usize],
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let indices = indices
+            .iter()
+            .map(|index| {
+                u32::try_from(*index).map_err(|_| {
+                    Report::msg("invalid hir.gep index: expected an index representable as u32")
+                })
+            })
+            .collect::<Result<midenc_hir::dialects::builtin::attributes::Array<u32>, _>>()?;
+        let op = self.builder_mut().create::<crate::GetElementPtr, _>(span)(ptr, indices)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /// Gets the element-address-space pointer to a procedure local.
     fn local_address(
         &mut self,
@@ -1097,6 +1144,12 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
 }
 
 impl<'f, B: ?Sized + Builder> HirOpBuilder<'f, B> for FunctionBuilder<'f, B> {
+    fn alloca(&mut self, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
+        let local = self.alloc_local(ty);
+        let op = self.builder_mut().create::<crate::Alloca, _>(span)(local)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     #[inline(always)]
     fn builder(&self) -> &B {
         FunctionBuilder::builder(self)

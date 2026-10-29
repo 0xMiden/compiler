@@ -178,57 +178,37 @@ fn assertz(message: impl Into<Arc<str>>) -> I {
 /// Checked range arithmetic traps on overflow. Aligned ranges call the element-copy helper;
 /// other ranges copy bytes in the direction needed to preserve unread source data.
 pub(crate) fn byte_memmove(span: masm::SourceSpan) -> Vec<masm::Op> {
+    byte_memmove_with_addressing(span, crate::emit::addressing::ByteAddressing::Narrow)
+}
+
+pub(crate) fn byte_memmove_with_addressing(
+    span: masm::SourceSpan,
+    mode: crate::emit::addressing::ByteAddressing,
+) -> Vec<masm::Op> {
     let mut b = Builder::new(span);
     // Bounds checks preserve [src,dst,count].
-    b.emit_all([
-        I::Dup2,
-        I::Dup1,
-        I::Dup1,
-        I::U32OverflowingAdd,
-        assertz("memmove source range is out of bounds"),
-        I::Drop,
-        I::Dup2,
-        I::Dup1,
-        I::U32OverflowingAdd,
-        assertz("memmove destination range is out of bounds"),
-        I::Drop,
-        I::Drop,
-    ]);
-    b.emit_all([
-        I::Dup0,
-        I::U32DivModImm(4.into()),
-        I::Swap1,
-        I::Drop,
-        I::EqImm(Felt::ZERO.into()),
-        I::Dup2,
-        I::U32DivModImm(4.into()),
-        I::Swap1,
-        I::Drop,
-        I::EqImm(Felt::ZERO.into()),
-        I::And,
-        I::Dup3,
-        I::U32DivModImm(4.into()),
-        I::Swap1,
-        I::Drop,
-        I::EqImm(Felt::ZERO.into()),
-        I::And,
-    ]);
+    b.emit(I::Dup2);
+    for (pointer_dup, message) in [
+        (I::Dup1, "memmove source range is out of bounds"),
+        (I::Dup2, "memmove destination range is out of bounds"),
+    ] {
+        b.emit_all([pointer_dup, I::Dup1]);
+        b.emit_all(mode.range_end(assertz(message)));
+        b.emit(I::Drop);
+    }
+    b.emit(I::Drop);
+    b.emit_all(mode.element_copy_alignment());
     let mut aligned = Builder::new(span);
-    aligned.emit_all([
-        I::U32DivModImm(4.into()),
+    aligned.emit_all(mode.element_copy_operands([
         assertz("memmove byte-copy fast path expected the source pointer to be 4-byte aligned"),
-        I::Swap1,
-        I::U32DivModImm(4.into()),
         assertz(
             "memmove byte-copy fast path expected the destination pointer to be 4-byte aligned",
         ),
-        I::Swap2,
-        I::U32DivModImm(4.into()),
         assertz("memmove byte-copy fast path expected the byte count to be divisible by 4"),
-    ]);
+    ]));
     aligned.exec(target("::intrinsics::mem::memmove_elements"));
     let mut scalar = Builder::new(span);
-    scalar.emit_all([I::Dup1, I::Dup1, I::U32Gt]);
+    scalar.emit_all([I::Dup1, I::Dup1, mode.gt()]);
     let mut descending = Builder::new(span);
     descending.emit_all([I::MovUp2, I::U32WrappingSubImm(1.into())]);
     descending.emit_push(u32::MAX);
@@ -242,11 +222,11 @@ pub(crate) fn byte_memmove(span: masm::SourceSpan) -> Vec<masm::Op> {
     scalar.branch(descending, ascending);
     scalar.emit_all([I::Dup0, I::Dup4, I::Neq]);
     let mut body = Builder::new(span);
-    body.emit_all([I::Dup2, I::Dup1, I::U32WrappingAdd, I::Dup2, I::Dup2, I::U32WrappingAdd]);
-    body.emit_all([I::U32DivModImm(4.into()), I::Swap1]);
+    body.emit_all([I::Dup2, I::Dup1, mode.add(), I::Dup2, I::Dup2, mode.add()]);
+    body.emit_all(mode.native_ptr());
     body.extend(load_small(8, span));
     body.emit(I::Swap1);
-    body.emit_all([I::U32DivModImm(4.into()), I::Swap1]);
+    body.emit_all(mode.native_ptr());
     body.extend(store_small(8, span));
     body.emit_all([I::Dup4, I::U32WrappingAdd, I::Dup0, I::Dup4, I::Neq]);
     scalar.ops.push(masm::Op::While {

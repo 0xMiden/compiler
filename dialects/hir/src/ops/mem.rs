@@ -10,6 +10,56 @@ use midenc_hir::{
 
 use crate::HirDialect;
 
+/// Allocate a procedure local and return its byte-address-space pointer.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct Alloca {
+    #[attr]
+    #[effects(MemoryEffect(MemoryEffect::Allocate))]
+    local: LocalVariableAttr,
+    #[result]
+    #[effects(MemoryEffect(MemoryEffect::Allocate))]
+    result: AnyPointer,
+}
+
+impl InferTypeOpInterface for Alloca {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = Type::from(PointerType::new_with_address_space(
+            self.local().local_type(),
+            AddressSpace::Byte,
+        ));
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
+/// Get the byte-address-space pointer to a procedure local without accessing its contents.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct LocalByteAddress {
+    #[attr]
+    local: LocalVariableAttr,
+    #[result]
+    result: AnyPointer,
+}
+
+impl InferTypeOpInterface for LocalByteAddress {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        let ty = Type::from(PointerType::new_with_address_space(
+            self.local().local_type(),
+            AddressSpace::Byte,
+        ));
+        self.result_mut().set_type(ty);
+        Ok(())
+    }
+}
+
 /// Get the element-address-space pointer to a procedure local.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(

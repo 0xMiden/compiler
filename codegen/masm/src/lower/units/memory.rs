@@ -195,6 +195,7 @@ pub(crate) enum Kind {
     LoadLocal,
     StoreLocal,
     LocalAddress,
+    LocalByteAddress,
     MemGrow,
     MemSize,
     MemSet,
@@ -256,7 +257,12 @@ impl Memory {
         let proof = if direct {
             UnitEvidence::default()
         } else {
-            memory_contract(Kind::Store, &ty, false)?
+            memory_contract(
+                Kind::Store,
+                &ty,
+                false,
+                crate::emit::addressing::ByteAddressing::Narrow,
+            )?
         };
         check_construction(&body, &proof).map_err(|mut error| {
             error.message = alloc::format!("{}; immediate store body: {body:?}", error.message);
@@ -291,7 +297,11 @@ impl Memory {
     /// Validate a registered operation's type tuple and local ownership, then capture its body.
     /// `kind` must match the operation's registered rule. Unsupported memory representations,
     /// malformed local attributes, and inconsistent helper constructions are errors.
-    pub fn from_source(kind: Kind, op: &midenc_hir::Operation) -> Result<Self, Report> {
+    pub fn from_source(
+        kind: Kind,
+        op: &midenc_hir::Operation,
+        env: &crate::select::SelectEnv<'_>,
+    ) -> Result<Self, Report> {
         use Kind::*;
         use midenc_hir::{Spanned, Type, Value};
 
@@ -304,6 +314,11 @@ impl Memory {
             LoadLocal => Some(op.downcast_ref::<hir::LoadLocal>().unwrap().local()),
             StoreLocal => Some(op.downcast_ref::<hir::StoreLocal>().unwrap().local()),
             LocalAddress => Some(op.downcast_ref::<hir::LocalAddress>().unwrap().local()),
+            LocalByteAddress => Some(if let Some(alloca) = op.downcast_ref::<hir::Alloca>() {
+                alloca.local()
+            } else {
+                op.downcast_ref::<hir::LocalByteAddress>().unwrap().local()
+            }),
             _ => None,
         };
         let (local, local_ty) =
@@ -354,12 +369,16 @@ impl Memory {
             }
             LoadLocal => inputs.is_empty() && outputs == [ty.clone()] && scalar(&ty),
             StoreLocal => inputs == [ty.clone()] && outputs.is_empty() && storable(&ty),
-            LocalAddress => {
+            LocalAddress | LocalByteAddress => {
                 inputs.is_empty()
                     && outputs
                         == [Type::from(midenc_hir::PointerType::new_with_address_space(
                             ty.clone(),
-                            midenc_hir::AddressSpace::Element,
+                            if kind == LocalAddress {
+                                midenc_hir::AddressSpace::Element
+                            } else {
+                                midenc_hir::AddressSpace::Byte
+                            },
                         ))]
             }
             MemGrow => inputs == [Type::U32] && outputs == [Type::U32],
@@ -400,7 +419,8 @@ impl Memory {
         let mut body = vec![];
         let span = op.span();
         {
-            let mut e = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+            let mut e = OpEmitter::new(&mut invoked, &mut body, &mut stack)
+                .with_byte_addressing(env.byte_addressing);
             match kind {
                 Load => e.load(ty.clone(), span),
                 Store => e.store(span),
@@ -413,6 +433,7 @@ impl Memory {
                     e.store(span);
                 }
                 LocalAddress => e.local_address_typed(ty.clone(), 0, span),
+                LocalByteAddress => e.local_byte_address_typed(ty.clone(), 0, span),
                 MemGrow => e.mem_grow(span),
                 MemSize => e.mem_size(span),
                 MemSet => e.memset(span),
@@ -431,7 +452,7 @@ impl Memory {
         }
         let element =
             local.is_some() || matches!(inputs.first(), Some(Type::Ptr(p)) if !p.is_byte_pointer());
-        let proof = memory_contract(kind, &ty, element)?;
+        let proof = memory_contract(kind, &ty, element, env.byte_addressing)?;
         check_construction(&body, &proof)?;
         let mut argument_lanes = vec![];
         if kind == MemGrow {
@@ -465,7 +486,7 @@ impl Memory {
             };
         let effects = LoweringEffects {
             memory: match kind {
-                LocalAddress => SourceMemoryEffects::default(),
+                LocalAddress | LocalByteAddress => SourceMemoryEffects::default(),
                 Store | StoreLocal if element && scalar(&ty) && ty.size_in_bits() == 32 => {
                     SourceMemoryEffects::WRITE
                 }
@@ -473,7 +494,7 @@ impl Memory {
                 | I64Load32S => SourceMemoryEffects::READ,
                 _ => SourceMemoryEffects::READ_WRITE,
             },
-            may_trap: !matches!(kind, LocalAddress),
+            may_trap: !matches!(kind, LocalAddress | LocalByteAddress),
             normal_return: true,
         };
         Ok(Self {
@@ -593,12 +614,13 @@ fn memory_contract(
     kind: Kind,
     ty: &midenc_hir::Type,
     element: bool,
+    addressing: crate::emit::addressing::ByteAddressing,
 ) -> Result<UnitEvidence, PlanError> {
     use Kind::*;
     let mut proof = UnitEvidence::default();
     let mut next = 0;
     match kind {
-        LocalAddress => {}
+        LocalAddress | LocalByteAddress => {}
         MemSize | MemGrow => proof.calls.push(call(
             if kind == MemSize {
                 "::intrinsics::mem::memory_size"
@@ -640,7 +662,9 @@ fn memory_contract(
             let size = ty.size_in_bytes();
             if size >= 16 && size.is_multiple_of(16) {
                 proof.calls.push(call(
-                    if kind == MemMove {
+                    if kind == MemMove
+                        || addressing == crate::emit::addressing::ByteAddressing::Wide
+                    {
                         "::intrinsics::mem::memmove_words"
                     } else {
                         "::miden::core::mem::memcopy_words"
@@ -653,7 +677,11 @@ fn memory_contract(
                 let mut path = vec![];
                 if size == 1 {
                     proof.calls.push(call(
-                        "::miden::core::mem::memcopy_elements",
+                        if addressing == crate::emit::addressing::ByteAddressing::Wide {
+                            "::intrinsics::mem::memmove_elements"
+                        } else {
+                            "::miden::core::mem::memcopy_elements"
+                        },
                         3,
                         0,
                         &[CallPath::Then(ControlId(0))],

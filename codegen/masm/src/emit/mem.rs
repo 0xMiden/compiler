@@ -1,7 +1,7 @@
 use miden_core::Felt;
 use midenc_hir::{AddressSpace, ArrayType, PointerType, SourceSpan, StructType, Type};
 
-use super::{OpEmitter, masm};
+use super::{OpEmitter, addressing::ByteAddressing, masm};
 use crate::{OperandStack, lower::NativePtr};
 
 /// Whether a scalar of type `ty` is represented by a single stack element.
@@ -48,23 +48,23 @@ impl CopyOverlap {
 
     /// The procedure which copies `n` field elements between element addresses.
     ///
-    /// The procedure of a [CopyOverlap::Forbidden] copy must itself trap on overlapping ranges:
-    /// its assertion is the overlap trap of the copies it performs.
-    const fn elements_procedure(self) -> &'static str {
-        match self {
-            Self::Allowed => "::intrinsics::mem::memmove_elements",
-            Self::Forbidden => "::miden::core::mem::memcopy_elements",
+    /// Narrow memcpy uses the core helper's overlap assertion. Wide memcpy checks byte ranges
+    /// before conversion, then uses the move helper, whose endpoints can reach native 2^32.
+    const fn elements_procedure(self, mode: ByteAddressing) -> &'static str {
+        match (self, mode) {
+            (Self::Allowed, _) | (_, ByteAddressing::Wide) => "::intrinsics::mem::memmove_elements",
+            (Self::Forbidden, ByteAddressing::Narrow) => "::miden::core::mem::memcopy_elements",
         }
     }
 
     /// The procedure which copies `n` words between word-aligned element addresses.
     ///
-    /// The procedure of a [CopyOverlap::Forbidden] copy must itself trap on overlapping ranges:
-    /// its assertion is the overlap trap of the copies it performs.
-    const fn words_procedure(self) -> &'static str {
-        match self {
-            Self::Allowed => "::intrinsics::mem::memmove_words",
-            Self::Forbidden => "::miden::core::mem::memcopy_words",
+    /// Narrow memcpy uses the core helper's overlap assertion. Wide memcpy checks byte ranges
+    /// before conversion, then uses the move helper, whose endpoints can reach native 2^32.
+    const fn words_procedure(self, mode: ByteAddressing) -> &'static str {
+        match (self, mode) {
+            (Self::Allowed, _) | (_, ByteAddressing::Wide) => "::intrinsics::mem::memmove_words",
+            (Self::Forbidden, ByteAddressing::Narrow) => "::miden::core::mem::memcopy_words",
         }
     }
 }
@@ -121,15 +121,13 @@ impl OpEmitter<'_> {
     /// This traps unless the input byte address is aligned to a 16-byte Miden word boundary.
     fn emit_word_aligned_element_addr_from_byte_ptr(&mut self, span: SourceSpan) {
         self.emit_all(
-            [
-                masm::Instruction::U32DivModImm(16.into()),
+            self.byte_addressing.aligned_element_addr(
+                16,
                 Self::assertz_with_message_inst(
                     "expected a 16-byte-aligned byte pointer for the word-copy fast path",
                     span,
                 ),
-                // The quotient is below 2^28, so the element address cannot overflow
-                masm::Instruction::U32WrappingMulImm(4.into()),
-            ],
+            ),
             span,
         );
     }
@@ -145,7 +143,8 @@ impl OpEmitter<'_> {
     ) -> masm::Block {
         let mut ops = Vec::default();
         let mut stack = OperandStack::new(self.context_rc());
-        let mut emitter = OpEmitter::new(self.invoked, &mut ops, &mut stack);
+        let mut emitter = OpEmitter::new(self.invoked, &mut ops, &mut stack)
+            .with_byte_addressing(self.byte_addressing);
         emit(&mut emitter);
         masm::Block::new(span, ops)
     }
@@ -217,6 +216,13 @@ impl OpEmitter<'_> {
     pub(crate) fn local_address_typed(&mut self, ty: Type, offset: u16, span: SourceSpan) {
         self.emit(masm::Instruction::Locaddr(offset.into()), span);
         self.push(Type::from(PointerType::new_with_address_space(ty, AddressSpace::Element)));
+    }
+
+    /// Push a byte-space pointer to a local at its finalized element offset.
+    pub(crate) fn local_byte_address_typed(&mut self, ty: Type, offset: u16, span: SourceSpan) {
+        self.emit(masm::Instruction::Locaddr(offset.into()), span);
+        self.emit(masm::Instruction::MulImm(Felt::from(4u32).into()), span);
+        self.push(Type::from(PointerType::new(ty)));
     }
 
     /// Load a value corresponding to the pointee type of a pointer operand on the stack.
@@ -293,17 +299,7 @@ impl OpEmitter<'_> {
     /// order so that they can perform any necessary re-alignment.
     fn convert_to_native_ptr(&mut self, ty: &PointerType, span: SourceSpan) {
         if ty.is_byte_pointer() {
-            self.emit_all(
-                [
-                    // Obtain the byte offset and element address
-                    //
-                    // [offset, addr]
-                    masm::Instruction::U32DivModImm(4.into()),
-                    // Swap fields into expected order
-                    masm::Instruction::Swap1,
-                ],
-                span,
-            );
+            self.emit_all(self.byte_addressing.native_ptr(), span);
         } else {
             self.emit_push(0u8, span);
             self.emit(masm::Instruction::Swap1, span);
@@ -786,7 +782,18 @@ impl OpEmitter<'_> {
         // Keep a wide byte position, never a narrowed u32 byte pointer. With supported size <=16,
         // start + count*size < 2^37, so these field operations are exact integer arithmetic.
         let limit = if matches!(dst.ty(), Type::Ptr(ref ptr) if ptr.is_byte_pointer()) {
-            0xffff_fffcu64
+            if self.byte_addressing == ByteAddressing::Wide {
+                self.emit_all(
+                    self.byte_addressing.validate_start(Self::assertz_with_message_inst(
+                        "memset destination range is out of bounds",
+                        span,
+                    )),
+                    span,
+                );
+                ByteAddressing::LIMIT
+            } else {
+                0xffff_fffcu64
+            }
         } else {
             self.emit(I::MulImm(Felt::from(4u32).into()), span);
             1u64 << 34
@@ -813,17 +820,11 @@ impl OpEmitter<'_> {
                     super::dup_from_offset(lanes + 1),
                     I::MulImm(Felt::from(value_size).into()),
                     I::Add,
-                    // [lo32, hi32, value lanes, i, start, count, original value lanes | S]
-                    I::U32Split,
-                    I::U32DivModImm(4u32.into()),
-                    // [offset, lo32/4, hi32, ...] -> [element, offset, ...]
-                    I::MovDn2,
-                    I::Swap1,
-                    I::MulImm(Felt::from(1u32 << 30).into()),
-                    I::Add,
                 ],
                 span,
             );
+            // MemSet has always kept a wide byte position, including in Narrow units.
+            emitter.emit_all(ByteAddressing::Wide.native_ptr(), span);
             emitter.store_native(&ty, span);
             emitter.emit_counted_loop_next_condition(I::Dup3, span);
         });
@@ -843,8 +844,8 @@ impl OpEmitter<'_> {
     ///
     /// * `count` is expressed in units of the pointee type, not bytes
     /// * the effective byte length is `count * size_of(*src)`
-    /// * the copy traps unless the byte length and the end addresses `src + len` and `dst + len`
-    ///   fit in a `u32`
+    /// * the byte length must fit in a `u32`; Narrow endpoints must also fit in a `u32`, while
+    ///   Wide ranges may reach the exclusive native byte endpoint 2^34
     /// * `count == 0` leaves memory unchanged and performs no copy
     /// * the source and destination ranges must not overlap, the copy traps if they do and the
     ///   byte length is not zero
@@ -891,7 +892,10 @@ impl OpEmitter<'_> {
         };
 
         if value_size == 1 && matches!(overlap, CopyOverlap::Allowed) {
-            self.emit_raw_body(crate::lower::raw::byte_memmove(span));
+            self.emit_raw_body(crate::lower::raw::byte_memmove_with_addressing(
+                span,
+                self.byte_addressing,
+            ));
             return;
         }
 
@@ -907,38 +911,20 @@ impl OpEmitter<'_> {
                 // Compute: use_elements = (src % 4 == 0) && (dst % 4 == 0) && (count % 4 == 0)
                 //
                 // Stack: [src, dst, count]
-                self.emit_all(
-                    [
-                        // src % 4 == 0
-                        masm::Instruction::Dup0,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                        masm::Instruction::EqImm(Felt::ZERO.into()),
-                        // dst % 4 == 0
-                        masm::Instruction::Dup2,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                        masm::Instruction::EqImm(Felt::ZERO.into()),
-                        masm::Instruction::And,
-                        // count % 4 == 0
-                        masm::Instruction::Dup3,
-                        masm::Instruction::U32DivModImm(4.into()),
-                        masm::Instruction::Swap1,
-                        masm::Instruction::Drop,
-                        masm::Instruction::EqImm(Felt::ZERO.into()),
-                        masm::Instruction::And,
-                    ],
-                    span,
-                );
+                self.emit_all(self.byte_addressing.element_copy_alignment(), span);
 
                 // then: convert byte addresses/count to element units and copy whole elements
                 let then_blk = self.build_masm_block(span, |then_emitter| {
+                    // The core memcpy helpers compare exclusive element endpoints as u32.
+                    // A Wide endpoint may be 2^32, so validate disjoint byte ranges here and
+                    // use the existing move helper for the already disjoint ranges.
+                    if then_emitter.byte_addressing == ByteAddressing::Wide
+                        && overlap == CopyOverlap::Forbidden
+                    {
+                        then_emitter.emit_copy_overlap_check(value_size, span);
+                    }
                     then_emitter.emit_all(
-                        [
-                            // Convert `src` to element address
-                            masm::Instruction::U32DivModImm(4.into()),
+                        then_emitter.byte_addressing.element_copy_operands([
                             Self::assertz_with_message_inst(
                                 format!(
                                     "{name} byte-copy fast path expected the source pointer to be \
@@ -946,9 +932,6 @@ impl OpEmitter<'_> {
                                 ),
                                 span,
                             ),
-                            // Convert `dst` to an element address
-                            masm::Instruction::Swap1,
-                            masm::Instruction::U32DivModImm(4.into()),
                             Self::assertz_with_message_inst(
                                 format!(
                                     "{name} byte-copy fast path expected the destination pointer \
@@ -956,9 +939,6 @@ impl OpEmitter<'_> {
                                 ),
                                 span,
                             ),
-                            // Bring `count` to top to convert to element count
-                            masm::Instruction::Swap2,
-                            masm::Instruction::U32DivModImm(4.into()),
                             Self::assertz_with_message_inst(
                                 format!(
                                     "{name} byte-copy fast path expected the byte count to be \
@@ -966,10 +946,11 @@ impl OpEmitter<'_> {
                                 ),
                                 span,
                             ),
-                        ],
+                        ]),
                         span,
                     );
-                    then_emitter.raw_exec(overlap.elements_procedure(), span);
+                    then_emitter
+                        .raw_exec(overlap.elements_procedure(then_emitter.byte_addressing), span);
                 });
 
                 let else_blk = self.build_masm_block(span, |else_emitter| {
@@ -986,6 +967,10 @@ impl OpEmitter<'_> {
             }
             // Word-sized values have an optimized intrinsic we can lean on
             16 => {
+                if self.byte_addressing == ByteAddressing::Wide && overlap == CopyOverlap::Forbidden
+                {
+                    self.emit_copy_overlap_check(value_size, span);
+                }
                 // Convert `src` to a word-aligned element address.
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
                 // Convert `dst` to an element address the same way.
@@ -993,13 +978,17 @@ impl OpEmitter<'_> {
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
                 // Swap with `count` to get us into the correct ordering: [count, src, dst].
                 self.emit(masm::Instruction::Swap2, span);
-                self.raw_exec(overlap.words_procedure(), span);
+                self.raw_exec(overlap.words_procedure(self.byte_addressing), span);
             }
             // Values which can be broken up into word-sized chunks can piggy-back on the
             // intrinsic for word-sized values, but we have to compute a new `count` by
             // multiplying `count` by the number of words in each value
             size if size > 16 && size.is_multiple_of(16) => {
                 let factor = size / 16;
+                if self.byte_addressing == ByteAddressing::Wide && overlap == CopyOverlap::Forbidden
+                {
+                    self.emit_copy_overlap_check(value_size, span);
+                }
                 // Convert `src` to a word-aligned element address.
                 self.emit_word_aligned_element_addr_from_byte_ptr(span);
                 // Convert `dst` to an element address the same way.
@@ -1016,16 +1005,15 @@ impl OpEmitter<'_> {
                     ],
                     span,
                 );
-                self.raw_exec(overlap.words_procedure(), span);
+                self.raw_exec(overlap.words_procedure(self.byte_addressing), span);
             }
             // All other values are copied one at a time
             _ => self.emit_copy_loop(overlap, ty, span),
         }
     }
 
-    /// Emit a check that a copy of `count` values of `value_size` bytes has a byte length which
-    /// fits in a `u32`, and that so do its end addresses `src + len` and `dst + len`, trapping
-    /// otherwise.
+    /// Check the u32 byte length and the source/destination ranges in the unit's byte domain.
+    /// Wide starts are checked before addition, so an invalid field value cannot wrap into range.
     ///
     /// Stack transition: `[src, dst, count] -> [src, dst, count]`
     fn emit_copy_range_check(&mut self, overlap: CopyOverlap, value_size: u32, span: SourceSpan) {
@@ -1043,30 +1031,18 @@ impl OpEmitter<'_> {
                 span,
             ); // [len, src, dst, count]
         }
-        self.emit_all(
-            [
-                // src + len
-                masm::Instruction::Dup1,
-                masm::Instruction::Dup1,
-                masm::Instruction::U32OverflowingAdd,
-                Self::assertz_with_message_inst(
-                    format!("{name} source range is out of bounds"),
-                    span,
-                ),
-                masm::Instruction::Drop, // [len, src, dst, count]
-                // dst + len
-                masm::Instruction::Dup2,
-                masm::Instruction::Dup1,
-                masm::Instruction::U32OverflowingAdd,
-                Self::assertz_with_message_inst(
-                    format!("{name} destination range is out of bounds"),
-                    span,
-                ),
-                masm::Instruction::Drop, // [len, src, dst, count]
-                masm::Instruction::Drop, // [src, dst, count]
-            ],
-            span,
-        );
+        for (pointer_dup, message) in [
+            (masm::Instruction::Dup1, format!("{name} source range is out of bounds")),
+            (masm::Instruction::Dup2, format!("{name} destination range is out of bounds")),
+        ] {
+            self.emit_all([pointer_dup, masm::Instruction::Dup1], span);
+            self.emit_all(
+                self.byte_addressing.range_end(Self::assertz_with_message_inst(message, span)),
+                span,
+            );
+            self.emit(masm::Instruction::Drop, span);
+        }
+        self.emit(masm::Instruction::Drop, span); // [src, dst, count]
     }
 
     /// Emit a check that the source and destination ranges of a copy of `count` values of
@@ -1089,15 +1065,15 @@ impl OpEmitter<'_> {
                 // src + len <= dst
                 masm::Instruction::Dup1,
                 masm::Instruction::Dup1,
-                masm::Instruction::U32WrappingAdd, // [src + len, len, src, dst, count]
+                self.byte_addressing.add(), // [src + len, len, src, dst, count]
                 masm::Instruction::Dup3,
-                masm::Instruction::U32Lte, // [src + len <= dst, len, src, dst, count]
+                self.byte_addressing.lte(), // [src + len <= dst, len, src, dst, count]
                 // dst + len <= src
                 masm::Instruction::Swap1,
                 masm::Instruction::Dup3,
-                masm::Instruction::U32WrappingAdd, // [dst + len, src + len <= dst, src, dst, count]
+                self.byte_addressing.add(), // [dst + len, src + len <= dst, src, dst, count]
                 masm::Instruction::Dup2,
-                masm::Instruction::U32Lte, // [dst + len <= src, src + len <= dst, src, dst, count]
+                self.byte_addressing.lte(), // [dst + len <= src, src + len <= dst, src, dst, count]
                 masm::Instruction::Or,
                 Self::assert_with_message_inst(CopyOverlap::OVERLAP_MESSAGE, span),
                 // [src, dst, count]
@@ -1118,17 +1094,13 @@ impl OpEmitter<'_> {
 
         // Create new block for loop body and switch to it temporarily
         let mut body = Vec::default();
-        let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack);
+        let mut body_emitter = OpEmitter::new(self.invoked, &mut body, self.stack)
+            .with_byte_addressing(self.byte_addressing);
 
         // Offset the pointer below the index on top of the stack by `i` values; the ranges were
         // checked, so the addition cannot overflow
         let offset_by_index = |emitter: &mut OpEmitter<'_>| {
-            if value_size == 1 {
-                emitter.emit(masm::Instruction::U32WrappingAdd, span);
-            } else {
-                emitter.emit_push(value_size, span);
-                emitter.emit(masm::Instruction::U32WrappingMadd, span);
-            }
+            emitter.emit_all(emitter.byte_addressing.offset_by_index(value_size, span), span);
         };
 
         // Loop body - compute the addresses of the next value to be read and written
@@ -1204,7 +1176,7 @@ impl OpEmitter<'_> {
                     [
                         masm::Instruction::Dup1,
                         masm::Instruction::Dup1,
-                        masm::Instruction::U32Gt, // [dst > src, src, dst, count]
+                        self.byte_addressing.gt(), // [dst > src, src, dst, count]
                     ],
                     span,
                 );
@@ -1560,7 +1532,7 @@ mod tests {
             }
         };
         if succeeds {
-            result.unwrap();
+            result.unwrap_or_else(|error| panic!("{error:?}\nProgram:\n{source}"));
         } else {
             assert!(result.is_err(), "expected fill to trap");
         }
@@ -1623,6 +1595,274 @@ mod tests {
                 Felt::new_unchecked(value),
                 "unexpected cell {addr} after execution"
             );
+        }
+    }
+
+    fn check_wide_memory(
+        initial: &[(u32, u64)],
+        expected: Option<&[(u32, u64)]>,
+        emit: impl FnOnce(&mut OpEmitter<'_>, SourceSpan),
+    ) {
+        let span = SourceSpan::UNKNOWN;
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::new();
+        let mut ops = Vec::new();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut ops, &mut stack)
+            .with_byte_addressing(ByteAddressing::Wide);
+        for lane in (0..24u32).rev() {
+            emitter.literal(3000 + lane, span);
+        }
+        emit(&mut emitter, span);
+        assert_eq!(emitter.stack_len(), 24);
+        let body = masm::Block::new(span, ops).to_pretty_string();
+        let initialize = initial
+            .iter()
+            .map(|(addr, value)| format!("push.{value} mem_store.{addr} "))
+            .collect::<String>();
+        let suffix = (0..24)
+            .map(|lane| format!("push.{} assert_eq ", 3000 + lane))
+            .collect::<String>();
+        let processor = execute_memory_program(
+            &format!("begin {initialize} {body} {suffix} end"),
+            expected.is_some(),
+        );
+        for &(addr, value) in expected.unwrap_or(initial) {
+            assert_eq!(
+                processor.memory().read_element(ContextId::root(), Felt::from(addr)).unwrap(),
+                Felt::new_unchecked(value),
+                "cell {addr}"
+            );
+        }
+    }
+
+    fn emit_byte_pointer(emitter: &mut OpEmitter<'_>, address: u64, ty: Type, span: SourceSpan) {
+        emitter.emit_push(Felt::new_unchecked(address), span);
+        emitter.push(Type::from(PointerType::new(ty)));
+    }
+
+    #[test]
+    fn wide_byte_load_store_at_high_addresses() {
+        for element in [1u32 << 30, (1 << 31) + 16, u32::MAX] {
+            for offset in 0..4 {
+                let initial = [(element, 0x1234_5678)];
+                let expected =
+                    [(element, (0x1234_5678 & !(0xff << (8 * offset))) | (0xab << (8 * offset)))];
+                check_wide_memory(&initial, Some(&expected), |emitter, span| {
+                    let address = u64::from(element) * 4 + offset;
+                    emitter.literal(0xabu8, span);
+                    emit_byte_pointer(emitter, address, Type::U8, span);
+                    emitter.store(span);
+                    emit_byte_pointer(emitter, address, Type::U8, span);
+                    emitter.load(Type::U8, span);
+                    emitter.emit_push(0xabu8, span);
+                    emitter.emit(masm::Instruction::AssertEq, span);
+                    emitter.pop();
+                });
+            }
+        }
+        for address in [1u64 << 34, (1 << 34) + 3, super::super::P - 1] {
+            check_wide_memory(&[(0, 7)], None, |emitter, span| {
+                emit_byte_pointer(emitter, address, Type::U8, span);
+                emitter.load(Type::U8, span);
+                emitter.pop();
+                emitter.emit(masm::Instruction::Drop, span);
+            });
+            check_wide_memory(&[(0, 7)], None, |emitter, span| {
+                emitter.literal(0xabu8, span);
+                emit_byte_pointer(emitter, address, Type::U8, span);
+                emitter.store(span);
+            });
+        }
+    }
+
+    #[test]
+    fn wide_byte_memset_preserves_neighbors_and_checks_domain_before_addition() {
+        let element = (1u32 << 31) + 16;
+        check_wide_memory(
+            &[(element, 0x1234_5678)],
+            Some(&[(element, 0x12ab_ab78)]),
+            |emitter, span| {
+                emitter.literal(0xabu8, span);
+                emitter.literal(2u32, span);
+                emit_byte_pointer(emitter, u64::from(element) * 4 + 1, Type::U8, span);
+                emitter.memset(span);
+            },
+        );
+        check_wide_memory(
+            &[(u32::MAX, 0x1234_5678)],
+            Some(&[(u32::MAX, 0xab34_5678)]),
+            |emitter, span| {
+                emitter.literal(0xabu8, span);
+                emitter.literal(1u32, span);
+                emit_byte_pointer(emitter, (1 << 34) - 1, Type::U8, span);
+                emitter.memset(span);
+            },
+        );
+        check_wide_memory(
+            &[(u32::MAX, 0x1234_5678)],
+            Some(&[(u32::MAX, 0x1234_5678)]),
+            |emitter, span| {
+                emitter.literal(0xabu8, span);
+                emitter.literal(0u32, span);
+                emit_byte_pointer(emitter, (1 << 34) - 1, Type::U8, span);
+                emitter.memset(span);
+            },
+        );
+        for (address, count) in [((1 << 34) - 1, 2), (1 << 34, 1), (super::super::P - 1, 2)] {
+            check_wide_memory(&[(0, 7), (u32::MAX, 9)], None, |emitter, span| {
+                emitter.literal(0xabu8, span);
+                emitter.literal(count as u32, span);
+                emit_byte_pointer(emitter, address, Type::U8, span);
+                emitter.memset(span);
+            });
+        }
+    }
+
+    #[test]
+    fn wide_byte_copies_preserve_overlap_and_cross_u32_boundary() {
+        for base in [0x8000_0010u32, 0x3fff_fffc] {
+            let bytes = (0..128).map(|i| (i * 17 + 11) as u8).collect::<Vec<_>>();
+            let initial = bytes
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .enumerate()
+                .map(|(i, chunk)| (base + i as u32, u32::from_le_bytes(*chunk) as u64))
+                .collect::<Vec<_>>();
+            for (ty, src, dst, count) in [
+                (Type::U8, 1, 3, 11),
+                (Type::U8, 3, 1, 11),
+                (Type::U8, 0, 16, 8),
+                (Type::U8, 12, 36, 12),
+                (Type::U16, 1, 3, 5),
+                (Type::U32, 0, 16, 2),
+                (Type::U128, 0, 32, 1),
+                (Type::from(ArrayType::new(Type::U8, 32)), 0, 64, 1),
+                (Type::U8, 1, 1, 0),
+                (Type::U128, 0, 0, 0),
+            ] {
+                let size = ty.size_in_bytes();
+                for moving in [true, false] {
+                    let overlap =
+                        count != 0 && src < dst + count * size && dst < src + count * size;
+                    let mut expected_bytes = bytes.clone();
+                    expected_bytes.copy_within(src..src + count * size, dst);
+                    let expected = expected_bytes
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .enumerate()
+                        .map(|(i, chunk)| (base + i as u32, u32::from_le_bytes(*chunk) as u64))
+                        .collect::<Vec<_>>();
+                    check_wide_memory(
+                        &initial,
+                        if !moving && overlap {
+                            None
+                        } else {
+                            Some(&expected)
+                        },
+                        |emitter, span| {
+                            emitter.literal(count as u32, span);
+                            emit_byte_pointer(
+                                emitter,
+                                u64::from(base) * 4 + dst as u64,
+                                ty.clone(),
+                                span,
+                            );
+                            emit_byte_pointer(
+                                emitter,
+                                u64::from(base) * 4 + src as u64,
+                                ty.clone(),
+                                span,
+                            );
+                            if moving {
+                                emitter.memmove(span)
+                            } else {
+                                emitter.memcpy(span)
+                            }
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn wide_byte_copies_enforce_native_boundary() {
+        let initial = [
+            (16, 0x1234_5678),
+            (u32::MAX - 3, 0x89ab_cdef),
+            (u32::MAX - 2, 7),
+            (u32::MAX - 1, 11),
+            (u32::MAX, 13),
+        ];
+        for moving in [false, true] {
+            for (ty, src, dst, count, succeeds) in [
+                (Type::U8, 64, (1 << 34) - 4, 4, true),
+                (Type::U8, (1 << 34) - 4, 64, 4, true),
+                (Type::U128, 65, 128, 0, false),
+                (Type::U8, 1 << 34, 64, 0, false),
+                (Type::U8, 64, 1 << 34, 0, false),
+                (Type::U128, 64, (1 << 34) - 16, 1, true),
+                (Type::U8, (1 << 34) - 1, 64, 2, false),
+                (Type::U8, 64, (1 << 34) - 1, 2, false),
+                (Type::U16, super::super::P - 1, 64, 1, false),
+                (Type::U16, 64, super::super::P - 1, 1, false),
+                (Type::U8, (1 << 34) - 1, (1 << 34) - 1, 0, true),
+                (Type::U128, 64, 128, u32::MAX, false),
+            ] {
+                let mut expected = initial;
+                if succeeds && count != 0 && dst == 64 {
+                    expected[0].1 = initial[4].1;
+                } else if succeeds && count != 0 {
+                    let start = if ty == Type::U8 { 4 } else { 1 };
+                    expected[start].1 = 0x1234_5678;
+                    if ty == Type::U128 {
+                        expected[2].1 = 0;
+                        expected[3].1 = 0;
+                        expected[4].1 = 0;
+                    }
+                }
+                check_wide_memory(
+                    &initial,
+                    succeeds.then_some(expected.as_slice()),
+                    |emitter, span| {
+                        emitter.literal(count, span);
+                        emit_byte_pointer(emitter, dst, ty.clone(), span);
+                        emit_byte_pointer(emitter, src, ty, span);
+                        if moving {
+                            emitter.memmove(span)
+                        } else {
+                            emitter.memcpy(span)
+                        }
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wide_byte_native_conversion_covers_native_domain() {
+        for address in [0u64, 1 << 32, 1 << 33, (1 << 34) - 4] {
+            for offset in 0..4 {
+                let byte = address + offset;
+                let span = SourceSpan::UNKNOWN;
+                let mut stack = OperandStack::new(Rc::new(Context::default()));
+                let mut invoked = BTreeSet::new();
+                let mut ops = Vec::new();
+                let mut emitter = OpEmitter::new(&mut invoked, &mut ops, &mut stack)
+                    .with_byte_addressing(ByteAddressing::Wide);
+                emitter.emit_push(Felt::new_unchecked(byte), span);
+                emitter.convert_to_native_ptr(&PointerType::new(Type::U8), span);
+                let body = masm::Block::new(span, ops).to_pretty_string();
+                execute_memory_program(
+                    &format!(
+                        "begin {body} push.{} assert_eq push.{offset} assert_eq end",
+                        byte / 4
+                    ),
+                    true,
+                );
+            }
         }
     }
 

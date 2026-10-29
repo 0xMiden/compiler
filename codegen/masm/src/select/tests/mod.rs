@@ -173,7 +173,27 @@ fn execute_linked_memory_mutate(
     observe: &str,
     mutate: impl FnOnce(&mut AnnotatedMasmBody),
 ) -> Result<(), midenc_hir::Report> {
-    let (plan, frame, mut body) = ready(f, &SelectEnv::default());
+    execute_linked_memory_env(
+        f,
+        &SelectEnv::default(),
+        inputs,
+        expected,
+        initialize,
+        observe,
+        mutate,
+    )
+}
+
+fn execute_linked_memory_env(
+    f: &Parsed,
+    env: &SelectEnv<'_>,
+    inputs: &[usize],
+    expected: &[usize],
+    initialize: &str,
+    observe: &str,
+    mutate: impl FnOnce(&mut AnnotatedMasmBody),
+) -> Result<(), midenc_hir::Report> {
+    let (plan, frame, mut body) = ready(f, env);
     mutate(&mut body);
     let procedure = verify::verify(&plan, &frame, body)
         .unwrap()

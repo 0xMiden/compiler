@@ -221,6 +221,9 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::LoadLocal, dyn HirSelection>();
     info.register_operation_trait::<hir::StoreLocal, dyn HirSelection>();
     info.register_operation_trait::<hir::LocalAddress, dyn HirSelection>();
+    info.register_operation_trait::<hir::Alloca, dyn HirSelection>();
+    info.register_operation_trait::<hir::LocalByteAddress, dyn HirSelection>();
+    info.register_operation_trait::<hir::GetElementPtr, dyn HirSelection>();
     info.register_operation_trait::<hir::MemGrow, dyn HirSelection>();
     info.register_operation_trait::<hir::MemSize, dyn HirSelection>();
     info.register_operation_trait::<hir::MemSet, dyn HirSelection>();

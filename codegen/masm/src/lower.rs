@@ -4,6 +4,7 @@ pub(crate) mod expand;
 mod lowering;
 mod native_ptr;
 pub(crate) mod raw;
+pub(crate) mod unit;
 pub(crate) mod units;
 
 pub(crate) use component::{EmissionOwners, finalize_generated};

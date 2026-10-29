@@ -1200,6 +1200,8 @@ memory_selection! {
     hir::LoadLocal => LoadLocal,
     hir::StoreLocal => StoreLocal,
     hir::LocalAddress => LocalAddress,
+    hir::Alloca => LocalByteAddress,
+    hir::LocalByteAddress => LocalByteAddress,
     hir::MemGrow => MemGrow,
     hir::MemSize => MemSize,
     hir::MemSet => MemSet,
@@ -1248,4 +1250,16 @@ intrinsic_selection! {
     hir::Caller => Caller,
     hir::UnpackWord => UnpackWord,
     hir::Clk => Clk,
+}
+
+impl HirSelection for hir::GetElementPtr {
+    fn selection_rule(&self) -> crate::select::SelectionRule {
+        if self.as_operation().num_operands() == 1
+            && self.get_offset().is_ok_and(|offset| offset == 0)
+        {
+            crate::select::SelectionRule::Alias
+        } else {
+            crate::select::SelectionRule::Arithmetic(super::units::arithmetic::Kind::Gep)
+        }
+    }
 }

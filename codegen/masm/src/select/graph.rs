@@ -975,8 +975,9 @@ impl<'a, 'e> Selector<'a, 'e> {
                             )?;
                         }
                         SelectionRule::Memory(kind) => {
-                            let mut definition =
-                                crate::lower::units::memory::Memory::from_source(kind, &op)?;
+                            let mut definition = crate::lower::units::memory::Memory::from_source(
+                                kind, &op, self.env,
+                            )?;
                             let input_atoms = self.atoms(&inputs);
                             let output_atoms = self.atoms(&outputs);
                             definition.bind(&input_atoms, &output_atoms);
@@ -2064,6 +2065,12 @@ fn validate_alias(op: &Operation, rule: SelectionRule) -> Result<(), Report> {
             Ok(())
         }
         SelectionRule::Alias => {
+            if let Some(gep) = op.downcast_ref::<crate::hir::GetElementPtr>() {
+                if crate::lower::units::arithmetic::gep_offset(gep)? != 0 {
+                    return Err(super::invalid("nonzero GEP cannot select an alias"));
+                }
+                return Ok(());
+            }
             let target = if let Some(cast) = op.downcast_ref::<PtrToInt>() {
                 cast.get_ty()
             } else if let Some(cast) = op.downcast_ref::<IntToPtr>() {

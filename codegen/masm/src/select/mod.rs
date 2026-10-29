@@ -22,6 +22,8 @@ pub(crate) struct SelectEnv<'a> {
     pub link_info: Option<&'a crate::linker::LinkInfo>,
     /// Closed final emission identities, fixed before source reconstruction.
     pub owners: Option<&'a crate::lower::EmissionOwners>,
+    /// Address domain derived from the entire compilation unit before selection.
+    pub byte_addressing: crate::emit::addressing::ByteAddressing,
 }
 
 /// The finite vocabulary returned by [`crate::HirSelection`] implementations.

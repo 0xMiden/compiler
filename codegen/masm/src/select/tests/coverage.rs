@@ -64,6 +64,15 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
     fixtures.extend(super::calls::fixtures());
     fixtures.extend(super::arithmetic::fixtures());
     fixtures.extend(super::memory::fixtures());
+    fixtures.push((
+        super::memory::gep_fixture(
+            midenc_hir::AddressSpace::Element,
+            midenc_hir::Type::U32,
+            1,
+            false,
+        ),
+        false,
+    ));
     fixtures.extend(super::intrinsics::fixtures());
     fixtures.push((super::intrinsics::println_fixture(false), false));
     for immediate in [false, true] {
@@ -143,7 +152,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 126);
+    assert_eq!(registered.len(), 129);
     assert_eq!(covered, registered);
 }
 
