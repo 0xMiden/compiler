@@ -696,7 +696,7 @@ fn policy_rejection(message: impl Into<String>) -> Error {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// Wraps core module text in a component and assembles it.
@@ -707,6 +707,70 @@ mod tests {
     /// Validates one component with a byte budget that never trips.
     fn validate(component: &[u8]) -> Result<()> {
         validate_note_codec_component(component, usize::MAX)
+    }
+
+    /// Rejects component types nested far deeper than the structural limit with an error,
+    /// before the parser can exhaust the stack.
+    #[test]
+    fn deeply_nested_component_types_are_rejected_without_aborting() {
+        // `wat` refuses this nesting, so the bytes are built by hand: one component type
+        // section holding a component type whose one declaration is a component type, 1400
+        // levels deep.
+        const DEPTH: usize = 1400;
+        let mut types = vec![0x01];
+        for _ in 0..DEPTH {
+            types.extend([0x41, 0x01, 0x01]);
+        }
+        types.extend([0x41, 0x00]);
+        let mut bytes = b"\0asm\x0d\x00\x01\x00".to_vec();
+        bytes.push(0x07);
+        let mut size = types.len();
+        loop {
+            let byte = (size & 0x7f) as u8;
+            size >>= 7;
+            if size == 0 {
+                bytes.push(byte);
+                break;
+            }
+            bytes.push(byte | 0x80);
+        }
+        bytes.extend(types);
+
+        assert_rejects_without_aborting(
+            "codec_structure::tests::deeply_nested_component_types_are_rejected_without_aborting",
+            move || validate(&bytes).is_err(),
+        );
+    }
+
+    /// Runs `rejects` on a 2 MiB stack in a child test process, so a stack overflow fails the
+    /// test named `test_name` instead of aborting the entire suite. `rejects` returns whether
+    /// the input was rejected with an error.
+    pub(crate) fn assert_rejects_without_aborting(
+        test_name: &str,
+        rejects: impl FnOnce() -> bool + Send + 'static,
+    ) {
+        const PROBE_ENV: &str = "MIDEN_NOTE_SCHEMA_PARSER_PROBE";
+        if std::env::var(PROBE_ENV).as_deref() == Ok(test_name) {
+            let rejected = std::thread::Builder::new()
+                .stack_size(2 * 1024 * 1024)
+                .spawn(rejects)
+                .unwrap()
+                .join()
+                .unwrap();
+            assert!(rejected, "the input must be rejected");
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test_name, "--nocapture"])
+            .env(PROBE_ENV, test_name)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "parsing must return an error without aborting the host:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
     }
 
     #[test]

@@ -466,30 +466,10 @@ fn deeply_nested_packages_are_rejected_without_aborting() {
 
 /// Isolates a parser regression so a stack overflow fails this test instead of the entire suite.
 fn assert_parser_rejects_without_aborting(test_name: &str, wit: String) {
-    const PROBE_ENV: &str = "MIDEN_NOTE_SCHEMA_PARSER_PROBE";
     assert!(wit.len() < MAX_NOTE_STORAGE_SCHEMA_BYTES);
-    if std::env::var(PROBE_ENV).as_deref() == Ok(test_name) {
-        std::thread::Builder::new()
-            .stack_size(2 * 1024 * 1024)
-            .spawn(move || {
-                assert!(NoteStorageSchema::from_wit_text(&wit).is_err());
-            })
-            .unwrap()
-            .join()
-            .unwrap();
-        return;
-    }
-    let output = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", test_name, "--nocapture"])
-        .env(PROBE_ENV, test_name)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "schema parsing must return an error without aborting the host:\n{}\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
+    crate::codec_structure::tests::assert_rejects_without_aborting(test_name, move || {
+        NoteStorageSchema::from_wit_text(&wit).is_err()
+    });
 }
 
 #[test]
