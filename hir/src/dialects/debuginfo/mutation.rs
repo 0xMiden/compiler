@@ -1152,31 +1152,41 @@ impl Drop for DebugInfoMutation {
             }
             let root = binding.function;
             let attached = root.is_some_and(|root| is_under(*anchor, root));
+            let current = super::bindings::SourceBinding::of(*anchor);
             if self.update == DebugInfoUpdate::Relocate
-                && let Some(current) = super::bindings::SourceBinding::of(*anchor)
+                && let Some(current) = current.as_ref()
                 && current.identity == binding.identity
                 && current.function.is_some()
             {
-                super::capture_invalidation::relocated(*anchor, current);
+                super::capture_invalidation::relocated(*anchor, current.clone());
                 continue;
             }
             if self.update == DebugInfoUpdate::DiscardUnreachable
-                && witnesses.iter().any(|owner| match owner {
-                    CaptureOwner::Operation(owner) => {
-                        owner.parent_op().is_none()
-                            && (!attached
-                                || root.is_some_and(|root| *owner == root && parent.is_some()))
-                    }
-                    CaptureOwner::Block(block) => {
-                        !attached && block.parent().and_then(|r| r.parent()).is_none()
-                    }
-                    CaptureOwner::Region(_) => false,
+                && current.as_ref().is_some_and(|current| {
+                    current.identity == binding.identity
+                        && current.function.is_none_or(|function| Some(function) == root)
+                })
+                && witnesses.iter().any(|owner| {
+                    // The capture must have disappeared with this container, not escaped to
+                    // another one before its old owner was removed. A separately erased record
+                    // is also covered by the declared container's subsequent removal.
+                    (anchor.parent().is_none() || is_in_owner(*anchor, *owner))
+                        && match owner {
+                            CaptureOwner::Operation(owner) => {
+                                owner.parent_op().is_none()
+                                    && (!attached
+                                        || root
+                                            .is_some_and(|root| *owner == root && parent.is_some()))
+                            }
+                            CaptureOwner::Block(block) => {
+                                !attached && block.parent().and_then(|r| r.parent()).is_none()
+                            }
+                            CaptureOwner::Region(_) => false,
+                        }
                 })
             {
                 super::capture_invalidation::cancel(*anchor);
-            } else if !attached
-                || super::bindings::SourceBinding::of(*anchor).as_ref() != Some(binding)
-            {
+            } else if !attached || current.as_ref() != Some(binding) {
                 super::capture_invalidation::poison(
                     &self.context,
                     "pending capture changed or disappeared without an exact mapping or \

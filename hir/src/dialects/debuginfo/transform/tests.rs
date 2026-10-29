@@ -768,3 +768,89 @@ fn raw_function_detach_does_not_discard_pending_obligations() -> Result<(), Repo
     assert!(phase.finish().is_err());
     Ok(())
 }
+
+#[test]
+fn removing_old_owner_does_not_discard_a_pending_anchor_that_escaped() -> Result<(), Report> {
+    use crate::{BuilderExt, dialects::builtin::FunctionBuilder};
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Owner {
+        Function,
+        NestedOperation,
+        Block,
+    }
+    for audited in [false, true] {
+        for owner_kind in [Owner::Function, Owner::NestedOperation, Owner::Block] {
+            let mut test = Test::named("escaped_capture").in_module("test");
+            test.with_function("destination", &[Type::U32], &[Type::U32]);
+            let destination = test.function();
+            let source = test.define_function("source", &[Type::U32], &[Type::U32]);
+            let context = test.context_rc();
+            let mut records = Vec::new();
+            let mut nested_owner = None;
+            for (function, line) in [(destination, 1), (source, 2)] {
+                let mut builder = context.clone().builder();
+                let mut builder = FunctionBuilder::new(function, &mut builder);
+                let entry = builder.entry_block();
+                let value = entry.borrow().arguments()[0] as ValueRef;
+                if function == source && owner_kind == Owner::NestedOperation {
+                    let owner = BuiltinOpBuilder::builder_mut(&mut builder)
+                        .create::<OpaqueCaptureOwner, ()>(SourceSpan::UNKNOWN)(
+                    )?
+                    .as_operation_ref();
+                    let region = owner.borrow().regions().front().as_pointer().unwrap();
+                    let block = builder.create_block_in_region(region);
+                    builder.switch_to_block(block);
+                    nested_owner = Some(owner);
+                }
+                records.push(
+                    BuiltinOpBuilder::builder_mut(&mut builder)
+                        .debug_value(
+                            value,
+                            Variable::new("x".into(), "test.rs".into(), line, None),
+                            SourceSpan::UNKNOWN,
+                        )?
+                        .as_operation_ref(),
+                );
+                builder.switch_to_block(entry);
+                builder.ret([value], SourceSpan::UNKNOWN)?;
+            }
+            let root = destination.as_operation_ref().parent_op().unwrap();
+            let audit = audited.then(|| super::super::mutation::DebugInfoAudit::begin(root));
+            let phase = phase(root)?;
+            let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+            invalidate_debug_captures(records[1], &mut rewriter)?;
+            let anchor = collect_debug_ops(&source.as_operation_ref())[0];
+            let mut source_block = source.borrow().entry_block();
+            let owner = nested_owner.unwrap_or(source.as_operation_ref());
+            {
+                let _guard = if owner_kind == Owner::Block {
+                    DebugInfoMutation::for_blocks(
+                        &[source_block],
+                        DebugInfoUpdate::DiscardUnreachable,
+                    )
+                    .unwrap()
+                } else {
+                    DebugInfoMutation::new(owner, DebugInfoUpdate::DiscardUnreachable)
+                };
+                rewriter.move_op_after(anchor, records[0]);
+                if owner_kind == Owner::Block {
+                    source_block.borrow_mut().erase();
+                } else {
+                    rewriter.erase_op(owner);
+                }
+            }
+            assert_eq!(
+                SourceBinding::of(anchor).unwrap().function,
+                Some(destination.as_operation_ref())
+            );
+            assert!(
+                phase.finish().is_err(),
+                "escaped anchor was canceled: audited={audited}, owner_kind={owner_kind:?}"
+            );
+            if let Some(audit) = audit {
+                assert!(audit.finish().is_err());
+            }
+        }
+    }
+    Ok(())
+}
