@@ -41,14 +41,16 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, DialectRegistration, Op, OpBuilder, Operation, OperationRef, ProgramPoint, Report,
-    SmallVec, Spanned, ValueRef,
+    Builder, FxHashMap, FxHashSet, Op, OpBuilder, OperationRef, ProgramPoint, Report, SmallVec,
+    Spanned, ValueRef,
     dialects::debuginfo::attributes::ExpressionOp,
     patterns::{Rewriter, RewriterExt},
 };
 
 use super::{
-    DIBuilder, DebugInfoMutation, DebugInfoUpdate, debug_record_variable, is_debug_record,
+    DIBuilder, DebugInfoMutation, DebugInfoUpdate,
+    bindings::{SourceBinding, VisibilitySlot, enclosing_function},
+    debug_record_variable, is_debug_record,
     ops::DebugValue,
 };
 
@@ -385,14 +387,6 @@ fn apply_salvage_action<B: ?Sized + Builder>(
     }
 }
 
-/// Check if an operation is a debug info operation.
-///
-/// This is useful for transforms that need to skip or handle debug ops differently (e.g., DCE
-/// should not consider debug uses as "real" uses that keep a value alive).
-pub fn is_debug_info_op(op: &Operation) -> bool {
-    op.dialect().name() == super::DebugInfoDialect::NAMESPACE
-}
-
 /// Collect all `di.debug_value` operations that reference the given value.
 ///
 /// Useful for transforms that need to inspect or update debug info for a specific value.
@@ -410,6 +404,11 @@ pub fn debug_value_users(value: &ValueRef) -> SmallVec<[OperationRef; 2]> {
 /// Recursively collect source-variable capture records within an operation.
 pub fn collect_debug_ops(op: &OperationRef) -> Vec<OperationRef> {
     let mut debug_ops = Vec::new();
+    if !op.context_ref().debug_info_mutations.borrow().has_observed_records()
+        && !is_debug_record(*op)
+    {
+        return debug_ops;
+    }
     collect_debug_ops_recursive(op, &mut debug_ops);
     debug_ops
 }
@@ -431,53 +430,27 @@ fn collect_debug_ops_recursive(op: &OperationRef, debug_ops: &mut Vec<OperationR
 /// Keeping it separate from the audit avoids exposing capture snapshots or mutation authority.
 pub struct DebugBindingInventory {
     bindings: Vec<SourceBinding>,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-struct SourceBinding {
-    variable: super::attributes::Variable,
-    inline_calls: Option<midenc_hir::AttributeRef>,
-    function: Option<OperationRef>,
-}
-
-impl SourceBinding {
-    fn of(record: OperationRef) -> Self {
-        let op = record.borrow();
-        Self {
-            variable: debug_record_variable(&op).expect("expected debug record"),
-            inline_calls: op.get_attribute(super::attributes::INLINE_CALL_CHAIN_ATTR_NAME),
-            function: enclosing_function(record),
-        }
-    }
-
-    fn same_visibility_slot(&self, other: &Self) -> bool {
-        self.variable.name == other.variable.name
-            && self.inline_calls == other.inline_calls
-            && self.function == other.function
-    }
-}
-
-fn enclosing_function(op: OperationRef) -> Option<OperationRef> {
-    let mut current = Some(op);
-    while let Some(op) = current {
-        if op.name().is::<crate::dialects::builtin::Function>() {
-            return Some(op);
-        }
-        current = op.parent_op();
-    }
-    None
+    visibility: FxHashMap<VisibilitySlot, Vec<usize>>,
 }
 
 impl DebugBindingInventory {
     pub fn new(root: OperationRef) -> Self {
+        #[cfg(test)]
+        tests::BUILDS.with(|count| count.set(count.get() + 1));
         let mut bindings = Vec::new();
+        let mut visibility: FxHashMap<VisibilitySlot, Vec<usize>> = FxHashMap::default();
+        let mut seen = FxHashSet::default();
         for record in collect_debug_ops(&root) {
-            let binding = SourceBinding::of(record);
-            if !bindings.contains(&binding) {
+            let binding = SourceBinding::of(record).expect("expected debug record");
+            if seen.insert(binding.clone()) {
+                visibility.entry(binding.visibility()).or_default().push(bindings.len());
                 bindings.push(binding);
             }
         }
-        Self { bindings }
+        Self {
+            bindings,
+            visibility,
+        }
     }
 
     /// Invalidate captures at the original owner's program point before its erasure.
@@ -491,23 +464,40 @@ impl DebugBindingInventory {
         owner: OperationRef,
         rewriter: &mut R,
     ) -> Result<(), Report> {
-        let records = collect_debug_ops(&owner)
-            .into_iter()
-            .map(|record| (record, SourceBinding::of(record)))
-            .collect::<Vec<_>>();
+        self.invalidate_records(owner, collect_debug_ops(&owner), rewriter)
+    }
+
+    fn invalidate_records<R: ?Sized + Rewriter>(
+        &self,
+        owner: OperationRef,
+        records: Vec<OperationRef>,
+        rewriter: &mut R,
+    ) -> Result<(), Report> {
         if records.is_empty() {
             return Ok(());
         }
+        let mut originals: FxHashMap<SourceBinding, Vec<OperationRef>> = FxHashMap::default();
         let mut affected = Vec::new();
-        for (_, binding) in &records {
-            if !affected.contains(binding) {
+        let mut slots = FxHashSet::default();
+        for &record in &records {
+            let binding = SourceBinding::of(record).expect("expected debug record");
+            if !originals.contains_key(&binding) {
+                slots.insert(binding.visibility());
                 affected.push(binding.clone());
             }
+            originals.entry(binding).or_default().push(record);
         }
-        for binding in &self.bindings {
-            if records.iter().any(|(_, original)| original.same_visibility_slot(binding))
-                && !affected.contains(binding)
-            {
+        // Preserve the old deterministic order: owner identities first, then inventory order.
+        let mut additional = slots
+            .iter()
+            .filter_map(|slot| self.visibility.get(slot))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        additional.sort_unstable();
+        for index in additional {
+            let binding = &self.bindings[index];
+            if !originals.contains_key(binding) {
                 affected.push(binding.clone());
             }
         }
@@ -518,18 +508,29 @@ impl DebugBindingInventory {
         for binding in affected {
             let span = owner.borrow().span();
             let ip = *rewriter.insertion_point();
-            let previous_chain = rewriter.replace_inline_call_chain(binding.inline_calls);
+            let previous_chain = rewriter.replace_inline_call_chain(
+                binding.identity.inline_calls.clone().map(|chain| {
+                    rewriter
+                        .context_rc()
+                        .create_attribute::<super::attributes::InlineCallChainAttr, _>(chain)
+                        .as_attribute_ref()
+                }),
+            );
             rewriter.set_insertion_point_before(owner);
-            let replacement = rewriter.debug_kill(binding.variable.clone(), span);
+            let replacement = rewriter.debug_kill(binding.identity.variable.clone(), span);
             rewriter.restore_insertion_point(ip);
             rewriter.replace_inline_call_chain(previous_chain);
             let replacement = replacement?.as_operation_ref();
-            for (record, original) in &records {
-                if original == &binding {
+            if let Some(records) = originals.get(&binding) {
+                for record in records {
                     update.replace_capture(*record, replacement, owner)?;
-                    rewriter.erase_op(*record);
                 }
             }
+        }
+        // Keep the anchor attached until every replacement has been inserted, including when
+        // the owner itself is a record and its slot contains several shadow declarations.
+        for record in records {
+            rewriter.erase_op(record);
         }
         Ok(())
     }
@@ -541,9 +542,55 @@ pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
     owner: OperationRef,
     rewriter: &mut R,
 ) -> Result<(), Report> {
-    if collect_debug_ops(&owner).is_empty() {
+    let records = collect_debug_ops(&owner);
+    if records.is_empty() {
         return Ok(());
     }
-    DebugBindingInventory::new(enclosing_function(owner).unwrap_or(owner))
-        .invalidate_captures(owner, rewriter)
+    let root = enclosing_function(owner).unwrap_or(owner);
+    let inventory = match rewriter.debug_binding_inventory_cache() {
+        Some(cache) => cache.inventory(root),
+        None => alloc::rc::Rc::new(DebugBindingInventory::new(root)),
+    };
+    inventory.invalidate_records(owner, records, rewriter)
 }
+
+/// Rewrite-local inventory storage. Reuse is enabled only by a driver with an explicit lifecycle.
+/// Ordinary rewriters and arbitrary patterns always receive a fresh inventory.
+#[derive(Default)]
+pub struct DebugBindingInventoryCache {
+    enabled: bool,
+    preserving: bool,
+    inventory: Option<(OperationRef, alloc::rc::Rc<DebugBindingInventory>)>,
+}
+
+impl DebugBindingInventoryCache {
+    pub(crate) fn enable(&mut self) {
+        self.enabled = true;
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.inventory = None;
+    }
+
+    pub(crate) fn enter(&mut self, preserving: bool) -> bool {
+        core::mem::replace(&mut self.preserving, preserving)
+    }
+
+    pub(crate) fn inventory(&mut self, root: OperationRef) -> alloc::rc::Rc<DebugBindingInventory> {
+        if !self.enabled || !self.preserving {
+            return alloc::rc::Rc::new(DebugBindingInventory::new(root));
+        }
+        if let Some((owner, inventory)) = &self.inventory
+            && *owner == root
+        {
+            return inventory.clone();
+        }
+        let inventory = alloc::rc::Rc::new(DebugBindingInventory::new(root));
+        self.inventory = Some((root, inventory.clone()));
+        inventory
+    }
+}
+
+#[cfg(test)]
+#[path = "transform/tests.rs"]
+mod tests;

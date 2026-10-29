@@ -3,15 +3,13 @@ use core::hash::Hasher;
 
 use super::{
     DebugDeclare, DebugKill, DebugValue,
-    attributes::{
-        Expression, ExpressionOp, FrameBase, INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChain,
-        InlineCallChainAttr, Variable,
-    },
+    attributes::{Expression, ExpressionOp, FrameBase},
+    bindings::{BindingIdentity, enclosing_function},
 };
 use crate::{
     BlockRef, Context, Forward, FxHashMap, FxHashSet, FxHasher, Operation, OperationRef, RawWalk,
     RegionRef, Report, SmallVec, Usable, ValueRef,
-    dialects::builtin::{Function, attributes::LocalVariableAttr},
+    dialects::builtin::attributes::LocalVariableAttr,
     effects::{MemoryEffect, MemoryEffectOpInterface},
     equivalence::{DefaultValueHasher, OperationEquivalenceFlags},
 };
@@ -40,9 +38,8 @@ pub enum DebugInfoUpdate {
 #[derive(Clone, PartialEq, Eq)]
 struct Record {
     fingerprint: u64,
-    variable: Variable,
+    binding: BindingIdentity,
     expression: Option<Expression>,
-    inline_calls: Option<InlineCallChain>,
     value: Option<ValueRef>,
     is_kill: bool,
     block: Option<BlockRef>,
@@ -53,34 +50,18 @@ struct Record {
 impl Record {
     fn read(op: OperationRef) -> Option<Self> {
         let operation = op.borrow();
-        let (variable, expression, value, is_kill) =
-            if let Some(value) = operation.downcast_ref::<DebugValue>() {
-                (
-                    value.variable().as_value().clone(),
-                    Some(value.expression().as_value().clone()),
-                    Some(value.value().as_value_ref()),
-                    false,
-                )
-            } else if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
-                (
-                    declare.variable().as_value().clone(),
-                    Some(declare.expression().as_value().clone()),
-                    None,
-                    false,
-                )
-            } else {
-                let kill = operation.downcast_ref::<DebugKill>()?;
-                (kill.variable().as_value().clone(), None, None, true)
-            };
+        let binding = BindingIdentity::of(&operation)?;
+        let expression = super::bindings::debug_record_expression(&operation);
+        let value = operation
+            .downcast_ref::<DebugValue>()
+            .map(|record| record.value().as_value_ref());
+        let is_kill = operation.is::<DebugKill>();
         Some(Self {
             fingerprint: fingerprint(&operation),
-            variable,
+            binding,
             expression,
             value,
             is_kill,
-            inline_calls: operation
-                .get_typed_attribute::<InlineCallChainAttr>(INLINE_CALL_CHAIN_ATTR_NAME)
-                .map(|chain| chain.borrow().as_value().clone()),
             block: operation.parent(),
             region: operation.parent_region(),
             function: enclosing_function(op),
@@ -88,7 +69,7 @@ impl Record {
     }
 
     fn same_binding(&self, other: &Self) -> bool {
-        self.variable == other.variable && self.inline_calls == other.inline_calls
+        self.binding == other.binding
     }
 
     fn local_slots(&self) -> impl Iterator<Item = u32> + '_ {
@@ -121,17 +102,6 @@ fn hash_operation(operation: &Operation, flags: OperationEquivalenceFlags) -> u6
     let mut hasher = FxHasher::default();
     operation.hash_with_options(flags, DefaultValueHasher, DefaultValueHasher, &mut hasher);
     hasher.finish()
-}
-
-fn enclosing_function(op: OperationRef) -> Option<OperationRef> {
-    let mut current = Some(op);
-    while let Some(operation) = current {
-        if operation.name().is::<Function>() {
-            return Some(operation);
-        }
-        current = operation.parent_op();
-    }
-    None
 }
 
 fn is_under(op: OperationRef, root: OperationRef) -> bool {
@@ -504,6 +474,10 @@ pub(crate) struct DebugInfoMutationState {
 }
 
 impl DebugInfoMutationState {
+    pub(super) fn has_observed_records(&self) -> bool {
+        !self.observed.is_empty()
+    }
+
     pub(crate) fn inserted(&mut self, op: OperationRef) {
         if is_debug_record(op) {
             self.observed.insert(op);
@@ -880,7 +854,7 @@ impl DebugInfoMutation {
                     audit.errors.push(format!(
                         "unhandled debug-info mutation for variable '{}': the record changed \
                          before its DebugInfoUpdate was declared",
-                        before.variable.name
+                        before.binding.variable.name
                     ));
                 }
             }
@@ -1222,7 +1196,7 @@ impl DebugInfoMutation {
                 audit.errors.push(format!(
                     "debug-info {:?} contract failed for variable '{}' in '{}'",
                     self.update,
-                    before.variable.name,
+                    before.binding.variable.name,
                     op.name()
                 ));
             }
@@ -1364,7 +1338,7 @@ impl DebugInfoAudit {
                 audit.errors.push(format!(
                     "unhandled debug-info mutation for variable '{}': record changed, moved, or \
                      disappeared without an explicit DebugInfoUpdate",
-                    expected.variable.name
+                    expected.binding.variable.name
                 ));
             }
         }
@@ -1373,7 +1347,7 @@ impl DebugInfoAudit {
                 audit.errors.push(format!(
                     "unhandled debug-info insertion for variable '{}': use DIBuilder or an \
                      explicit DebugInfoUpdate",
-                    record.variable.name
+                    record.binding.variable.name
                 ));
             }
         }

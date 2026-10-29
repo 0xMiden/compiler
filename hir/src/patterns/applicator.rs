@@ -215,8 +215,17 @@ impl PatternApplicator {
             );
 
             let applied = {
-                let mut scope = rewriter.with_inline_call_chain(op);
-                best_pattern.match_and_rewrite(op, &mut *scope)
+                let preserving = best_pattern.preserves_debug_bindings();
+                let mut inventory_scope =
+                    super::rewriter::DebugBindingInventoryGuard::new(rewriter, preserving);
+                let applied = {
+                    let mut scope = inventory_scope.with_inline_call_chain(op);
+                    best_pattern.match_and_rewrite(op, &mut *scope)
+                };
+                if matches!(applied, Ok(false)) || (preserving && applied.is_ok()) {
+                    inventory_scope.preserve();
+                }
+                applied
             };
             match applied {
                 Ok(matched) => {

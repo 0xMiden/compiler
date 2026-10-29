@@ -8,8 +8,9 @@ use midenc_hir::{
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::{
-            DIBuilder, DebugDeclare, DebugInfoMutation, DebugInfoUpdate, DebugValue,
-            attributes::{Expression, ExpressionOp, FrameBase, INLINE_CALL_CHAIN_ATTR_NAME},
+            DIBuilder, DebugInfoMutation, DebugInfoUpdate,
+            attributes::{Expression, ExpressionOp, FrameBase},
+            bindings::{BindingIdentity, RecoveryIdentity, debug_record_expression as expression},
             debug_record_variable,
             transform::invalidate_debug_record_with,
         },
@@ -72,16 +73,12 @@ impl BuildableDataFlowAnalysis for LocalRecovery {
 }
 
 fn same_binding(a: &Operation, b: &Operation) -> bool {
-    debug_record_variable(a) == debug_record_variable(b)
-        && expression(a) == expression(b)
-        && a.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
-            == b.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+    RecoveryIdentity::of(a) == RecoveryIdentity::of(b)
 }
 
 fn same_visibility(a: &Operation, b: &Operation) -> bool {
-    debug_record_variable(a).unwrap().name == debug_record_variable(b).unwrap().name
-        && a.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
-            == b.get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+    BindingIdentity::of(a).unwrap().visibility(None)
+        == BindingIdentity::of(b).unwrap().visibility(None)
 }
 
 impl DenseForwardDataFlowAnalysis for LocalRecovery {
@@ -263,15 +260,6 @@ fn translate(
         }
     }
     state
-}
-
-fn expression(op: &Operation) -> Option<Expression> {
-    if let Some(declare) = op.downcast_ref::<DebugDeclare>() {
-        Some(declare.expression().as_value().clone())
-    } else {
-        op.downcast_ref::<DebugValue>()
-            .map(|value| value.expression().as_value().clone())
-    }
 }
 
 fn normalized_expression(expression: &Expression, local: u32) -> Option<Expression> {

@@ -27,6 +27,10 @@ impl FoldRedundantYields {
 }
 
 impl Pattern for FoldRedundantYields {
+    fn preserves_debug_bindings(&self) -> bool {
+        true
+    }
+
     fn info(&self) -> &PatternInfo {
         &self.info
     }
@@ -197,6 +201,7 @@ mod tests {
     struct SingleCanonicalizerPass {
         rewrites: Rc<FrozenRewritePatternSet>,
         should_modify: bool,
+        top_down: bool,
     }
 
     impl SingleCanonicalizerPass {
@@ -211,6 +216,7 @@ mod tests {
             Self {
                 rewrites,
                 should_modify,
+                top_down: false,
             }
         }
     }
@@ -234,11 +240,10 @@ mod tests {
             let op_ref = op.as_operation_ref();
             drop(op);
 
-            let converged = patterns::apply_patterns_and_fold_greedily(
-                op_ref,
-                self.rewrites.clone(),
-                GreedyRewriteConfig::default(),
-            );
+            let mut config = GreedyRewriteConfig::default();
+            config.with_top_down_traversal(self.top_down);
+            let converged =
+                patterns::apply_patterns_and_fold_greedily(op_ref, self.rewrites.clone(), config);
 
             let changed = match converged {
                 Ok(b) => b,
@@ -815,6 +820,112 @@ mod tests {
         )
     }
     }}} */
+    #[test]
+    fn redundant_yield_inventory_includes_bindings_authored_by_another_pattern()
+    -> Result<(), Report> {
+        use core::cell::Cell;
+
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::{
+                builtin::Function,
+                debuginfo::{
+                    DIBuilder, DebugKill, DebugValue, attributes::Variable, debug_record_variable,
+                },
+            },
+            parse::{self, ParserConfig},
+            pass::{Nesting, PassManager},
+        };
+        struct AuthorShadow {
+            info: PatternInfo,
+            authored: Cell<bool>,
+        }
+        impl Pattern for AuthorShadow {
+            fn info(&self) -> &PatternInfo {
+                &self.info
+            }
+        }
+        impl RewritePattern for AuthorShadow {
+            fn match_and_rewrite(
+                &self,
+                op: OperationRef,
+                rewriter: &mut dyn Rewriter,
+            ) -> Result<bool, Report> {
+                if self.authored.get()
+                    || !debug_record_variable(&op.borrow())
+                        .is_some_and(|variable| variable.name.as_str() == "marker")
+                {
+                    return Ok(false);
+                }
+                let value =
+                    op.borrow().downcast_ref::<DebugValue>().unwrap().value().as_value_ref();
+                rewriter.set_insertion_point_before(op);
+                rewriter.debug_value(
+                    value,
+                    Variable::new("x".into(), "test.rs".into(), 2, None),
+                    SourceSpan::UNKNOWN,
+                )?;
+                self.authored.set(true);
+                Ok(true)
+            }
+        }
+        let context = Rc::new(Context::default());
+        let function = parse::parse::<Function>(
+            ParserConfig::new(context.clone()),
+            Uri::new("inventory.hir"),
+            r#"
+            builtin.function public extern("C") @inventory(%c: i1, %v: u32) -> (u32, u32) {
+                %first = scf.if %c then {
+                    di.debug_value %v <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+                    scf.yield %v : (u32);
+                } else { scf.yield %v : (u32); } : (i1) -> u32;
+                di.debug_value %v <{ variable = #di.variable<{ name = "marker", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+                %second = scf.if %c then {
+                    di.debug_value %v <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+                    scf.yield %v : (u32);
+                } else { scf.yield %v : (u32); } : (i1) -> u32;
+                builtin.ret %first, %second : (u32, u32);
+            };
+        "#,
+        )?;
+        let author = Box::new(AuthorShadow {
+            info: PatternInfo::new(
+                context.clone(),
+                "author-shadow",
+                PatternKind::Any,
+                PatternBenefit::MAX,
+            ),
+            authored: Cell::new(false),
+        });
+        let patterns = RewritePatternSet::from_iter(
+            context.clone(),
+            [
+                author as Box<dyn RewritePattern>,
+                Box::new(FoldRedundantYields::new(context.clone())),
+            ],
+        );
+        // The greedy driver visits siblings in source order. The first fold builds an inventory;
+        // the intervening successful pattern introduces a new same-slot source identity.
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(patterns));
+        let mut passes = PassManager::on::<Function>(context, Nesting::Implicit);
+        passes.add_pass(Box::new(SingleCanonicalizerPass {
+            rewrites,
+            should_modify: true,
+            top_down: true,
+        }));
+        passes.run(function.as_operation_ref())?;
+        let records = midenc_hir::dialects::debuginfo::transform::collect_debug_ops(
+            &function.as_operation_ref(),
+        );
+        let kills = records
+            .into_iter()
+            .filter(|op| op.borrow().is::<DebugKill>())
+            .map(|op| debug_record_variable(&op.borrow()).unwrap().line)
+            .collect::<Vec<_>>();
+        assert_eq!(kills, [1, 1, 2], "the later fold must invalidate the newly authored shadow");
+        assert!(!format!("{}", function.borrow().as_operation()).contains("scf.if"));
+        Ok(())
+    }
 }
 
 #[cfg(test)]

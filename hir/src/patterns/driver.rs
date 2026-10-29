@@ -449,6 +449,9 @@ impl GreedyPatternRewriteDriver {
         log::debug!(target: "pattern-rewrite-driver", "starting processing of greedy pattern rewrite driver worklist");
         let mut rewriter =
             PatternRewriter::new_with_listener(self.context.clone(), Rc::clone(&self));
+        // This rewriter lives for exactly one worklist run. CFG cleanup between runs cannot
+        // leave a reusable inventory behind; only declared preserving patterns can use it.
+        rewriter.debug_binding_inventory_cache().unwrap().enable();
 
         let mut changed = false;
         let mut num_rewrites = 0u32;
@@ -510,6 +513,7 @@ impl GreedyPatternRewriteDriver {
             let mut results = SmallVec::<[OpFoldResult; 1]>::default();
             log::trace!(target: "pattern-rewrite-driver", "attempting to fold operation..");
             if op.fold(&mut results).is_ok() {
+                rewriter.debug_binding_inventory_cache().unwrap().invalidate();
                 if results.is_empty() {
                     // Op was modified in-place
                     self.notify_operation_modified(op_ref);

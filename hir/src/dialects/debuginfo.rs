@@ -52,6 +52,7 @@
 //! For historical context, you may be interested in the slides from Mojo's debugging talk, where
 //! they discuss its debug info dialect. [You can find that here](https://llvm.org/devmtg/2024-04/slides/TechnicalTalks/MojoDebugging.pdf).
 pub mod attributes;
+pub mod bindings;
 mod builders;
 pub mod mutation;
 mod ops;

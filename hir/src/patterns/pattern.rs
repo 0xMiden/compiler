@@ -81,6 +81,16 @@ impl Ord for PatternBenefit {
 }
 
 pub trait Pattern {
+    /// Whether this pattern preserves the set of function-scoped source binding identities.
+    ///
+    /// It may erase records or create records for existing identities, but must not introduce
+    /// a new declaration, inline frame, or function ownership. Recovery expressions may change.
+    /// The driver may reuse a binding inventory across such rewrites. Failed matches must leave
+    /// IR unchanged, regardless of this declaration.
+    fn preserves_debug_bindings(&self) -> bool {
+        false
+    }
+
     fn info(&self) -> &PatternInfo;
     /// A name used when printing diagnostics related to this pattern
     #[inline(always)]
