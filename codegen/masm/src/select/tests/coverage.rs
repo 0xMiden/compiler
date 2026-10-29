@@ -52,6 +52,22 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
         ),
         false,
     ));
+    fixtures.push((
+        parse_module_function(
+            r#"builtin.module public @pointer_references {
+        builtin.function public extern("C") @callee(%x: felt) -> felt {
+            builtin.ret %x : (felt);
+        };
+        builtin.function public extern("C") @dispatch(%p: ptr<[felt; 4], element>, %x: felt) -> (felt, [felt; 4]) {
+            %root = hir.procref @callee;
+            %same = hir.dynexec %p(%x) : extern("C") (felt) -> (felt);
+            %fresh = hir.dyncall_local %p(%same) : extern("component-model") (felt) -> (felt);
+            builtin.ret %fresh, %root : (felt, [felt; 4]);
+        };
+    };"#,
+        ),
+        false,
+    ));
     let outputs = (0..16).map(|i| alloc::format!("%o{i}")).collect::<Vec<_>>().join(", ");
     fixtures.push((
         parse(&alloc::format!(
@@ -152,7 +168,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 129);
+    assert_eq!(registered.len(), 132);
     assert_eq!(covered, registered);
 }
 

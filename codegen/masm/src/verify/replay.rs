@@ -1650,6 +1650,33 @@ impl<'a> Verifier<'a> {
         self.source_only_read(None, width, cursor)
     }
 
+    /// Check an implicit aligned word read restricted to source memory.
+    /// Provenance comes first: an exact compiler address must never borrow source authority.
+    pub(super) fn source_word_read(
+        &self,
+        token: Token,
+        cursor: &Cursor,
+    ) -> Result<(), VerificationError> {
+        if self.tokens.origins(token).compiler() {
+            return Err(fail(
+                DiagnosticCategory::InvalidSpillSlotRead,
+                "dynamic root pointer must refer to source memory",
+            ));
+        }
+        let offset = self.tokens.frame_address(token);
+        if self.tokens.constant(token).is_some_and(|address| {
+            !address.is_multiple_of(4)
+                || address.checked_add(4).is_none_or(|end| end > (1u64 << 32))
+        }) {
+            return Err(fail(
+                DiagnosticCategory::IllegalStackAccess,
+                "source root word address is unaligned or outside native memory",
+            ));
+        }
+        self.memory_access(offset, Some(4), true, cursor, false)?;
+        Ok(())
+    }
+
     /// Footprint-only source reads never initialize, load tokens, or enter compiler storage.
     fn source_only_read(
         &self,

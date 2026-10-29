@@ -768,8 +768,22 @@ pub trait Parser<'input> {
             todo!()
         }
 
-        if self.token_stream_mut().next_if_eq(Token::Array)? {
-            todo!()
+        let bracketed = self.token_stream_mut().next_if_eq(Token::Lbracket)?;
+        if bracketed || self.token_stream_mut().next_if_eq(Token::Array)? {
+            if !bracketed {
+                self.parse_langle()?;
+            }
+            let element = self.parse_type()?.into_inner();
+            self.parse_semicolon()?;
+            let length = self.parse_decimal_integer::<usize>()?.into_inner();
+            if bracketed {
+                self.parse_rbracket()?;
+            } else {
+                self.parse_rangle()?;
+            }
+            let span =
+                SourceSpan::new(start.source_id(), start.start()..self.current_location().end());
+            return Ok(Some(Span::new(span, Type::from(ArrayType::new(element, length)))));
         }
 
         Ok(None)
@@ -1052,20 +1066,11 @@ pub trait Parser<'input> {
             ));
         }
 
-        if self.token_stream_mut().next_if_eq(Token::Array)? {
-            let start = self.token_stream().current_position();
-            self.parse_langle()?;
-            let element_ty = self.parse_type()?;
-            self.parse_semicolon()?;
-            let arity = self.parse_decimal_integer::<usize>()?;
-            self.parse_rangle()?;
-            let end = self.token_stream().current_span();
-
-            let span = SourceSpan::new(end.source_id(), start..end.end());
-            return Ok(Span::new(
-                span,
-                Type::Array(Arc::new(ArrayType::new(element_ty.into_inner(), arity.into_inner()))),
-            ));
+        if self
+            .token_stream_mut()
+            .is_next(|token| matches!(token, Token::Array | Token::Lbracket))
+        {
+            return self.parse_type();
         }
 
         if self.token_stream_mut().next_if_eq(Token::Struct)? {

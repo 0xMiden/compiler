@@ -419,6 +419,240 @@ impl OpParser for ProcedureRoot {
     }
 }
 
+/// Materialize a callable's MAST root as one first-class four-felt word.
+///
+/// Linkability, aliases, and note-script intent follow [`ProcedureRoot`]. The single result
+/// retains its word identity while occupying the same four operand-stack lanes.
+#[derive(EffectOpInterface)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct Procref {
+    #[symbol(callable)]
+    callee: SymbolPath,
+    #[result]
+    result: AnyArray,
+}
+
+impl Procref {
+    pub fn word_type() -> Type {
+        Type::from(ArrayType::new(Type::Felt, ProcedureRoot::DIGEST_FELTS))
+    }
+}
+
+impl InferTypeOpInterface for Procref {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        if self.op.results.is_empty() {
+            let value =
+                context.make_result(self.span(), Self::word_type(), self.as_operation_ref(), 0);
+            self.op.results.push(value);
+        } else if self.op.results.len() != 1 {
+            return Err(Report::msg("invalid hir.procref: expected one four-felt word result"));
+        } else {
+            self.result_mut().set_type(Self::word_type());
+        }
+        Ok(())
+    }
+}
+
+impl Verify<dyn MemoryEffectOpInterface> for Procref {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        if self.num_results() != 1 || self.result().ty() != &Self::word_type() {
+            return Err(Report::msg("invalid hir.procref: expected one four-felt word result"));
+        }
+        Ok(())
+    }
+}
+
+impl OpPrinter for Procref {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        printer.print_space();
+        printer.print_symbol_path(self.callee().path());
+        print_optional_attributes(printer, &self.op);
+    }
+}
+
+impl OpParser for Procref {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        ProcedureRoot::parse(state, parser)
+    }
+}
+
+/// Execute a root read from source memory in the caller's context.
+///
+/// `callee` is an element pointer to one four-felt word. The signature describes the unknown
+/// procedure's arguments and results; it does not establish that the runtime root matches it.
+#[operation(
+    name = "dynexec",
+    dialect = HirDialect,
+    implements(CallOpInterface, InferTypeOpInterface, OperandRangeRequirementOpInterface, OpPrinter)
+)]
+pub struct DynExec {
+    #[attr(hidden)]
+    signature: SignatureAttr,
+    #[operand]
+    callee: AnyPointer,
+    #[operands]
+    arguments: AnyType,
+}
+
+impl DynExec {
+    /// The implicit source-memory read consumes exactly one aligned digest word.
+    pub fn root_pointer_type() -> Type {
+        Type::from(PointerType::new_with_address_space(Procref::word_type(), AddressSpace::Element))
+    }
+}
+
+/// Invoke a root read from the caller's source memory in a fresh context.
+///
+/// The root pointer is separate from the sixteen-lane argument window. Only a component-model
+/// signature can describe the new context's operand-stack boundary.
+#[operation(
+    name = "dyncall_local",
+    dialect = HirDialect,
+    implements(CallOpInterface, InferTypeOpInterface, OperandRangeRequirementOpInterface, OpPrinter)
+)]
+pub struct DynCallLocal {
+    #[attr(hidden)]
+    signature: SignatureAttr,
+    #[operand]
+    callee: AnyPointer,
+    #[operands]
+    arguments: AnyType,
+}
+
+// Both forms share the same source contract; only their permitted execution context differs.
+macro_rules! pointer_call_interfaces {
+    ($ty:ident, $context:expr) => {
+        impl InferTypeOpInterface for $ty {
+            fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+                let signature = self.signature.borrow();
+                infer_results_from_signature(&mut self.op, &signature, context)
+            }
+        }
+
+        impl OperandRangeRequirementOpInterface for $ty {
+            fn operand_range_requirement(&self, _index: usize) -> OperandRangeRequirement {
+                OperandRangeRequirement::None
+            }
+        }
+
+        impl OpPrinter for $ty {
+            fn print(&self, printer: &mut AsmPrinter<'_>) {
+                printer.print_space();
+                *printer += formatter::display(self.callee().as_value_ref().borrow().id());
+                print_arguments_and_signature(printer, self.arguments(), &self.signature());
+                print_optional_attributes(printer, &self.op);
+            }
+        }
+
+        impl OpParser for $ty {
+            fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+                let callee = parser.parse_operand(true)?;
+                let (arguments, types) = parse_arguments_and_signature(state, parser)?;
+                parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+                let mut values = SmallVec::default();
+                parser.resolve_operands(
+                    state.span,
+                    &[callee],
+                    &[DynExec::root_pointer_type()],
+                    &mut values,
+                )?;
+                state.operands.push(values);
+                let mut values = SmallVec::default();
+                parser.resolve_operands(state.span, &arguments, &types, &mut values)?;
+                state.operands.push(values);
+                Ok(())
+            }
+        }
+
+        impl CallOpInterface for $ty {
+            fn callable_for_callee(&self) -> Callable {
+                Callable::Value(self.callee().as_value_ref())
+            }
+
+            fn set_callee(&mut self, callable: Callable) {
+                let Callable::Value(value) = callable else {
+                    panic!("a pointer call requires an SSA callee");
+                };
+                self.callee_mut().set(value);
+            }
+
+            fn arguments(&self) -> OpOperandRange<'_> {
+                self.operands().group(1)
+            }
+
+            fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
+                self.operands_mut().group_mut(1)
+            }
+
+            fn resolve(&self) -> Option<CanonicalCallableRef> {
+                None
+            }
+
+            fn resolve_in_symbol_table(
+                &self,
+                _symbols: &dyn SymbolTable,
+            ) -> Option<CanonicalCallableRef> {
+                None
+            }
+
+            fn callee_signature(&self) -> Option<Signature> {
+                Some(self.get_signature().clone())
+            }
+
+            fn possible_callees(&self) -> Option<SmallVec<[CanonicalCallableRef; 2]>> {
+                None
+            }
+        }
+
+        impl Verify<dyn CallOpInterface> for $ty {
+            fn verify(&self, _context: &Context) -> Result<(), Report> {
+                verify_pointer_call(
+                    self.as_operation(),
+                    self.callee().ty(),
+                    self.arguments(),
+                    &self.get_signature(),
+                    $context,
+                )
+            }
+        }
+    };
+}
+
+fn verify_pointer_call(
+    op: &Operation,
+    pointer: Type,
+    arguments: OpOperandRange<'_>,
+    signature: &Signature,
+    context: bool,
+) -> Result<(), Report> {
+    let name = format!("{}", op.name());
+    if pointer != DynExec::root_pointer_type() {
+        return Err(Report::msg(format!(
+            "invalid {name}: callee must be an element pointer to a four-felt word"
+        )));
+    }
+    if (signature.cc == CallConv::ComponentModel) != context {
+        return Err(Report::msg(format!("invalid {name}: incompatible calling convention")));
+    }
+    verify_arguments_against_signature(&name, arguments, signature)?;
+    if op.num_results() != signature.results().len()
+        || op
+            .results()
+            .iter()
+            .zip(signature.results())
+            .any(|(result, abi)| result.borrow().ty() != &abi.ty)
+    {
+        return Err(Report::msg(format!("invalid {name}: results disagree with call signature")));
+    }
+    Ok(())
+}
+
+pointer_call_interfaces!(DynExec, false);
+pointer_call_interfaces!(DynCallLocal, true);
+
 /// Indirect same-context invocation through a slot of a
 /// [midenc_hir::dialects::builtin::FunctionTable]; this is the op Wasm `call_indirect` lowers
 /// to.
@@ -1425,6 +1659,183 @@ builtin.module public @test {
             source,
         )
         .expect("hir.exec parser should type operands from signature params");
+    }
+
+    #[test]
+    fn pointer_call_builders_verify_root_and_arguments_without_inference_repair() {
+        use midenc_hir::{AddressSpace, ArrayType, PointerType};
+        for context_call in [false, true] {
+            for (pointer, params, arguments, valid) in [
+                (super::DynExec::root_pointer_type(), alloc::vec![Type::U32], 1, true),
+                (
+                    Type::from(PointerType::new(super::Procref::word_type())),
+                    alloc::vec![Type::U32],
+                    1,
+                    false,
+                ),
+                (
+                    Type::from(PointerType::new_with_address_space(
+                        Type::from(ArrayType::new(Type::Felt, 3)),
+                        AddressSpace::Element,
+                    )),
+                    alloc::vec![Type::U32],
+                    1,
+                    false,
+                ),
+                (super::DynExec::root_pointer_type(), alloc::vec![Type::U32], 0, false),
+                (super::DynExec::root_pointer_type(), alloc::vec![Type::Felt], 1, false),
+            ] {
+                let mut test = Test::new("pointer_builder", &[pointer], &[]);
+                let signature = Signature::with_convention(
+                    &test.context_rc(),
+                    if context_call {
+                        CallConv::ComponentModel
+                    } else {
+                        CallConv::C
+                    },
+                    params,
+                    [],
+                );
+                {
+                    let mut builder = test.function_builder();
+                    let root = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                    let args = (0..arguments)
+                        .map(|_| builder.u32(42, SourceSpan::UNKNOWN))
+                        .collect::<alloc::vec::Vec<_>>();
+                    if context_call {
+                        builder.dyncall_local(root, signature, args, SourceSpan::UNKNOWN).unwrap();
+                    } else {
+                        builder.dynexec(root, signature, args, SourceSpan::UNKNOWN).unwrap();
+                    }
+                    builder.ret([], SourceSpan::UNKNOWN).unwrap();
+                }
+                assert_eq!(
+                    test.function().borrow().as_operation().recursively_verify().is_ok(),
+                    valid
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pointer_calls_roundtrip_and_verify_the_complete_contract() {
+        use midenc_hir::Value;
+        for (operation, convention) in [("dynexec", "sigma"), ("dyncall_local", "component-model")]
+        {
+            let context = Test::default().context_rc();
+            let source = format!(
+                r#"builtin.function public extern("C") @dispatch(%p: ptr<[felt; 4], element>, %x: felt) -> felt {{
+                %r = hir.{operation} %p(%x) : extern("{convention}") (felt) -> (felt);
+                builtin.ret %r : (felt);
+            }};"#
+            );
+            let parsed = parse::parse_any(
+                ParserConfig::new(context.clone()),
+                Uri::new("pointer-call.hir"),
+                &source,
+            )
+            .unwrap();
+            let mut found = false;
+            parsed.borrow().postwalk_all(|op| {
+                if let Some(call) = op.as_trait::<dyn midenc_hir::CallOpInterface>() {
+                    found = true;
+                    assert!(call.possible_callees().is_none());
+                    assert!(call.resolve().is_none());
+                    assert_eq!(call.arguments().len(), 1);
+                    assert_eq!(call.arguments()[0].borrow().ty(), Type::Felt);
+                }
+            });
+            assert!(found);
+            let printed = format!("{}", parsed.borrow());
+            let fresh = Test::default().context_rc();
+            parse::parse_any(
+                ParserConfig::new(fresh.clone()),
+                Uri::new("pointer-call-roundtrip.hir"),
+                &printed,
+            )
+            .unwrap();
+            // Verification must detect transforms that mutate an inferred result without reinference.
+            let mut call = None;
+            parsed.borrow().postwalk_all(|op| {
+                if op.as_trait::<dyn midenc_hir::CallOpInterface>().is_some() {
+                    call = Some(op.as_operation_ref());
+                }
+            });
+            call.unwrap().borrow_mut().results_mut().group_mut(0)[0]
+                .borrow_mut()
+                .set_type(Type::U32);
+            assert!(parsed.borrow().recursively_verify().is_err());
+            for invalid in [
+                source.replace("ptr<[felt; 4], element>", "ptr<[felt; 4], byte>"),
+                source.replace("ptr<[felt; 4], element>", "ptr<[felt; 3], element>"),
+                source.replace("(felt) -> (felt)", "(u32) -> (felt)"),
+                source.replace(
+                    &format!("extern(\"{convention}\") (felt)"),
+                    if operation == "dynexec" {
+                        "extern(\"component-model\") (felt)"
+                    } else {
+                        "extern(\"C\") (felt)"
+                    },
+                ),
+            ] {
+                let fresh = Test::default().context_rc();
+                assert!(
+                    parse::parse_any(
+                        ParserConfig::new(fresh.clone()),
+                        Uri::new("invalid-pointer-call.hir"),
+                        &invalid
+                    )
+                    .is_err(),
+                    "{invalid}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn procref_infers_one_word_and_roundtrips() {
+        use midenc_hir::Value;
+        let context = Test::default().context_rc();
+        let source = r#"builtin.module public @m {
+            builtin.function private extern("C") @callee() { builtin.ret; };
+            builtin.function public extern("C") @caller() {
+                %root = hir.procref @callee;
+                builtin.ret;
+            };
+        };"#;
+        let parsed =
+            parse::parse_any(ParserConfig::new(context.clone()), Uri::new("procref.hir"), source)
+                .expect("procedure word reference parses");
+        let mut roots = 0;
+        parsed.borrow().postwalk_all(|op| {
+            if op.name().name().as_str() == "procref" {
+                roots += 1;
+                assert_eq!(op.num_results(), 1);
+                assert_eq!(
+                    op.results()[0].borrow().ty(),
+                    &Type::from(midenc_hir::ArrayType::new(Type::Felt, 4))
+                );
+            }
+        });
+        assert_eq!(roots, 1);
+        let printed = format!("{}", parsed.borrow());
+        let fresh = Test::default().context_rc();
+        parse::parse_any(
+            ParserConfig::new(fresh.clone()),
+            Uri::new("procref-roundtrip.hir"),
+            &printed,
+        )
+        .expect("inferred word does not require aggregate result syntax");
+        let mut reference = None;
+        parsed.borrow().postwalk_all(|op| {
+            if op.is::<super::Procref>() {
+                reference = Some(op.as_operation_ref());
+            }
+        });
+        reference.unwrap().borrow_mut().results_mut().group_mut(0)[0]
+            .borrow_mut()
+            .set_type(Type::from(midenc_hir::ArrayType::new(Type::Felt, 3)));
+        assert!(parsed.borrow().recursively_verify().is_err());
     }
 
     #[test]

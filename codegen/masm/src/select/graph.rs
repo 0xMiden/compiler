@@ -893,10 +893,12 @@ impl<'a, 'e> Selector<'a, 'e> {
                     self.indirect(&op, current, &mut flow)?
                 }
                 SelectionRule::DirectCall => self.direct(&op, current)?,
+                SelectionRule::DynExecPointer | SelectionRule::DynCallPointer => {
+                    self.pointer_call(&op, current)?
+                }
                 SelectionRule::Fpi => self.fpi(&op, current)?,
                 SelectionRule::ProcedureRoot => {
-                    let reference = op.downcast_ref::<midenc_dialect_hir::ProcedureRoot>().unwrap();
-                    let callee = crate::legalization::validate_procedure_root(reference)?;
+                    let callee = crate::legalization::validate_procedure_root(&op)?;
                     let module = if op.nearest_parent_op::<builtin::GlobalVariable>().is_some() {
                         None
                     } else {
@@ -910,13 +912,19 @@ impl<'a, 'e> Selector<'a, 'e> {
                         target
                     };
                     let outputs = self.results(&op)?;
-                    if outputs.len() != 4
-                        || outputs
-                            .iter()
-                            .any(|value| self.program.values[value].layout.ty() != &Type::Felt)
-                    {
+                    let valid_shape = if op.is::<midenc_dialect_hir::Procref>() {
+                        outputs.len() == 1
+                            && self.program.values[&outputs[0]].layout.ty()
+                                == &midenc_dialect_hir::Procref::word_type()
+                    } else {
+                        outputs.len() == 4
+                            && outputs
+                                .iter()
+                                .all(|value| self.program.values[value].layout.ty() == &Type::Felt)
+                    };
+                    if !valid_shape {
                         return Err(super::invalid(
-                            "procedure root requires exactly four felt results",
+                            "procedure root requires exactly one four-felt digest",
                         ));
                     }
                     self.plain(
@@ -1730,6 +1738,71 @@ impl<'a, 'e> Selector<'a, 'e> {
         Ok(())
     }
 
+    fn pointer_call(&mut self, op: &Operation, segment: SegmentId) -> Result<(), Report> {
+        let call = op.as_trait::<dyn midenc_hir::CallOpInterface>().unwrap();
+        let signature = call
+            .callee_signature()
+            .ok_or_else(|| super::invalid("pointer call has no signature"))?;
+        let midenc_hir::Callable::Value(pointer) = call.callable_for_callee() else {
+            return Err(super::invalid("pointer call requires an SSA callee"));
+        };
+        if pointer.borrow().ty() != &midenc_dialect_hir::DynExec::root_pointer_type() {
+            return Err(super::invalid(
+                "pointer call requires an element pointer to a four-felt word",
+            ));
+        }
+        require_types(
+            result_types(op),
+            signature.results().iter().map(|p| p.ty.clone()),
+            "pointer call results disagree with signature",
+        )?;
+        require_types(
+            call.arguments().iter().map(|arg| arg.borrow().ty().clone()),
+            signature.params().iter().map(|p| p.ty.clone()),
+            "pointer call arguments disagree with signature",
+        )?;
+        let convention = CallingConvention::from_source(&signature.cc);
+        let invocation = if op.is::<midenc_dialect_hir::DynCallLocal>() {
+            Invocation::DynCall
+        } else {
+            Invocation::DynExec
+        };
+        let abi = ProcedureAbi::new(
+            convention,
+            lanes(signature.params().iter().map(|p| p.ty.clone()))?,
+            lanes(signature.results().iter().map(|p| p.ty.clone()))?,
+        )?;
+        abi.invocation(invocation)?;
+        let address = Atom::new(self.value(pointer)?, 0);
+        let arguments = self.ids(call.arguments().iter().map(|arg| arg.borrow().as_value_ref()))?;
+        let outputs = self.results(op)?;
+        let source = self.sources[&op.as_operation_ref()];
+        let id = SelectedStepId(index(self.definitions.len())?);
+        let (unit, proof) = crate::lower::units::calls::select_pointer(
+            id,
+            source,
+            abi,
+            address,
+            &self.atoms(&arguments),
+            &self.atoms(&outputs),
+        )?;
+        self.add_unit(
+            segment,
+            source,
+            UnitSelection {
+                inputs: unit.stack_inputs,
+                stored: unit.stored_inputs,
+                outputs: unit.outputs,
+                body: HirBody::Indirect(Indirect::DispatchPointer { abi }),
+                proof,
+                effects: unit.effects,
+                scratch: unit.scratch,
+                scratch_effects: unit.scratch_effects,
+            },
+        )?;
+        Ok(())
+    }
+
     fn indirect(
         &mut self,
         op: &Operation,
@@ -1968,7 +2041,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                         value: StoredValue::Atom(address),
                     }],
                     outputs: output_atoms,
-                    body: HirBody::Indirect(Indirect::DispatchTable),
+                    body: HirBody::Indirect(Indirect::DispatchPointer { abi }),
                     proof,
                     effects: LoweringEffects::default(),
                     scratch: vec![],

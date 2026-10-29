@@ -58,6 +58,10 @@ pub(crate) enum SelectionRule {
     DirectCall,
     /// Check a linked function-table slot before same-context dispatch.
     ExecIndirect,
+    /// Dispatch through an SSA source-memory root pointer in the current context.
+    DynExecPointer,
+    /// Dispatch through an SSA source-memory root pointer in a fresh context.
+    DynCallPointer,
     /// Protocol executor with semantic stored prefix and payload operands.
     Fpi,
     /// Source-owned reference to a validated callable digest.

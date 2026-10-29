@@ -1338,3 +1338,51 @@ builtin.function public extern(\"C\") @entrypoint(%a: i32) -> i32 {{
     let message = format!("{error}");
     assert!(message.contains("too many operand groups"), "{message}");
 }
+
+#[test]
+fn array_types_parse_print_and_report_invalid_lengths() {
+    use crate::{AddressSpace, ArrayType, Op, PointerType};
+    for (source, expected) in [
+        ("[felt; 4]", Type::from(ArrayType::new(Type::Felt, 4))),
+        ("array<felt; 4>", Type::from(ArrayType::new(Type::Felt, 4))),
+        (
+            "ptr<[[felt; 4]; 2], element>",
+            Type::from(PointerType::new_with_address_space(
+                Type::from(ArrayType::new(Type::from(ArrayType::new(Type::Felt, 4)), 2)),
+                AddressSpace::Element,
+            )),
+        ),
+    ] {
+        let context = Rc::new(Context::default());
+        let text = format!(
+            "builtin.function private extern(\"C\") @array(%x: {source}) {{ builtin.ret; }};"
+        );
+        let parsed =
+            parse::parse_any(ParserConfig::new(context.clone()), Uri::new("array.hir"), &text)
+                .unwrap();
+        let function = parsed.try_downcast_op::<Function>().unwrap();
+        assert_eq!(function.borrow().signature().params()[0].ty, expected);
+        let printed = format!("{}", function.borrow().as_operation());
+        let fresh = Rc::new(Context::default());
+        parse::parse_any(
+            ParserConfig::new(fresh.clone()),
+            Uri::new("array-roundtrip.hir"),
+            &printed,
+        )
+        .unwrap();
+    }
+    for source in ["[felt; -1]", "[felt; 18446744073709551616]", "[felt 4]", "[felt; 4>"] {
+        let context = Rc::new(Context::default());
+        let text = format!(
+            "builtin.function private extern(\"C\") @array(%x: {source}) {{ builtin.ret; }};"
+        );
+        assert!(
+            parse::parse_any(
+                ParserConfig::new(context.clone()),
+                Uri::new("invalid-array.hir"),
+                &text
+            )
+            .is_err()
+        );
+    }
+}

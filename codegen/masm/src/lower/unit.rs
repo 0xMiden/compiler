@@ -85,7 +85,7 @@ fn can_hold_a_wide_byte_address(op: &Operation) -> bool {
     {
         return true;
     }
-    if op.is::<hir::Exec>() || op.is::<hir::ExecIndirect>() {
+    if op.is::<hir::Exec>() || op.is::<hir::ExecIndirect>() || op.is::<hir::DynExec>() {
         return call
             .possible_callees()
             .is_none_or(|callees| callees.iter().any(|callee| !is_defined_function(callee)))
@@ -310,6 +310,49 @@ mod tests {
                         if context_call { !passes } else { !defined }
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn pointer_calls_unknown_same_context_boundaries_and_context_results() {
+        let byte = pointer(Type::U32, AddressSpace::Byte);
+        let root = hir::DynExec::root_pointer_type();
+        for context in [false, true] {
+            for returns in [false, true] {
+                let params = if returns { vec![] } else { vec![byte.clone()] };
+                let results = if returns { vec![byte.clone()] } else { vec![] };
+                let mut test = Test::new("pointer_facts", &[root.clone(), byte.clone()], &[]);
+                let signature = Signature::with_convention(
+                    &test.context_rc(),
+                    if context {
+                        CallConv::ComponentModel
+                    } else {
+                        CallConv::Extern("sigma".into())
+                    },
+                    params,
+                    results,
+                );
+                let mut builder = test.function_builder();
+                let pointer = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                let arg = builder.entry_block().borrow().arguments()[1] as ValueRef;
+                let arguments = if returns { vec![] } else { vec![arg] };
+                let op = if context {
+                    builder
+                        .dyncall_local(pointer, signature, arguments, SPAN)
+                        .unwrap()
+                        .as_operation_ref()
+                } else {
+                    builder.dynexec(pointer, signature, arguments, SPAN).unwrap().as_operation_ref()
+                };
+                assert_eq!(
+                    UnitFacts::derive(&op.borrow(), &[]).byte_addressing,
+                    if !context || returns {
+                        ByteAddressing::Wide
+                    } else {
+                        ByteAddressing::Narrow
+                    }
+                );
             }
         }
     }

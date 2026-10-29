@@ -1091,7 +1091,8 @@ final_selection! {
     hir::PtrToInt => Alias, hir::IntToPtr => Alias, hir::Bitcast => Alias,
     arith::Split => Split, arith::Join => Join,
     hir::Exec => DirectCall, hir::Call => DirectCall, hir::Syscall => DirectCall,
-    hir::Dyncall => Dyncall, hir::ExecIndirect => ExecIndirect, hir::ExecFpi => Fpi, hir::ProcedureRoot => ProcedureRoot,
+    hir::Dyncall => Dyncall, hir::ExecIndirect => ExecIndirect, hir::ExecFpi => Fpi, hir::ProcedureRoot => ProcedureRoot, hir::Procref => ProcedureRoot,
+    hir::DynExec => DynExecPointer, hir::DynCallLocal => DynCallPointer,
     debuginfo::DebugValue => Debug, debuginfo::DebugDeclare => Debug, debuginfo::DebugKill => Debug,
 }
 

@@ -19,7 +19,7 @@ impl Verifier<'_> {
     ) -> Result<(), VerificationError> {
         let active = cursor
             .active
-            .as_mut()
+            .as_ref()
             .ok_or_else(|| error("invocation outside registered unit"))?;
         let (site_id, site) = self
             .plan
@@ -47,7 +47,7 @@ impl Verifier<'_> {
             boundary.validate_truncation()?;
             state.stack.truncate(16);
             state.padding = stack::Padding::new(state.stack.len());
-            active.call += 1;
+            cursor.active.as_mut().unwrap().call += 1;
             return Ok(());
         }
         let invocation = match instruction {
@@ -94,6 +94,15 @@ impl Verifier<'_> {
                                 "dynamic root contents are stale or incorrect",
                             ));
                         }
+                    }
+                }
+                super::SelectorEvidence::SourcePointer { address } => {
+                    self.source_word_read(token, cursor)?;
+                    if state.token(*address)? != token {
+                        return Err(fail(
+                            DiagnosticCategory::AbiMismatch,
+                            "dynamic invocation consumed wrong source root pointer",
+                        ));
                     }
                 }
                 super::SelectorEvidence::CheckedTableSlot(lookup) => {
@@ -305,7 +314,7 @@ impl Verifier<'_> {
             state.cells.insert(offset, token);
             state.written.insert(offset);
         }
-        active.call += 1;
+        cursor.active.as_mut().unwrap().call += 1;
         Ok(())
     }
 }

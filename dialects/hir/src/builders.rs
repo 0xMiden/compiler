@@ -1052,6 +1052,48 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(callee)
     }
 
+    /// Materialize a callable's MAST root as one four-felt word.
+    fn procref<C>(
+        &mut self,
+        callee: C,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Procref>, Report>
+    where
+        C: AsCallableSymbolRef,
+    {
+        self.builder_mut().create::<crate::ops::Procref, (C,)>(span)(callee)
+    }
+
+    /// Execute a root read through an SSA element pointer in the caller's context.
+    fn dynexec<A>(
+        &mut self,
+        callee: ValueRef,
+        signature: Signature,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::DynExec>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        self.builder_mut().create::<crate::ops::DynExec, (_, _, A)>(span)(signature, callee, args)
+    }
+
+    /// Invoke a root read through an SSA element pointer in a fresh context.
+    fn dyncall_local<A>(
+        &mut self,
+        callee: ValueRef,
+        signature: Signature,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::DynCallLocal>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        self.builder_mut().create::<crate::ops::DynCallLocal, (_, _, A)>(span)(
+            signature, callee, args,
+        )
+    }
+
     /// Invoke a foreign account procedure via the transaction kernel FPI executor.
     ///
     /// `prefix` contains account id suffix, account id prefix, and four procedure-root felts

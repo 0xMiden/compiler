@@ -90,6 +90,8 @@ pub(crate) enum SelectorEvidence {
     },
     /// Selector comes from a source-checked indirect table lookup.
     CheckedTableSlot(crate::select::TableLookup),
+    /// Exact SSA pointer whose implicit digest read is restricted to source memory.
+    SourcePointer { address: Atom },
 }
 
 /// One static invocation in a registered unit algorithm. Sites are ordered within their

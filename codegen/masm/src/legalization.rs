@@ -88,6 +88,27 @@ fn indirect_call_signature_legality(
     DynamicLegalityResult::legal()
 }
 
+/// Pointer calls preserve the HIR contract even when legalization precedes verification.
+fn pointer_call_legality(op: &Operation) -> DynamicLegalityResult {
+    let call = op.as_trait::<dyn midenc_hir::CallOpInterface>().unwrap();
+    if let Err(error) = op.verify() {
+        return DynamicLegalityResult::illegal_with_reason(error);
+    }
+    let signature = call.callee_signature().unwrap();
+    let convention = CallingConvention::from_source(&signature.cc);
+    let expected = if op.is::<hir::DynCallLocal>() {
+        CallingConvention::Context
+    } else {
+        CallingConvention::SameContext
+    };
+    if convention != expected {
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(
+            "pointer call has incompatible calling convention",
+        ));
+    }
+    indirect_call_signature_legality(op, &signature, &argument_types(op))
+}
+
 /// The types of an indirect call's arguments, which both `hir.exec_indirect` and `hir.dyncall`
 /// hold in operand group 1 — group 0 being the table index, respectively the root word.
 fn argument_types(op: &Operation) -> Vec<midenc_hir::Type> {
@@ -98,8 +119,7 @@ fn argument_types(op: &Operation) -> Vec<midenc_hir::Type> {
         .collect()
 }
 
-/// Validate every `hir.procedure_root` below `root` before MASM procedures begin snapshotting HIR
-/// visibility.
+/// Validate every procedure-reference operation before MASM procedures snapshot HIR visibility.
 ///
 /// MASM dialect legalization establishes that this operation has a lowering, while this preflight
 /// checks linkability only for the operations the component builder selected for emission. Running
@@ -107,10 +127,10 @@ fn argument_types(op: &Operation) -> Vec<midenc_hir::Type> {
 /// intentionally omitted world siblings.
 pub(crate) fn validate_procedure_roots(root: &Operation) -> Result<(), Report> {
     root.prewalk(|op| {
-        let Some(procedure_root) = op.downcast_ref::<hir::ProcedureRoot>() else {
+        if !op.is::<hir::ProcedureRoot>() && !op.is::<hir::Procref>() {
             return WalkResult::Continue(());
         };
-        match validate_procedure_root(procedure_root) {
+        match validate_procedure_root(op) {
             Ok(_) => WalkResult::Continue(()),
             Err(err) => WalkResult::Break(err),
         }
@@ -118,7 +138,7 @@ pub(crate) fn validate_procedure_roots(root: &Operation) -> Result<(), Report> {
     .into_result()
 }
 
-/// Resolve and validate one `hir.procedure_root` for MASM lowering.
+/// Resolve and validate one `hir.procedure_root` or `hir.procref` for MASM lowering.
 ///
 /// If the callee path names a `builtin.function_alias`, the alias itself is returned, and
 /// linkability checks apply to the alias's own visibility. HIR verification prevents non-private
@@ -130,20 +150,21 @@ pub(crate) fn validate_procedure_roots(root: &Operation) -> Result<(), Report> {
 /// functions and that module intentionally coalesce into the same MASM root. Comparing the
 /// effective owners determines whether a private reference crosses a boundary without making
 /// visibility depend on lowering order.
-pub(crate) fn validate_procedure_root(
-    procedure_root: &hir::ProcedureRoot,
-) -> Result<SymbolRef, Report> {
-    let op = procedure_root.as_operation();
+pub(crate) fn validate_procedure_root(op: &Operation) -> Result<SymbolRef, Report> {
+    let path = if let Some(root) = op.downcast_ref::<hir::ProcedureRoot>() {
+        root.callee().path().clone()
+    } else if let Some(root) = op.downcast_ref::<hir::Procref>() {
+        root.callee().path().clone()
+    } else {
+        return Err(Report::msg("expected a procedure reference operation"));
+    };
     let context = op.context();
     let caller_symbol_table = op.nearest_symbol_table().ok_or_else(|| {
         context
             .diagnostics()
             .diagnostic(Severity::Error)
             .with_message("invalid procedure_root operation: no containing symbol table")
-            .with_primary_label(
-                procedure_root.span(),
-                "this operation must be nested in a symbol table",
-            )
+            .with_primary_label(op.span(), "this operation must be nested in a symbol table")
             .into_report()
     })?;
     let callee = {
@@ -151,17 +172,14 @@ pub(crate) fn validate_procedure_root(
         symbol_table
             .as_symbol_table()
             .expect("nearest_symbol_table returned a non-symbol-table operation")
-            .resolve(procedure_root.callee().path())
+            .resolve(&path)
     }
     .ok_or_else(|| {
         context
             .diagnostics()
             .diagnostic(Severity::Error)
             .with_message("invalid procedure_root operation: unable to resolve callee")
-            .with_primary_label(
-                procedure_root.span(),
-                "this symbol path is not resolvable from this operation",
-            )
+            .with_primary_label(op.span(), "this symbol path is not resolvable from this operation")
             .into_report()
     })?;
 
@@ -184,7 +202,7 @@ pub(crate) fn validate_procedure_root(
                  is not the `note_script`-attributed export",
             )
             .with_primary_label(
-                procedure_root.span(),
+                op.span(),
                 "this operation must reference the lifted note-script export",
             )
             .with_help(
@@ -208,7 +226,7 @@ pub(crate) fn validate_procedure_root(
                 callee_op.path()
             ))
             .with_primary_label(
-                procedure_root.span(),
+                op.span(),
                 "this reference crosses a Miden Assembly module boundary",
             )
             .with_secondary_label(
@@ -239,7 +257,7 @@ pub(crate) fn validate_procedure_root(
                 module.path()
             ))
             .with_primary_label(
-                procedure_root.span(),
+                op.span(),
                 "this reference cannot reach the callee's Miden Assembly module",
             )
             .with_secondary_label(
@@ -587,6 +605,8 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             }
             DynamicLegalityResult::legal()
         })
+        .add_dynamically_legal_op::<hir::DynExec, _>(pointer_call_legality)
+        .add_dynamically_legal_op::<hir::DynCallLocal, _>(pointer_call_legality)
         .add_dynamically_legal_op::<hir::ExecIndirect, _>(|op| {
             let exec = op
                 .downcast_ref::<hir::ExecIndirect>()
@@ -1576,6 +1596,43 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn pointer_call_legality_and_selection_reject_incompatible_calling_conventions() {
+        for context in [false, true] {
+            for compatible in [false, true] {
+                let mut test =
+                    Test::new("pointer_legality", &[hir::DynExec::root_pointer_type()], &[]);
+                let signature = Signature::with_convention(
+                    &test.context_rc(),
+                    if context == compatible {
+                        CallConv::ComponentModel
+                    } else {
+                        CallConv::Extern("sigma".into())
+                    },
+                    [],
+                    [],
+                );
+                {
+                    let mut builder = test.function_builder();
+                    let pointer = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                    if context {
+                        builder.dyncall_local(pointer, signature, [], SourceSpan::UNKNOWN).unwrap();
+                    } else {
+                        builder.dynexec(pointer, signature, [], SourceSpan::UNKNOWN).unwrap();
+                    }
+                    builder.ret([], SourceSpan::UNKNOWN).unwrap();
+                }
+                // Disable verification around the pass: legalization owns its own contract.
+                assert_eq!(test.apply_pass::<LegalizeForMasm>(false).is_ok(), compatible);
+                assert_eq!(
+                    crate::select::select_function(&test.function().borrow(), &Default::default())
+                        .is_ok(),
+                    compatible
+                );
+            }
+        }
+    }
 
     #[test]
     fn masm_supported_ops_pass_legalization() {
