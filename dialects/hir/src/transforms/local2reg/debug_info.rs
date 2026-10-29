@@ -1,16 +1,17 @@
 //! Program-point recovery for nonescaping locals which executable promotion has already selected.
-use alloc::vec::Vec;
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    Block, BlockRef, CallOpInterface, Forward, Operation, OperationRef, ProgramPoint, RawWalk,
-    RegionBranchOpInterface, RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionRef,
-    Report, Rewriter, RewriterExt, Spanned, StorableEntity, SuccessorOperands, ValueRef,
+    Block, BlockRef, CallOpInterface, Forward, FxHashMap, FxHashSet, Operation, OperationRef,
+    ProgramPoint, RawWalk, RegionBranchOpInterface, RegionBranchPoint,
+    RegionBranchTerminatorOpInterface, RegionRef, Report, Rewriter, RewriterExt, Spanned,
+    StorableEntity, SuccessorOperands, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
         debuginfo::{
             DIBuilder, DebugInfoMutation, DebugInfoUpdate,
             attributes::{Expression, ExpressionOp, FrameBase},
-            bindings::{BindingIdentity, RecoveryIdentity, debug_record_expression as expression},
+            bindings::{RecoveryIdentity, VisibilitySlot},
             debug_record_variable,
             transform::invalidate_debug_record_with,
         },
@@ -28,6 +29,10 @@ use midenc_hir_analysis::{
 
 use crate::StoreLocal;
 
+// Dense facts exist at every program point. Bound their local width instead of allocating an
+// unbounded function-wide product; each batch still shares DCE/SCCP and dominance across locals.
+const RECOVERY_BATCH_SIZE: usize = 64;
+
 /// Bottom is an unreachable program point. At reachable points, aliases are SSA values known
 /// equal to the current slot; an empty set means unknown. Binding bits record possible inactive
 /// (1) and active (2) states, so a join cannot invent an unconditional source binding.
@@ -36,7 +41,7 @@ struct Recovery(Option<Facts>);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Facts {
-    aliases: Vec<ValueRef>,
+    aliases: Vec<Vec<ValueRef>>,
     bindings: Vec<u8>,
 }
 
@@ -46,7 +51,12 @@ impl LatticeLike for Recovery {
             (None, _) => other.clone(),
             (_, None) => self.clone(),
             (Some(a), Some(b)) => Self(Some(Facts {
-                aliases: a.aliases.iter().copied().filter(|v| b.aliases.contains(v)).collect(),
+                aliases: a
+                    .aliases
+                    .iter()
+                    .zip(&b.aliases)
+                    .map(|(a, b)| a.iter().copied().filter(|v| b.contains(v)).collect())
+                    .collect(),
                 bindings: a.bindings.iter().zip(&b.bindings).map(|(a, b)| a | b).collect(),
             })),
         }
@@ -58,10 +68,11 @@ impl LatticeLike for Recovery {
 }
 
 struct LocalRecovery {
-    local: LocalVariable,
+    locals: FxHashMap<LocalVariable, usize>,
     entry: BlockRef,
     references: Vec<OperationRef>,
-    dominance: DominanceInfo,
+    record_updates: FxHashMap<OperationRef, Vec<(usize, u8)>>,
+    dominance: Rc<DominanceInfo>,
 }
 
 impl BuildableDataFlowAnalysis for LocalRecovery {
@@ -76,11 +87,6 @@ fn same_binding(a: &Operation, b: &Operation) -> bool {
     RecoveryIdentity::of(a) == RecoveryIdentity::of(b)
 }
 
-fn same_visibility(a: &Operation, b: &Operation) -> bool {
-    BindingIdentity::of(a).unwrap().visibility(None)
-        == BindingIdentity::of(b).unwrap().visibility(None)
-}
-
 impl DenseForwardDataFlowAnalysis for LocalRecovery {
     type Lattice = Lattice<Recovery>;
 
@@ -92,7 +98,7 @@ impl DenseForwardDataFlowAnalysis for LocalRecovery {
         let point = lattice.anchor().as_any().downcast_ref::<ProgramPoint>().unwrap();
         let at_entry = point.block() == Some(self.entry);
         lattice.join(&Recovery(Some(Facts {
-            aliases: Vec::new(),
+            aliases: alloc::vec![Vec::new(); self.locals.len()],
             bindings: alloc::vec![if at_entry { 1 } else { 3 }; self.references.len()],
         })));
     }
@@ -107,15 +113,15 @@ impl DenseForwardDataFlowAnalysis for LocalRecovery {
         let mut state = before.value().clone();
         if let Some(facts) = state.0.as_mut() {
             if let Some(store) = op.downcast_ref::<StoreLocal>()
-                && *store.get_local() == self.local
+                && let Some(index) = self.locals.get(&*store.get_local())
             {
-                facts.aliases = alloc::vec![store.value().as_value_ref()];
+                facts.aliases[*index] = alloc::vec![store.value().as_value_ref()];
             }
             if op.has_regions() {
                 // RegionBranchOpInterface owners are dispatched separately. An opaque owner
                 // may execute its regions in an unknown order, so it cannot preserve a reaching
                 // value or promise that a previously active binding remains active.
-                facts.aliases.clear();
+                facts.aliases.iter_mut().for_each(Vec::clear);
                 for (reference, active) in self.references.iter().zip(&mut facts.bindings) {
                     if *active != 1
                         || self.references.iter().any(|nested| {
@@ -127,15 +133,9 @@ impl DenseForwardDataFlowAnalysis for LocalRecovery {
                     }
                 }
             }
-            if debug_record_variable(op).is_some() {
-                for (reference, active) in self.references.iter().zip(&mut facts.bindings) {
-                    if same_visibility(&reference.borrow(), op) {
-                        *active = if same_binding(&reference.borrow(), op) {
-                            2
-                        } else {
-                            1
-                        };
-                    }
+            if let Some(updates) = self.record_updates.get(&op.as_operation_ref()) {
+                for (index, active) in updates {
+                    facts.bindings[*index] = *active;
                 }
             }
         }
@@ -238,7 +238,7 @@ fn translate(
 ) -> Recovery {
     let mut state = state.clone();
     if let Some(facts) = &mut state.0 {
-        let aliases = facts.aliases.clone();
+        let mappings = mappings.collect::<Vec<_>>();
         let entry = target.is_at_block_start().then(|| target.block().unwrap());
         let anchor = if entry.is_some() {
             target.next_operation()
@@ -248,14 +248,17 @@ fn translate(
         // A loop reentry assigns a new dynamic value to its arguments and reexecutes its body.
         // Only explicit edge operands can reestablish these names. In particular, an old loop
         // argument is not the current local just because it has the same static ValueRef.
-        facts.aliases.retain(|value| {
-            let value = value.borrow();
-            entry.is_none_or(|block| value.parent_block() != Some(block))
-                && anchor.is_some_and(|op| value.properly_dominates(&op.borrow(), dominance))
-        });
-        for (source, target) in mappings {
-            if aliases.contains(&source) && !facts.aliases.contains(&target) {
-                facts.aliases.push(target);
+        for values in &mut facts.aliases {
+            let aliases = values.clone();
+            values.retain(|value| {
+                let value = value.borrow();
+                entry.is_none_or(|block| value.parent_block() != Some(block))
+                    && anchor.is_some_and(|op| value.properly_dominates(&op.borrow(), dominance))
+            });
+            for (source, target) in &mappings {
+                if aliases.contains(source) && !values.contains(target) {
+                    values.push(*target);
+                }
             }
         }
     }
@@ -305,75 +308,168 @@ fn normalized_expression(expression: &Expression, local: u32) -> Option<Expressi
     }
 }
 
+/// Analyze one immutable operation stream after executable RAUW. All original references and
+/// stores remain linked until every capture/update has been materialized; no solver facts survive
+/// an IR mutation. Each reference is owned once, including expressions mentioning several slots.
 pub(super) fn convert<R: Rewriter>(
     rewriter: &mut R,
     function: OperationRef,
-    local: LocalVariable,
-    stores: &[OperationRef],
+    promotions: &[super::Promotion],
     analysis_manager: AnalysisManager,
 ) -> Result<(), Report> {
-    let index = local.as_usize() as u32;
+    if promotions.is_empty() {
+        return Ok(());
+    }
+    let selected = promotions
+        .iter()
+        .enumerate()
+        .map(|(i, p)| (p.local.as_usize() as u32, i))
+        .collect::<FxHashMap<_, _>>();
     let mut references = Vec::new();
+    let mut identities = Vec::new();
+    let mut records = Vec::new();
+    let mut references_by_local = alloc::vec![Vec::new(); promotions.len()];
     function.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
-        if expression(&op.borrow()).is_some_and(|expr| expr.operations.iter().any(|op| matches!(op,
-            ExpressionOp::LocalSlot(i) | ExpressionOp::FrameBase { base: FrameBase::LocalSlot(i), .. } if *i == index))) {
-            references.push(op);
+        let Some(identity) = RecoveryIdentity::of(&op.borrow()) else {
+            return;
+        };
+        let mut locals = Vec::new();
+        if let Some(expression) = &identity.expression {
+            for operation in &expression.operations {
+                if let ExpressionOp::LocalSlot(index)
+                | ExpressionOp::FrameBase {
+                    base: FrameBase::LocalSlot(index),
+                    ..
+                } = operation
+                    && let Some(local) = selected.get(index)
+                    && !locals.contains(local)
+                {
+                    locals.push(*local);
+                }
+            }
         }
+        if !locals.is_empty() {
+            for local in locals {
+                references_by_local[local].push(references.len());
+            }
+            references.push(op);
+            identities.push(identity.clone());
+        }
+        records.push((op, identity));
     });
     if references.is_empty() {
         return Ok(());
     }
-
-    // Re-solve per promoted local: prior promotions may have replaced the operands of later
-    // stores. Copied SSA operands from an earlier solve would otherwise become dangling values.
+    // Index only locals with debug references, and only records which change a tracked visible
+    // binding. Snapshot identities once; location expressions remain part of recovery equality.
+    let selected = promotions
+        .iter()
+        .zip(references_by_local)
+        .filter(|(_, refs)| !refs.is_empty())
+        .collect::<Vec<_>>();
     let entry = function.borrow().downcast_ref::<Function>().unwrap().entry_block();
-    let mut solver = DataFlowSolver::default();
-    solver.load::<DeadCodeAnalysis>();
-    solver.load::<SparseConstantPropagation>();
-    solver.load_with_strategy(LocalRecovery {
-        local,
-        entry,
-        references: references.clone(),
-        dominance: DominanceInfo::new(&function.borrow()),
-    });
-    solver.initialize_and_run(&function.borrow(), analysis_manager)?;
-    let dominance = DominanceInfo::new(&function.borrow());
+    // RAUW and nonterminator insertion/erasure preserve the CFG. Share the analysis manager's
+    // lazy region trees with the dense dispatcher and every batch.
+    let dominance = analysis_manager.get_analysis::<DominanceInfo>()?;
     let mut updates = Vec::new();
     let mut captures = Vec::new();
-    for (i, reference) in references.iter().copied().enumerate() {
-        let expr = normalized_expression(&expression(&reference.borrow()).unwrap(), index);
-        let state = solver.get::<Lattice<Recovery>, _>(&ProgramPoint::before(reference));
-        let value =
-            state.as_ref().and_then(|state| state.value().0.as_ref()).and_then(|facts| {
-                facts.aliases.iter().copied().find(|value| {
-                    value.borrow().properly_dominates(&reference.borrow(), &dominance)
-                })
-            });
-        captures.push((reference, value, expr.clone()));
-        // Multiple path-specific captures can establish the same binding. One update suffices
-        // when every path agrees on its full metadata, expression, and inline owner.
-        if references[..i]
+    let mut captured = FxHashSet::default();
+    for batch in selected.chunks(RECOVERY_BATCH_SIZE) {
+        let locals = batch.iter().enumerate().map(|(i, (p, _))| (p.local, i)).collect();
+        let mut batch_references =
+            batch.iter().flat_map(|(_, refs)| refs.iter().copied()).collect::<Vec<_>>();
+        batch_references.sort_unstable();
+        batch_references.dedup();
+        let binding_indices = batch_references
             .iter()
-            .any(|prior| same_binding(&prior.borrow(), &reference.borrow()))
-        {
-            continue;
+            .enumerate()
+            .map(|(index, global)| (*global, index))
+            .collect::<FxHashMap<_, _>>();
+        let mut visibility = FxHashMap::<VisibilitySlot, Vec<usize>>::default();
+        for index in &batch_references {
+            visibility
+                .entry(identities[*index].binding.visibility(None))
+                .or_default()
+                .push(*index);
         }
-        for store in stores {
-            let state = solver.get::<Lattice<Recovery>, _>(&ProgramPoint::before(*store));
-            let Some(facts) = state.as_ref().and_then(|state| state.value().0.as_ref()) else {
-                continue;
-            };
-            match facts.bindings[i] {
-                2 => updates.push((
-                    *store,
-                    reference,
-                    Some(super::stored_value(*store)),
-                    expr.clone(),
-                )),
-                3 => updates.push((*store, reference, None, None)),
-                _ => (),
+        let record_updates = records
+            .iter()
+            .filter_map(|(op, identity)| {
+                let indices = visibility.get(&identity.binding.visibility(None))?;
+                Some((
+                    *op,
+                    indices
+                        .iter()
+                        .map(|index| {
+                            (
+                                binding_indices[index],
+                                if identities[*index] == *identity {
+                                    2
+                                } else {
+                                    1
+                                },
+                            )
+                        })
+                        .collect(),
+                ))
+            })
+            .collect();
+        let mut solver = DataFlowSolver::default();
+        solver.load::<DeadCodeAnalysis>();
+        solver.load::<SparseConstantPropagation>();
+        solver.load_with_strategy(LocalRecovery {
+            locals,
+            entry,
+            references: batch_references.iter().map(|index| references[*index]).collect(),
+            record_updates,
+            dominance: dominance.clone(),
+        });
+        solver.initialize_and_run(&function.borrow(), analysis_manager.clone())?;
+        for (local_index, (promotion, indices)) in batch.iter().enumerate() {
+            let index = promotion.local.as_usize() as u32;
+            let mut updated = FxHashSet::default();
+            for i in indices.iter().copied() {
+                let reference = references[i];
+                let expr = normalized_expression(identities[i].expression.as_ref().unwrap(), index);
+                if captured.insert(reference) {
+                    let state =
+                        solver.get::<Lattice<Recovery>, _>(&ProgramPoint::before(reference));
+                    let value = state.as_ref().and_then(|state| state.value().0.as_ref()).and_then(
+                        |facts| {
+                            facts.aliases[local_index].iter().copied().find(|value| {
+                                value.borrow().properly_dominates(&reference.borrow(), &dominance)
+                            })
+                        },
+                    );
+                    captures.push((reference, value, expr.clone()));
+                }
+                // Path-specific declarations can share a source location, but different expressions
+                // or inline owners cannot. Author at most one store update for each exact location.
+                if !updated.insert(&identities[i]) {
+                    continue;
+                }
+                for store in &promotion.stores {
+                    let state = solver.get::<Lattice<Recovery>, _>(&ProgramPoint::before(*store));
+                    let Some(facts) = state.as_ref().and_then(|state| state.value().0.as_ref())
+                    else {
+                        continue;
+                    };
+                    match facts.bindings[binding_indices[&i]] {
+                        2 => updates.push((
+                            *store,
+                            reference,
+                            Some(super::stored_value(*store)),
+                            expr.clone(),
+                        )),
+                        3 => updates.push((*store, reference, None, None)),
+                        _ => (),
+                    }
+                }
             }
         }
+        // Drop every lattice and anchor before the next solve. All batches observe exactly the
+        // same original records, including visibility changes owned by another batch.
+        drop(solver);
     }
     // Emit all updates before erasing references, since they supply each binding's inline owner.
     for (anchor, reference, value, expr) in updates {

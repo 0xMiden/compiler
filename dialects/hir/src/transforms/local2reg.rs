@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
     Backward, CallOpInterface, EntityMut, FxHashMap, Op, OperationName, OperationRef, ProgramPoint,
@@ -26,6 +26,14 @@ fn stored_value(store: OperationRef) -> ValueRef {
 }
 
 mod debug_info;
+
+/// Executable eligibility is fixed before any rewrite. Keep these anchors linked until debug
+/// recovery has consumed the original store and binding stream.
+struct Promotion {
+    local: LocalVariable,
+    stores: SmallVec<[OperationRef; 2]>,
+    load: Option<OperationRef>,
+}
 
 #[derive(Default)]
 pub struct Local2Reg;
@@ -140,7 +148,7 @@ impl Pass for Local2Reg {
             return Ok(());
         }
 
-        let mut changed = PostPassStatus::Unchanged;
+        let mut promotions = Vec::new();
         'next_local: for local in locals {
             // Indirect accesses and callees can observe or modify an address-taken slot.
             if address_taken.contains(&local) {
@@ -247,47 +255,22 @@ impl Pass for Local2Reg {
                     sym = trace_target.relevant_symbol();
                     "found promotable local {local}: erasing store and replacing load with stored value",
                 );
-                // If we reach here, then there is no control flow between the load and store, so
-                // remove the store, and replace the load with the stored value.
-                //
-                // Any debug declaration pointing at the promoted slot must follow the value into
-                // its SSA register, since the slot will no longer be written.
-                debug_info::convert(
-                    &mut rewriter,
-                    op,
+                promotions.push(Promotion {
                     local,
-                    &[store],
-                    state.analysis_manager().clone(),
-                )?;
-                // Read before erasing: erasing an operation clears its operands
-                let value = stored_value(store);
-                rewriter.erase_op(store);
-                let _debug_update = DebugInfoMutation::new(load, DebugInfoUpdate::Equivalent);
-                rewriter.replace_all_op_uses_with_values(load, &[Some(value)]);
-                rewriter.erase_op(load);
-                changed = PostPassStatus::Changed;
+                    stores: SmallVec::from_slice(&[store]),
+                    load: Some(load),
+                });
             } else if let Some(stores) = stored.get(&local) {
                 // We've found a local which is stored to, but never loaded - these stores are all
                 // dead, and can be removed.
                 //
                 // We rely on region simplification/canonicalization to remove any ops/values made
                 // dead by erasing these stores.
-                debug_info::convert(
-                    &mut rewriter,
-                    op,
+                promotions.push(Promotion {
                     local,
-                    stores,
-                    state.analysis_manager().clone(),
-                )?;
-                for store in stores.iter() {
-                    changed = PostPassStatus::Changed;
-                    log::trace!(
-                        target: &trace_target,
-                        sym = trace_target.relevant_symbol();
-                        "found dead store for local {local}: erasing it",
-                    );
-                    rewriter.erase_op(*store);
-                }
+                    stores: stores.clone(),
+                    load: None,
+                });
             } else {
                 // This local is never loaded or stored - we should probably remove it, but this
                 // will require visiting all of the local load/store ops and rewriting them. For
@@ -295,7 +278,31 @@ impl Pass for Local2Reg {
             }
         }
 
-        state.set_post_pass_status(changed);
+        // Resolve all executable uses first, while retaining the original recovery anchors.
+        // A replacement can itself be another selected load: later RAUW follows the real SSA
+        // uses, regardless of local index order. SCCP then sees the final branch conditions.
+        for promotion in &promotions {
+            if let Some(load) = promotion.load {
+                let value = stored_value(promotion.stores[0]);
+                let _debug_update = DebugInfoMutation::new(load, DebugInfoUpdate::Equivalent);
+                rewriter.replace_all_op_uses_with_values(load, &[Some(value)]);
+            }
+        }
+        debug_info::convert(&mut rewriter, op, &promotions, state.analysis_manager().clone())?;
+        for promotion in &promotions {
+            for store in &promotion.stores {
+                rewriter.erase_op(*store);
+            }
+            if let Some(load) = promotion.load {
+                let _debug_update = DebugInfoMutation::new(load, DebugInfoUpdate::Equivalent);
+                rewriter.erase_op(load);
+            }
+        }
+        state.set_post_pass_status(if promotions.is_empty() {
+            PostPassStatus::Unchanged
+        } else {
+            PostPassStatus::Changed
+        });
 
         Ok(())
     }

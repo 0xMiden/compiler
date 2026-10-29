@@ -1,0 +1,97 @@
+// RUN: hir-opt %s --pass-pipeline 'builtin.module(builtin.function(local2reg))' | filecheck %s
+
+builtin.module public @batched {
+// All selected load replacements must reach their final SSA values even when the local indices
+// run opposite to the executable dependency chain.
+// CHECK: @backward_chain(%[[INPUT:[0-9]+]]: u32)
+// CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "third"
+// CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "second"
+// CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "first"
+// CHECK-NEXT: builtin.ret %[[INPUT]]
+builtin.function public extern("C") @backward_chain(%input: u32) -> u32 {
+ hir.store_local %input <{ local = #builtin.local_variable<2, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "third", file = "test.rs", line = 3, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(2)]> }>;
+ %third = hir.load_local <{ local = #builtin.local_variable<2, u32> }>;
+ hir.store_local %third <{ local = #builtin.local_variable<1, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "second", file = "test.rs", line = 2, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(1)]> }>;
+ %second = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+ hir.store_local %second <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "first", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ %first = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ builtin.ret %first : (u32);
+};
+
+// Recovery sees the branch condition exposed by promoting slot 1, even though slot 0 is first
+// in local index order. The unavailable value in the unreachable arm must not poison the join.
+// CHECK: @refined_condition(%[[A:[0-9]+]]: u32, %{{[0-9]+}}: u32)
+// CHECK: scf.index_switch
+// CHECK: di.debug_value %[[A]] {{.*}}name = "selected"
+// CHECK-NEXT: builtin.ret %[[A]]
+builtin.function public extern("C") @refined_condition(%a: u32, %b: u32) -> u32 {
+ %selector = arith.constant 1 : u32;
+ hir.store_local %selector <{ local = #builtin.local_variable<1, u32> }> : (u32);
+ %condition = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+ scf.index_switch %condition case 1 {
+   hir.store_local %a <{ local = #builtin.local_variable<0, u32> }> : (u32);
+   scf.yield : ();
+ } default {
+   hir.store_local %b <{ local = #builtin.local_variable<0, u32> }> : (u32);
+   scf.yield : ();
+ } : ();
+ di.debug_declare <{ variable = #di.variable<{ name = "selected", file = "test.rs", line = 4, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %a : (u32);
+};
+
+// CHECK: @refined_bool(%[[BOOL_A:[0-9]+]]: u32, %{{[0-9]+}}: u32)
+// CHECK: scf.if
+// CHECK: di.debug_value %[[BOOL_A]] {{.*}}name = "boolean"
+builtin.function public extern("C") @refined_bool(%a: u32, %b: u32) -> u32 {
+ %true = arith.constant 1 : i1;
+ hir.store_local %true <{ local = #builtin.local_variable<1, i1> }> : (i1);
+ %condition = hir.load_local <{ local = #builtin.local_variable<1, i1> }>;
+ scf.if %condition then {
+   hir.store_local %a <{ local = #builtin.local_variable<0, u32> }> : (u32);
+   scf.yield : ();
+ } else {
+   hir.store_local %b <{ local = #builtin.local_variable<0, u32> }> : (u32);
+   scf.yield : ();
+ } : (i1) -> ();
+ di.debug_declare <{ variable = #di.variable<{ name = "boolean", file = "test.rs", line = 5, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %a : (u32);
+};
+
+// CHECK: @refined_cfg(%[[CFG_A:[0-9]+]]: u32, %{{[0-9]+}}: u32)
+// CHECK: cf.cond_br
+// CHECK: di.debug_value %[[CFG_A]] {{.*}}name = "conditional"
+builtin.function public extern("C") @refined_cfg(%a: u32, %b: u32) -> u32 {
+ %true = arith.constant 1 : i1;
+ hir.store_local %true <{ local = #builtin.local_variable<1, i1> }> : (i1);
+ %condition = hir.load_local <{ local = #builtin.local_variable<1, i1> }>;
+ cf.cond_br %condition ^left, ^right : (i1);
+ ^left:
+ hir.store_local %a <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^join;
+ ^right:
+ hir.store_local %b <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ cf.br ^join;
+ ^join:
+ di.debug_declare <{ variable = #di.variable<{ name = "conditional", file = "test.rs", line = 6, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ builtin.ret %a : (u32);
+};
+
+// A compound expression refers to both selected slots. It has one rewrite owner, even though
+// either slot invalidates it, and each later store makes the already unavailable binding explicit.
+// CHECK-LABEL: @multiple_slots(
+// CHECK-NEXT: di.debug_kill {{.*}}name = "compound"
+// CHECK-NEXT: di.debug_kill {{.*}}name = "compound"
+// CHECK-NEXT: di.debug_kill {{.*}}name = "compound"
+// CHECK-NEXT: builtin.ret
+builtin.function public extern("C") @multiple_slots(%a: u32, %b: u32) -> u32 {
+ hir.store_local %a <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ hir.store_local %b <{ local = #builtin.local_variable<1, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "compound", file = "test.rs", line = 7, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0), DI_OP_local_slot(1), DW_OP_plus, DW_OP_stack_value]> }>;
+ hir.store_local %b <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ hir.store_local %a <{ local = #builtin.local_variable<1, u32> }> : (u32);
+ builtin.ret %a : (u32);
+};
+};

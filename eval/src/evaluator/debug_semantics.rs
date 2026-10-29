@@ -1751,6 +1751,137 @@ fn local_promotion_resolves_chained_debug_operands_after_each_rewrite() -> Resul
 }
 
 #[test]
+fn local_promotion_batches_chains_and_refined_control_flow() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir/transforms/local2reg-batched.hir");
+    let scenario = Scenario::new(source, "backward_chain")?;
+    compare_rewrite(
+        &scenario,
+        &[vec![7u32.into()], vec![u32::MAX.into()]],
+        vec![Box::new(hir::transforms::Local2Reg)],
+        &[],
+    )?;
+    for name in ["refined_condition", "refined_bool", "refined_cfg"] {
+        let scenario = Scenario::new(source, name)?;
+        compare_rewrite(
+            &scenario,
+            &[vec![7u32.into(), 42u32.into()]],
+            vec![Box::new(hir::transforms::Local2Reg)],
+            &[],
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn local_promotion_preserves_semantics_across_recovery_batches() -> Result<(), Report> {
+    // More than one recovery batch, including dependencies running opposite to local index order.
+    let declaration = |slot: usize, name: &str, ty: &str| {
+        format!(
+            "di.debug_declare <{{ variable = #di.variable<{{ name = \"{name}\", file = \
+             \"test.rs\", line = 1, ty = {ty} }}>, expression = \
+             #di.expression<[DI_OP_local_slot({slot})]> }}>;\n"
+        )
+    };
+    let mut source = String::from("builtin.module public @batches {\n");
+    source.push_str("builtin.function public extern(\"C\") @chain(%a: u32, %b: u32) -> u32 {\n");
+    let mut previous = "%a".to_string();
+    for slot in (0..66).rev() {
+        source.push_str(&format!(
+            "hir.store_local {previous} <{{ local = #builtin.local_variable<{slot}, u32> }}> : \
+             (u32);\n"
+        ));
+        source.push_str(&declaration(slot, &format!("v{slot}"), "u32"));
+        source.push_str(&format!(
+            "%v{slot} = hir.load_local <{{ local = #builtin.local_variable<{slot}, u32> }}>;\n"
+        ));
+        previous = format!("%v{slot}");
+    }
+    source.push_str("builtin.ret %v0 : (u32);\n};\n");
+    source.push_str("builtin.function public extern(\"C\") @bindings(%a: u32, %b: u32) -> u32 {\n");
+    for slot in 0..66 {
+        source.push_str(&format!(
+            "hir.store_local %a <{{ local = #builtin.local_variable<{slot}, u32> }}> : (u32);\n"
+        ));
+        let name = if slot == 0 || slot == 65 {
+            "moving".to_string()
+        } else {
+            format!("v{slot}")
+        };
+        source.push_str(&declaration(slot, &name, "u32"));
+    }
+    source.push_str(r#"
+        di.debug_declare <{ variable = #di.variable<{ name = "compound", file = "test.rs", line = 2, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0), DI_OP_local_slot(65), DW_OP_plus, DW_OP_stack_value]> }>;
+        hir.store_local %b <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %checkpoint = arith.bnot %a attributes { test.debug_checkpoint = #builtin.u32<1> };
+        hir.store_local %b <{ local = #builtin.local_variable<65, u32> }> : (u32);
+        builtin.ret %checkpoint : (u32);
+    };
+    builtin.function public extern("C") @condition(%a: u32, %b: u32) -> u32 {
+    "#);
+    for slot in 1..65 {
+        source.push_str(&format!(
+            "hir.store_local %a <{{ local = #builtin.local_variable<{slot}, u32> }}> : (u32);\n"
+        ));
+        source.push_str(&declaration(slot, &format!("v{slot}"), "u32"));
+    }
+    source.push_str(
+        r#"
+        %true = arith.constant 1 : i1;
+        hir.store_local %true <{ local = #builtin.local_variable<65, i1> }> : (i1);
+    "#,
+    );
+    source.push_str(&declaration(65, "condition", "i1"));
+    source.push_str(
+        r#"
+        %condition = hir.load_local <{ local = #builtin.local_variable<65, i1> }>;
+        cf.cond_br %condition ^left, ^right : (i1);
+        ^left:
+        hir.store_local %a <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        cf.br ^join;
+        ^right:
+        hir.store_local %b <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        cf.br ^join;
+        ^join:
+    "#,
+    );
+    source.push_str(&declaration(0, "selected", "u32"));
+    source.push_str("builtin.ret %a : (u32);\n};\n};\n");
+    let strip_debug = |text: &str| {
+        text.lines()
+            .filter(|line| !line.trim_start().starts_with("di."))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let plain_source = strip_debug(&source);
+    for name in ["chain", "bindings", "condition"] {
+        let scenario = Scenario::new(&source, name)?;
+        compare_rewrite(
+            &scenario,
+            &[vec![7u32.into(), 42u32.into()]],
+            vec![Box::new(hir::transforms::Local2Reg)],
+            if name == "bindings" {
+                &["compound"]
+            } else {
+                &[]
+            },
+        )?;
+        let plain = Scenario::new(&plain_source, name)?;
+        plain.rewrite(vec![Box::new(hir::transforms::Local2Reg)])?;
+        let result = scenario.function.borrow().as_operation().to_string();
+        assert_eq!(
+            strip_debug(&result),
+            plain.function.borrow().as_operation().to_string(),
+            "{name}"
+        );
+        assert!(!result.contains("hir.store_local") && !result.contains("hir.load_local"));
+        if name == "bindings" {
+            assert_eq!(result.matches("di.debug_kill").count(), 3, "one capture and two stores");
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn local_promotion_preserves_wide_frame_base_reads() -> Result<(), Report> {
     let source = include_str!("../../../tests/lit/hir/transforms/local2reg-frame-base.hir");
     let scenario = Scenario::new(source, "wide")?;
