@@ -49,5 +49,4 @@ wat.workspace = true
 midenc-expect-test = { path = "../../tools/expect-test" }
 # Tests need the `write` feature to synthesize DWARF
 gimli = { workspace = true, features = ["read", "write"] }
-# Matching the wasmparser/wasmprinter pinned in the workspace
-wasm-encoder = "^0.259"
+wasm-encoder.workspace = true

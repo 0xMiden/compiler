@@ -696,7 +696,7 @@ fn policy_rejection(message: impl Into<String>) -> Error {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// Wraps core module text in a component and assembles it.
@@ -707,6 +707,77 @@ mod tests {
     /// Validates one component with a byte budget that never trips.
     fn validate(component: &[u8]) -> Result<()> {
         validate_note_codec_component(component, usize::MAX)
+    }
+
+    /// Rejects component types nested beyond wasmparser's type depth limit with that error,
+    /// before the parser can exhaust the stack.
+    #[test]
+    fn deeply_nested_component_types_are_rejected_without_aborting() {
+        // `wat` refuses this nesting, so the bytes are built by hand: one component type
+        // section holding a component type whose one declaration is a component type, 1400
+        // levels deep.
+        const DEPTH: usize = 1400;
+        let mut types = vec![0x01];
+        for _ in 0..DEPTH {
+            types.extend([0x41, 0x01, 0x01]);
+        }
+        types.extend([0x41, 0x00]);
+        let mut bytes = b"\0asm\x0d\x00\x01\x00".to_vec();
+        bytes.push(0x07);
+        let mut size = types.len();
+        loop {
+            let byte = (size & 0x7f) as u8;
+            size >>= 7;
+            if size == 0 {
+                bytes.push(byte);
+                break;
+            }
+            bytes.push(byte | 0x80);
+        }
+        bytes.extend(types);
+
+        let test_name = concat!(
+            module_path!(),
+            "::deeply_nested_component_types_are_rejected_without_aborting"
+        );
+        assert_rejects_without_aborting(test_name.split_once("::").unwrap().1, move || {
+            validate(&bytes).is_err_and(|error| {
+                error.to_string().contains("component type nesting is too deep")
+            })
+        });
+    }
+
+    /// Runs `rejects` on a 2 MiB stack in a child test process, so a stack overflow fails the
+    /// test named `test_name` instead of aborting the entire suite. `rejects` returns whether
+    /// the input was rejected; a caller that cares which error pins it there. `test_name` must
+    /// be the full test path without the crate name; a name that selects no test fails.
+    pub(crate) fn assert_rejects_without_aborting(
+        test_name: &str,
+        rejects: impl FnOnce() -> bool + Send + 'static,
+    ) {
+        const PROBE_ENV: &str = "MIDEN_NOTE_SCHEMA_ABORT_PROBE";
+        if std::env::var(PROBE_ENV).as_deref() == Ok(test_name) {
+            let rejected = std::thread::Builder::new()
+                .stack_size(2 * 1024 * 1024)
+                .spawn(rejects)
+                .unwrap()
+                .join()
+                .unwrap();
+            assert!(rejected, "the input must be rejected with the expected error");
+            return;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test_name, "--nocapture"])
+            .env(PROBE_ENV, test_name)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("test result: ok. 1 passed"),
+            "the probe must run `{test_name}` alone and reject its input without aborting the \
+             host:\n{stdout}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+        );
     }
 
     #[test]
@@ -761,6 +832,8 @@ mod tests {
             cm64,
             cm_implements,
             cm_canon_names,
+            cm_forward,
+            cm_accessors,
         } = NOTE_CODEC_WASM_FEATURES.inflate();
 
         for (name, required) in [
@@ -809,6 +882,8 @@ mod tests {
             ("component model 64-bit contexts", cm64),
             ("component model implements", cm_implements),
             ("component model canonical names", cm_canon_names),
+            ("component model forwarding", cm_forward),
+            ("component model accessors", cm_accessors),
             ("custom descriptors", custom_descriptors),
             ("compact imports", compact_imports),
         ] {
