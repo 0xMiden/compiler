@@ -19,7 +19,7 @@ use miden_standards::account::{
     policies::{
         AllowlistManager, BasicAllowlist, BasicBlocklist, BlocklistManager, BurnAllowAll,
         BurnOwnerOnly, MinBurnAmount, MintAllowAll, MintOwnerOnly, TokenPolicyManager,
-        TransferAllowAll,
+        TokenPolicyManagerV2, TransferAllowAll,
     },
     upgrade::UpgradeManager,
     wallets::BasicWallet,
@@ -63,6 +63,7 @@ fn components() -> Vec<&'static miden_mast_package::Package> {
         MintAllowAll::code(),
         MintOwnerOnly::code(),
         TokenPolicyManager::code(),
+        TokenPolicyManagerV2::code(),
         TransferAllowAll::code(),
         UpgradeManager::code(),
         BasicWallet::code(),
@@ -120,7 +121,7 @@ fn left_out_entirely() -> Vec<(String, Vec<Skipped>)> {
 fn every_component_matches_its_snapshot() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let generated = generated();
-    assert_eq!(generated.len(), 33 - WITHOUT_INTERFACE.len());
+    assert_eq!(generated.len(), 34 - WITHOUT_INTERFACE.len());
     for (name, generated) in &generated {
         check_generated(manifest_dir, &format!("tests/standards/{name}.wit"), &generated.wit);
     }
@@ -194,7 +195,7 @@ fn generated_and_skipped_totals() {
         .flat_map(|(_, generated)| &generated.skipped)
         .chain(left_out.iter().flat_map(|(_, skipped)| skipped))
         .collect();
-    assert_eq!((functions, skipped.len()), (113, 7));
+    assert_eq!((functions, skipped.len()), (123, 7));
     // Every standard procedure has a typed signature the mapping covers and results within the
     // stack budget; the ones left out are the auth procedures.
     for skipped in skipped {
