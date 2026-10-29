@@ -39,15 +39,17 @@ use miden_protocol::{
 use miden_standards::{account::wallets::BasicWallet, testing::note::NoteBuilder};
 use miden_testing::{AccountState, MockChain, MockChainBuilder};
 use midenc_expect_test::expect;
-use midenc_integration_test_support::{compile_masm_project, project, workspace_root};
+use midenc_integration_test_support::{
+    compile_masm_project, project, testing::toolchain::sysroot, workspace_root,
+};
 
 use super::super::{
     sibling::build_masm_sibling_test_packages,
     support::{
         apply_script_args, basic_auth, compile_rust_package, execute_tx_measurements,
         note_cargo_toml_for_dependency, note_miden_project_toml_for_dependency, note_script_root,
-        single_note_cycles, sysroot_with_standard_components, to_core_felts, to_field_felt,
-        to_field_word, transaction_script_from_package, tx_script_processing_cycles,
+        single_note_cycles, to_core_felts, to_field_felt, to_field_word,
+        transaction_script_from_package, tx_script_processing_cycles,
     },
 };
 
@@ -84,8 +86,7 @@ fn count_slot() -> StorageSlotName {
 ///
 /// The metadata names the component and describes its one value slot, `[count, 0, 0, 0]`.
 fn counter_component() -> AccountComponent {
-    let package: Arc<Package> =
-        compile_masm_project(&counter_project_root(), &sysroot_with_standard_components());
+    let package: Arc<Package> = compile_masm_project(&counter_project_root(), &sysroot());
     let count = WordSchema::new_value([
         FeltSchema::new_typed(SchemaType::native_felt(), "count"),
         FeltSchema::new_void(),

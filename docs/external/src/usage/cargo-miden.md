@@ -201,7 +201,7 @@ SDK macros derive its interface from the package manifest:
 
 - the WIT package is `<head>:<name>@<version>`, where `<head>` is the first segment of the
   component's namespace and `<name>` the package name without the leading `<head>-`, e.g.
-  `miden:standards-wallets-basic-wallet@0.17.0` for a package named
+  `miden:standards-wallets-basic-wallet@0.17.2` for a package named
   `miden-standards-wallets-basic-wallet` in the `miden::…` namespace. A package name that does
   not start with `<head>-` keeps it whole (`other-foo` → `miden:other-foo`), and so does one whose
   rest would be a keyword, no WIT name, or the SDK's own `base` (`miden-list` →
@@ -266,7 +266,7 @@ a macro references it.
 ```toml
 # miden-project.toml
 [dependencies]
-miden-standards-wallets-basic-wallet = "0.17.0"
+miden-standards-wallets-basic-wallet = "0.17.2"
 ```
 
 ```rust
@@ -280,7 +280,7 @@ account.receive_asset(asset);
 The basic wallet's derived interface:
 
 ```wit
-package miden:standards-wallets-basic-wallet@0.17.0;
+package miden:standards-wallets-basic-wallet@0.17.2;
 
 /// Left out: none
 interface basic-wallet {
@@ -319,8 +319,8 @@ namespace = "acme::counter::counter"
 path = "lib/mod.masm"
 
 [dependencies]
-miden-core = { linkage = "dynamic", version = "0.35" }
-miden-protocol = { linkage = "dynamic", version = "0.17.0" }
+miden-core = { linkage = "dynamic", version = "0.36" }
+miden-protocol = { linkage = "dynamic", version = "0.17.2" }
 ```
 
 Each procedure of the component's interface is a `pub proc` with a typed signature and a role

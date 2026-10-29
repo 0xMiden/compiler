@@ -32,11 +32,10 @@ use miden_testing::{Auth, MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
-    CompilerTest, CompilerTestBuilder, example_build_lock, workspace_root,
+    CompilerTest, CompilerTestBuilder, example_build_lock, testing::toolchain::sysroot,
+    workspace_root,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-use super::sysroot_with_standard_components;
 
 /// Host-side mirror of the transaction-script arguments declared, with the same layout, in
 /// `examples/basic-wallet-tx-script` and `examples/std-wallet-tx-script`, spelled in the felt-repr
@@ -127,8 +126,8 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 
 /// Compiles a Rust project and returns its Miden package.
 ///
-/// The project resolves its dependencies from the toolchain extended with the `miden-standards`
-/// account components, so it can depend on a standard component by name.
+/// The project resolves its dependencies from the installed toolchain, which ships the
+/// `miden-standards` account components, so it can depend on a standard component by name.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     with_rust_package_test(project_path.as_ref(), release, CompilerTest::compile_package)
 }
@@ -142,7 +141,7 @@ fn with_rust_package_test<T>(
 ) -> T {
     let _build_lock = example_build_lock(&workspace_root());
     let config = WasmTranslationConfig::default();
-    let sysroot = sysroot_with_standard_components().display().to_string();
+    let sysroot = sysroot().display().to_string();
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
         project_path,
         config,

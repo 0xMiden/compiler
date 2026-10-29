@@ -4636,7 +4636,6 @@ dependencies = [
  "midenc-frontend-wasm-metadata",
  "midenc-integration-test-support",
  "rand 0.10.2",
- "sha2",
  "tokio",
 ]
 

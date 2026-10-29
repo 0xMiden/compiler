@@ -13,5 +13,5 @@ namespace = "acme::counter::counter"
 path = "lib/mod.masm"
 
 [dependencies]
-miden-core = { linkage = "dynamic", version = "0.35" }
-miden-protocol = { linkage = "dynamic", version = "0.17.0" }
+miden-core = { linkage = "dynamic", version = "0.36" }
+miden-protocol = { linkage = "dynamic", version = "0.17.2" }
