@@ -982,6 +982,31 @@ impl<'a, 'e> Selector<'a, 'e> {
                                 },
                             )?;
                         }
+                        SelectionRule::InlineAsm => {
+                            let (definition, proof) =
+                                crate::lower::units::inline_asm::InlineAsm::from_source(
+                                    op.downcast_ref::<crate::hir::InlineAsm>().unwrap(),
+                                    self.env,
+                                )?;
+                            self.add_unit(
+                                current,
+                                source,
+                                UnitSelection {
+                                    inputs: self.atoms(&inputs),
+                                    stored: vec![],
+                                    outputs: self.atoms(&outputs),
+                                    body: HirBody::InlineAsm(definition),
+                                    proof,
+                                    effects: LoweringEffects {
+                                        memory: SourceMemoryEffects::READ_WRITE,
+                                        may_trap: true,
+                                        ..Default::default()
+                                    },
+                                    scratch: vec![],
+                                    scratch_effects: vec![],
+                                },
+                            )?;
+                        }
                         SelectionRule::Memory(kind) => {
                             let mut definition = crate::lower::units::memory::Memory::from_source(
                                 kind, &op, self.env,
@@ -1627,15 +1652,11 @@ impl<'a, 'e> Selector<'a, 'e> {
             .into());
         }
         let signature = resolved.signature();
-        let convention = if calls::is_kernel(&*symbol) {
-            CallingConvention::Kernel
-        } else {
-            CallingConvention::from_source(&signature.cc)
-        };
-        let abi = ProcedureAbi::new(
-            convention,
-            lanes(signature.params().iter().map(|p| p.ty.clone()))?,
-            lanes(signature.results().iter().map(|p| p.ty.clone()))?,
+        let abi = calls::signature_abi(
+            &signature.cc,
+            signature.params().iter().map(|p| p.ty.clone()),
+            signature.results().iter().map(|p| p.ty.clone()),
+            calls::is_kernel(&*symbol),
         )?;
         let instruction = if op.is::<midenc_dialect_hir::Exec>() {
             I::Exec(target)
@@ -2138,6 +2159,20 @@ fn validate_alias(op: &Operation, rule: SelectionRule) -> Result<(), Report> {
             Ok(())
         }
         SelectionRule::Alias => {
+            if let Some(asm) = op.downcast_ref::<crate::hir::InlineAsm>() {
+                asm.validate_signature()?;
+                if !asm.get_body().trim().is_empty() {
+                    return Err(super::invalid("nonempty inline assembly cannot select an alias"));
+                }
+                let inputs = lanes(operand_types(op))?;
+                let outputs = lanes(result_types(op))?;
+                if inputs == 0 || inputs != outputs {
+                    return Err(super::invalid(
+                        "empty inline assembly requires equal nonzero lane counts",
+                    ));
+                }
+                return Ok(());
+            }
             if let Some(gep) = op.downcast_ref::<crate::hir::GetElementPtr>() {
                 if crate::lower::units::arithmetic::gep_offset(gep)? != 0 {
                     return Err(super::invalid("nonzero GEP cannot select an alias"));

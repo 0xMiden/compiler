@@ -1,5 +1,6 @@
 mod advice;
 mod aggregates;
+mod asm;
 mod assertions;
 mod cast;
 mod constants;
@@ -10,7 +11,7 @@ mod mem;
 mod primop;
 
 pub use self::{
-    advice::*, aggregates::*, assertions::*, cast::*, constants::*, crypto::*, events::*,
+    advice::*, aggregates::*, asm::*, assertions::*, cast::*, constants::*, crypto::*, events::*,
     invoke::*, mem::*, primop::*,
 };
 

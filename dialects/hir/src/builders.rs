@@ -1064,6 +1064,24 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         self.builder_mut().create::<crate::ops::Procref, (C,)>(span)(callee)
     }
 
+    /// Execute a typed inline MASM body with explicit stack inputs and results.
+    fn inline_asm<A>(
+        &mut self,
+        body: impl Into<midenc_hir::CompactString>,
+        signature: Signature,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::InlineAsm>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        self.builder_mut().create::<crate::ops::InlineAsm, (_, _, A)>(span)(
+            body.into(),
+            signature,
+            args,
+        )
+    }
+
     /// Execute a root read through an SSA element pointer in the caller's context.
     fn dynexec<A>(
         &mut self,

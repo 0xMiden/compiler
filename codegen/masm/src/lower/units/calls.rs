@@ -329,25 +329,58 @@ pub(crate) fn resolve_direct(
     env: &crate::select::SelectEnv<'_>,
 ) -> Result<(midenc_hir::ResolvedSymbolCallee, masm::InvocationTarget), Report> {
     let resolved = super::super::lowering::resolve_invocation_callee(call)?;
+    let target = named_target(resolved.named_symbol(), call.as_operation(), env)?;
+    Ok((resolved, target))
+}
+
+/// Preserve the accessible source name and the compilation unit's final emission owner.
+pub(crate) fn named_target(
+    symbol: midenc_hir::SymbolRef,
+    op: &midenc_hir::Operation,
+    env: &crate::select::SelectEnv<'_>,
+) -> Result<masm::InvocationTarget, Report> {
     let target = super::super::lowering::invocation_target_from_symbol(
-        resolved.named_symbol(),
-        if call
-            .as_operation()
+        symbol,
+        if op
             .nearest_parent_op::<midenc_hir::dialects::builtin::GlobalVariable>()
             .is_some()
         {
             None
         } else {
-            call.as_operation().nearest_symbol_table()
+            op.nearest_symbol_table()
         },
-        call.as_operation().span(),
+        op.span(),
     );
-    let target = if let Some(owners) = env.owners {
-        owners.target(target)?
+    if let Some(owners) = env.owners {
+        owners.target(target)
     } else {
-        target
-    };
-    Ok((resolved, target))
+        Ok(target)
+    }
+}
+
+/// Shared concrete MASM ABI construction; semantic Wasm carrier lowering is irrelevant here.
+pub(crate) fn signature_abi(
+    cc: &midenc_hir::CallConv,
+    parameters: impl IntoIterator<Item = midenc_hir::Type>,
+    results: impl IntoIterator<Item = midenc_hir::Type>,
+    kernel: bool,
+) -> Result<ProcedureAbi, Report> {
+    fn lanes(types: impl IntoIterator<Item = midenc_hir::Type>) -> Result<u32, Report> {
+        types.into_iter().try_fold(0u32, |count, ty| {
+            count
+                .checked_add(ValueLayout::new(ty)?.lanes() as u32)
+                .ok_or_else(|| crate::select::invalid("ABI lane count overflows"))
+        })
+    }
+    Ok(ProcedureAbi::new(
+        if kernel {
+            CallingConvention::Kernel
+        } else {
+            CallingConvention::from_source(cc)
+        },
+        lanes(parameters)?,
+        lanes(results)?,
+    )?)
 }
 
 /// Kernel exports belong to the exact root kernel module, independently of source convention.

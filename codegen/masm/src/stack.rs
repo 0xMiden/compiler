@@ -264,10 +264,8 @@ impl From<ValueRef> for Operand {
 }
 impl Operand {
     pub fn new(operand: OperandType) -> Self {
-        let ty = operand.ty();
-        let mut word = ty.to_raw_parts().expect("invalid operand type");
-        assert!(!word.is_empty(), "invalid operand: must be a sized type");
-        assert!(word.len() <= 4, "invalid operand: must be smaller than or equal to a word");
+        let layout = crate::plan::ValueLayout::new(operand.ty()).expect("invalid operand type");
+        let mut word = layout.raw_parts().iter().cloned().collect::<SmallVec<[Type; 4]>>();
         if word.len() > 1 {
             word.reverse();
         }
@@ -711,6 +709,17 @@ mod tests {
         assert_eq!(stack.len(), 2);
         assert_eq!(stack[0], three);
         assert_eq!(stack[1], zero);
+    }
+
+    #[test]
+    fn small_aggregate_operands_match_plan_lane_order() {
+        for fields in [vec![Type::U64, Type::U32, Type::U32], vec![Type::U64, Type::U64]] {
+            let ty = Type::from(StructType::new(fields));
+            let operand = Operand::from(ty.clone());
+            let layout = crate::plan::ValueLayout::new(ty).unwrap();
+            assert_eq!(operand.size(), 4);
+            assert_eq!(operand.word.iter().rev().cloned().collect::<Vec<_>>(), layout.raw_parts());
+        }
     }
 
     #[test]

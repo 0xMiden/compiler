@@ -309,11 +309,22 @@ impl EmissionOwners {
 }
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
-pub trait ToMasmComponent {
+pub trait ToMasmComponent: Op {
+    /// Standalone lowering authorizes only explicit session links and compiler intrinsics.
     fn to_masm_component(
         &self,
         analysis_manager: AnalysisManager,
         namespace: EmissionNamespace<'_>,
+    ) -> Result<MasmComponent, Report> {
+        let linked = crate::linked_callables::for_operation(self.as_operation())?;
+        self.to_masm_component_with_callables(analysis_manager, namespace, linked.as_ref())
+    }
+
+    fn to_masm_component_with_callables(
+        &self,
+        analysis_manager: AnalysisManager,
+        namespace: EmissionNamespace<'_>,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<MasmComponent, Report>;
 }
 
@@ -365,10 +376,11 @@ pub trait ToMasmComponent {
 /// file parses to, the world `midenc_hir::parse` anchors any other top-level operation at, the
 /// world the Wasm frontend builds, and the one `frontend/masm`'s disassembler builds.
 impl ToMasmComponent for builtin::World {
-    fn to_masm_component(
+    fn to_masm_component_with_callables(
         &self,
         analysis_manager: AnalysisManager,
         namespace: EmissionNamespace<'_>,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<MasmComponent, Report> {
         let mut components = Vec::new();
         let mut siblings = Vec::new();
@@ -380,7 +392,7 @@ impl ToMasmComponent for builtin::World {
         }
 
         match components.len() {
-            0 => world_body_to_masm_component(self, analysis_manager, namespace),
+            0 => world_body_to_masm_component(self, analysis_manager, namespace, linked_callables),
             1 => {
                 let (supporting, owns_memory) = classify_siblings(&siblings);
                 // The analysis manager is rooted at the world, and `AnalysisManager::nest`
@@ -392,6 +404,7 @@ impl ToMasmComponent for builtin::World {
                     analysis_manager,
                     &supporting,
                     namespace,
+                    linked_callables,
                 )?;
                 // Reported after lowering succeeded, so that a build which failed for an
                 // unrelated reason is not also told about a limitation it never reached.
@@ -682,6 +695,7 @@ fn world_body_to_masm_component(
     world: &builtin::World,
     analysis_manager: AnalysisManager,
     namespace: EmissionNamespace<'_>,
+    linked_callables: Option<&crate::linked_callables::LinkedCallables>,
 ) -> Result<MasmComponent, Report> {
     // Get the current compiler context
     let context = world.as_operation().context_rc();
@@ -774,6 +788,7 @@ fn world_body_to_masm_component(
         modules,
     };
     let builder = MasmComponentBuilder {
+        linked_callables,
         analysis_manager,
         component: &mut masm_component,
         owners: &owners,
@@ -794,12 +809,13 @@ fn world_body_to_masm_component(
 
 /// 1:1 conversion from HIR component to MASM component
 impl ToMasmComponent for builtin::Component {
-    fn to_masm_component(
+    fn to_masm_component_with_callables(
         &self,
         analysis_manager: AnalysisManager,
         namespace: EmissionNamespace<'_>,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<MasmComponent, Report> {
-        component_to_masm_component(self, analysis_manager, &[], namespace)
+        component_to_masm_component(self, analysis_manager, &[], namespace, linked_callables)
     }
 }
 
@@ -819,6 +835,7 @@ fn component_to_masm_component(
     analysis_manager: AnalysisManager,
     supporting: &[builtin::ModuleRef],
     namespace: EmissionNamespace<'_>,
+    linked_callables: Option<&crate::linked_callables::LinkedCallables>,
 ) -> Result<MasmComponent, Report> {
     // Get the current compiler context
     let context = component.as_operation().context_rc();
@@ -948,6 +965,7 @@ fn component_to_masm_component(
         modules,
     };
     let builder = MasmComponentBuilder {
+        linked_callables,
         analysis_manager,
         component: &mut masm_component,
         owners: &owners,
@@ -1063,6 +1081,7 @@ fn resolve_entrypoint_arity(
 
 struct MasmComponentBuilder<'a> {
     owners: &'a EmissionOwners,
+    linked_callables: Option<&'a crate::linked_callables::LinkedCallables>,
     facts: super::unit::UnitFacts,
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
@@ -1191,6 +1210,7 @@ impl MasmComponentBuilder<'_> {
                 };
                 let env = crate::select::SelectEnv {
                     link_info: Some(self.link_info),
+                    linked_callables: self.linked_callables,
                     owners: Some(self.owners),
                     byte_addressing: self.facts.byte_addressing,
                 };
@@ -1231,6 +1251,7 @@ impl MasmComponentBuilder<'_> {
             }
             let env = crate::select::SelectEnv {
                 link_info: Some(self.link_info),
+                linked_callables: self.linked_callables,
                 owners: Some(self.owners),
                 byte_addressing: self.facts.byte_addressing,
             };
@@ -1273,6 +1294,7 @@ impl MasmComponentBuilder<'_> {
         let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
+            linked_callables: self.linked_callables,
             owners: self.owners,
             facts: self.facts,
             module: masm_module,
@@ -1320,6 +1342,7 @@ impl MasmComponentBuilder<'_> {
         let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
+            linked_callables: self.linked_callables,
             owners: self.owners,
             facts: self.facts,
             module: masm_module,
@@ -1414,6 +1437,7 @@ impl MasmComponentBuilder<'_> {
             self.link_info,
             self.owners,
             self.facts,
+            self.linked_callables,
         )?;
 
         let module =
@@ -1610,6 +1634,7 @@ fn lower_function_alias(
 
 struct MasmModuleBuilder<'a> {
     owners: &'a EmissionOwners,
+    linked_callables: Option<&'a crate::linked_callables::LinkedCallables>,
     facts: super::unit::UnitFacts,
     module: &'a mut masm::Module,
     /// Shared world/component analysis root, covering cross-module alias targets.
@@ -1685,6 +1710,7 @@ impl MasmModuleBuilder<'_> {
             self.link_info,
             self.owners,
             self.facts,
+            self.linked_callables,
         )?;
 
         self.module
@@ -1760,9 +1786,11 @@ impl MasmFunctionBuilder {
         link_info: &LinkInfo,
         owners: &EmissionOwners,
         facts: super::unit::UnitFacts,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<masm::Procedure, Report> {
         let env = crate::select::SelectEnv {
             link_info: Some(link_info),
+            linked_callables,
             owners: Some(owners),
             byte_addressing: facts.byte_addressing,
         };

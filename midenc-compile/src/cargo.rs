@@ -237,6 +237,7 @@ pub(crate) fn cargo_build(
     cargo_opts: &CargoOptions,
     source_manager: Arc<dyn SourceManager>,
     dependencies: &[midenc_package_interface::PackageInterface],
+    linked_inputs: Option<crate::pipeline::backend::LinkedCodegenInputs<'_>>,
 ) -> CompilerResult<CodegenOutput> {
     // The directory of the dependency being compiled, captured before `manifest_path` is consumed
     // below. The compiled package is materialized under this directory's `target` (see the end of
@@ -297,12 +298,13 @@ pub(crate) fn cargo_build(
     ));
     let context = Rc::new(midenc_hir::Context::new(session));
 
-    crate::pipeline::frontends::rust::compile_manifest(
+    crate::pipeline::frontends::rust::compile_manifest_with_dependencies(
         &manifest_path,
         filesystem_cache_dir,
         crate::pipeline::frontends::wasm::target_namespace(target),
         context,
         dependencies,
+        linked_inputs,
     )
 
     //component.source_inputs(target, context.session())

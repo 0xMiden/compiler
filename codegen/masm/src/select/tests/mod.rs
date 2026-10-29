@@ -76,6 +76,7 @@ mod control;
 mod coverage;
 mod generated;
 mod indirect;
+mod inline_asm;
 pub(crate) mod intrinsics;
 mod memory;
 

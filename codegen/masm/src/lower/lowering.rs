@@ -1264,3 +1264,13 @@ impl HirSelection for hir::GetElementPtr {
         }
     }
 }
+
+impl HirSelection for hir::InlineAsm {
+    fn selection_rule(&self) -> crate::select::SelectionRule {
+        if self.get_body().trim().is_empty() && self.as_operation().num_operands() != 0 {
+            crate::select::SelectionRule::Alias
+        } else {
+            crate::select::SelectionRule::InlineAsm
+        }
+    }
+}

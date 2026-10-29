@@ -153,6 +153,13 @@ impl<'a> TargetContext<'a> {
         self.assembly
     }
 
+    /// Base inputs prepared once using the root project's dependency exclusions.
+    pub(crate) fn link_inputs(
+        &self,
+    ) -> Option<&midenc_codegen_masm::linked_callables::SessionLinkInputs> {
+        self.state.link_inputs()
+    }
+
     /// The HIR context this target's IR must be built into.
     pub fn context(&self) -> Rc<Context> {
         self.context.clone()

@@ -212,6 +212,19 @@ pub(crate) fn validate_procedure_root(op: &Operation) -> Result<SymbolRef, Repor
             .into_report());
     }
 
+    drop(callee_op);
+    validate_callee_visibility(op, callee)?;
+    Ok(callee)
+}
+
+/// Validate a named procedure reference against the actual MASM ownership boundaries.
+/// Canonical identity determines the ABI; the name granting access determines visibility.
+pub(crate) fn validate_callee_visibility(op: &Operation, callee: SymbolRef) -> Result<(), Report> {
+    let context = op.context();
+    let caller_symbol_table = op
+        .nearest_symbol_table()
+        .ok_or_else(|| Report::msg("procedure reference has no containing symbol table"))?;
+    let callee_op = callee.borrow();
     let callee_symbol_table = callee_op.as_symbol_operation().nearest_symbol_table();
     if callee_op.visibility() == Visibility::Private
         && callee_symbol_table
@@ -221,8 +234,9 @@ pub(crate) fn validate_procedure_root(op: &Operation) -> Result<SymbolRef, Repor
             .diagnostics()
             .diagnostic(Severity::Error)
             .with_message(format!(
-                "invalid hir.procedure_root: private callee '{}' is not linkable from another \
-                 Miden Assembly module",
+                "invalid {}: private callee '{}' is not linkable from another Miden Assembly \
+                 module",
+                op.name(),
                 callee_op.path()
             ))
             .with_primary_label(
@@ -252,7 +266,8 @@ pub(crate) fn validate_procedure_root(op: &Operation) -> Result<SymbolRef, Repor
             .diagnostics()
             .diagnostic(Severity::Error)
             .with_message(format!(
-                "invalid hir.procedure_root: callee '{}' is nested beneath private module '{}'",
+                "invalid {}: callee '{}' is nested beneath private module '{}'",
+                op.name(),
                 callee_op.path(),
                 module.path()
             ))
@@ -271,8 +286,7 @@ pub(crate) fn validate_procedure_root(op: &Operation) -> Result<SymbolRef, Repor
             .into_report());
     }
 
-    drop(callee_op);
-    Ok(callee)
+    Ok(())
 }
 
 /// Whether two HIR symbol-table owners emit procedures into the same MASM module.
@@ -604,6 +618,12 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                 )));
             }
             DynamicLegalityResult::legal()
+        })
+        .add_dynamically_legal_op::<hir::InlineAsm, _>(|op| {
+            match op.downcast_ref::<hir::InlineAsm>().unwrap().validate_signature() {
+                Ok(()) => DynamicLegalityResult::legal(),
+                Err(error) => DynamicLegalityResult::illegal_with_reason(error),
+            }
         })
         .add_dynamically_legal_op::<hir::DynExec, _>(pointer_call_legality)
         .add_dynamically_legal_op::<hir::DynCallLocal, _>(pointer_call_legality)

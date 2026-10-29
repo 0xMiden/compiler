@@ -77,6 +77,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
         )),
         false,
     ));
+    fixtures.push((super::inline_asm::fixture("push.1 add"), false));
     fixtures.extend(super::calls::fixtures());
     fixtures.extend(super::arithmetic::fixtures());
     fixtures.extend(super::memory::fixtures());
@@ -168,7 +169,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 132);
+    assert_eq!(registered.len(), 133);
     assert_eq!(covered, registered);
 }
 

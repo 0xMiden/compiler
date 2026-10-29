@@ -19,7 +19,10 @@ use alloc::vec::Vec;
 
 use miden_assembly::TargetAssemblyContext;
 use miden_mast_package::Package;
-use midenc_codegen_masm::{MasmComponent, intrinsics};
+use midenc_codegen_masm::{
+    MasmComponent,
+    linked_callables::{LinkedPackageInput, SessionLinkInputs},
+};
 use midenc_session::{Session, diagnostics::Report};
 
 use crate::cargo::NOTE_CODEC_TABLE_NAME;
@@ -29,38 +32,62 @@ pub(crate) fn prepare_assembler(
     assembler: &mut miden_assembly::Assembler,
     project_package: &midenc_session::miden_project::Package,
     session: &Session,
-) -> Result<(), Report> {
-    // Link the compiler intrinsics statically
-    assembler.link_package(intrinsics::load(session)?, miden_assembly::Linkage::Static)?;
+) -> Result<SessionLinkInputs, Report> {
+    let inputs = SessionLinkInputs::load(
+        session,
+        project_package.dependencies().iter().map(|dep| dep.name().as_ref()),
+    )?;
+    inputs.apply(assembler)?;
+    Ok(inputs)
+}
 
-    // Link extra standalone modules
-    let mut link_modules = Vec::default();
-    for (path, content) in session.options.link_modules.iter() {
-        let source = session.source_manager.load(
-            midenc_hir::diagnostics::SourceLanguage::Masm,
-            path.as_str().into(),
-            content.clone(),
-        );
-        let module =
-            miden_assembly::ModuleParser::new(Some(miden_assembly::ast::ModuleKind::Library))
-                .parse(Some(path.as_path()), source, session.source_manager.clone())?;
-        link_modules.push(module);
-    }
-    assembler.compile_and_statically_link_all(link_modules)?;
-
-    // Link libraries which are not direct dependencies of the package
-    for link_lib in session.options.link_libraries.iter() {
-        if !project_package
-            .dependencies()
-            .iter()
-            .any(|dep| dep.name().as_ref() == link_lib.canonical_name())
-        {
-            let package = link_lib.load(&session.options)?;
-            assembler.link_package(package, link_lib.linkage)?;
-        }
-    }
-
-    Ok(())
+/// Load the exact graph-selected direct dependencies in assembler edge order, including
+/// packages also visible through the session's larger Wasm discovery set.
+pub(crate) fn direct_dependencies(
+    assembly: &TargetAssemblyContext<'_>,
+) -> Result<Vec<LinkedPackageInput>, Report> {
+    use midenc_session::{
+        miden_package_registry::PackageId,
+        miden_project::{ProjectDependencyNodeProvenance, Version},
+    };
+    let package_id: PackageId = assembly.package.name().into_inner();
+    let root = assembly
+        .dependency_graph
+        .get(&package_id)
+        .ok_or_else(|| Report::msg("target is absent from its resolved dependency graph"))?;
+    root.dependencies
+        .iter()
+        .map(|edge| {
+            let node = assembly.dependency_graph.get(&edge.dependency).ok_or_else(|| {
+                Report::msg(format!(
+                    "dependency '{}' is absent from its resolved graph",
+                    edge.dependency
+                ))
+            })?;
+            let version = match &node.provenance {
+                ProjectDependencyNodeProvenance::Registry { selected, .. }
+                | ProjectDependencyNodeProvenance::Preassembled { selected, .. } => {
+                    selected.clone()
+                }
+                ProjectDependencyNodeProvenance::Source(_) => assembly
+                    .package_registry
+                    .get_by_semver(&edge.dependency, &node.version)
+                    .and_then(|record| record.digest().copied())
+                    .map(|digest| Version::new(node.version.clone(), digest))
+                    .ok_or_else(|| {
+                        Report::msg(format!(
+                            "dependency '{}' {} has not been registered as an assembled package",
+                            edge.dependency, node.version
+                        ))
+                    })?,
+            };
+            let package = assembly.package_registry.load_package(&edge.dependency, &version)?;
+            Ok(LinkedPackageInput {
+                package,
+                linkage: edge.linkage,
+            })
+        })
+        .collect()
 }
 
 /// Attaches frontend metadata, advice-map data, and target-specific sections after assembly.
@@ -344,7 +371,7 @@ mod tests {
 
     fn prepare(package: &ProjectPackage, session: &Session) -> Result<(), Report> {
         let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone());
-        prepare_assembler(&mut assembler, package, session)
+        prepare_assembler(&mut assembler, package, session).map(|_| ())
     }
 
     /// `-l std` and a `miden-core` dependency name the same library, so core must not be linked a
@@ -366,6 +393,55 @@ mod tests {
             .expect_err("nothing depends on core, so `-l std` must be loaded")
             .to_string();
         assert!(err.contains("not-a-package.masp"), "{err}");
+    }
+
+    #[test]
+    fn direct_dependencies_retain_graph_selected_packages_already_in_session_discovery() {
+        use midenc_session::{
+            miden_package_registry::{InMemoryPackageRegistry, PackageCache},
+            miden_project::{Profile, ProjectDependencyGraphBuilder},
+        };
+        let session = session_linking(vec![LinkLibrary::core()]);
+        let core = LinkLibrary::core().load(&session.options).unwrap();
+        assert!(
+            session
+                .package_interfaces()
+                .unwrap()
+                .iter()
+                .any(|interface| interface.name == core.name
+                    && interface.digest == core.dependency_commitment())
+        );
+        let package = project_package(&["miden-core"]);
+        let mut registry = InMemoryPackageRegistry::default();
+        registry.cache_package(core.clone()).unwrap();
+        let graph = ProjectDependencyGraphBuilder::new(&registry)
+            .with_source_manager(session.source_manager.clone())
+            .build(package.clone())
+            .unwrap();
+        let profile = Profile::default();
+        let target = package.library_target().unwrap();
+        let assembly = TargetAssemblyContext::new_virtual(
+            package.clone(),
+            target,
+            &profile,
+            &graph,
+            &registry,
+            session.source_manager.clone(),
+        )
+        .unwrap();
+        let dependencies = direct_dependencies(&assembly).unwrap();
+        assert_eq!(dependencies.len(), 1);
+        assert_eq!(dependencies[0].package.dependency_commitment(), core.dependency_commitment());
+        assert_eq!(dependencies[0].linkage, Linkage::Dynamic);
+        // The same prepared root bundle excludes the session copy before metadata uses
+        // the exact selected graph edge; discovery filtering is only a Wasm-facing view.
+        let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone());
+        let inputs = prepare_assembler(&mut assembler, &package, &session).unwrap();
+        midenc_codegen_masm::linked_callables::LinkedCallables::from_link_inputs(
+            &inputs,
+            &dependencies,
+        )
+        .unwrap();
     }
 
     /// A package to attach sections to.

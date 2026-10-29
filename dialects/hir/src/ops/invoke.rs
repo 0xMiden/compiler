@@ -19,7 +19,7 @@ use crate::HirDialect;
 ///
 /// Call ops carry the callee signature as an attribute, so this is what inferring their result
 /// types amounts to.
-fn infer_results_from_signature(
+pub(super) fn infer_results_from_signature(
     op: &mut Operation,
     signature: &Signature,
     context: &Context,
@@ -38,7 +38,7 @@ fn infer_results_from_signature(
 ///
 /// The indirect call ops carry their callee's signature as an attribute rather than deriving it
 /// from a resolved callee, so nothing but this ties their operands to it.
-fn verify_arguments_against_signature(
+pub(super) fn verify_arguments_against_signature(
     op_name: &str,
     arguments: OpOperandRange<'_>,
     signature: &Signature,
@@ -81,7 +81,7 @@ type ParsedArgumentsAndSignature = (SmallVec<[parse::UnresolvedOperand; 2]>, Sma
 /// Returns the unresolved arguments along with the parameter types to resolve them against,
 /// having checked that the two agree in count. The caller resolves them, so that ops with
 /// further operand groups can push those groups in their declared order.
-fn parse_arguments_and_signature(
+pub(super) fn parse_arguments_and_signature(
     state: &mut OperationState,
     parser: &mut dyn OpAsmParser<'_>,
 ) -> ParseResult<ParsedArgumentsAndSignature> {
@@ -127,7 +127,7 @@ fn parse_arguments_and_signature(
 }
 
 /// Print the `(arguments) : signature` suffix shared by the call ops.
-fn print_arguments_and_signature(
+pub(super) fn print_arguments_and_signature(
     printer: &mut AsmPrinter<'_>,
     arguments: OpOperandRange<'_>,
     signature: &SignatureAttr,
@@ -138,7 +138,7 @@ fn print_arguments_and_signature(
 }
 
 /// Print the trailing `attributes { .. }` dictionary of `op`, if it has any attributes.
-fn print_optional_attributes(printer: &mut AsmPrinter<'_>, op: &Operation) {
+pub(super) fn print_optional_attributes(printer: &mut AsmPrinter<'_>, op: &Operation) {
     if op.has_attributes() {
         printer.print_space();
         *printer += formatter::const_text(" attributes ");
@@ -1894,6 +1894,27 @@ builtin.module public @test {
             &printed,
         )
         .expect("printed hir.procedure_root should re-parse");
+    }
+
+    #[test]
+    fn typed_inline_assembly_parses_and_roundtrips() {
+        use midenc_hir::{diagnostics::Uri, parse, parse::ParserConfig};
+        let source = r#"builtin.function public extern("C") @inline(%0: felt) -> felt {
+            %1 = hir.inline_asm "push.1 add" (%0) : extern("C") (felt) -> felt;
+            builtin.ret %1 : (felt);
+        };"#;
+        let context = Test::default().context_rc();
+        let parsed =
+            parse::parse_any(ParserConfig::new(context.clone()), Uri::new("inline.hir"), source)
+                .expect("typed inline assembly parses");
+        let printed = parsed.borrow().to_string();
+        let context2 = Test::default().context_rc();
+        parse::parse_any(
+            ParserConfig::new(context2.clone()),
+            Uri::new("inline-roundtrip.hir"),
+            &printed,
+        )
+        .expect("typed inline assembly roundtrips");
     }
 
     #[test]

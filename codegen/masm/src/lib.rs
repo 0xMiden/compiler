@@ -25,6 +25,7 @@ mod emitter;
 mod events;
 pub mod intrinsics;
 mod legalization;
+pub mod linked_callables;
 mod linker;
 mod lower;
 mod opt;
@@ -187,6 +188,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::ProcedureRoot, dyn HirSelection>();
     info.register_operation_trait::<hir::Procref, dyn HirSelection>();
     info.register_operation_trait::<hir::DynExec, dyn HirSelection>();
+    info.register_operation_trait::<hir::InlineAsm, dyn HirSelection>();
     info.register_operation_trait::<hir::DynCallLocal, dyn HirSelection>();
 
     info.register_operation_trait::<hir::Assert, dyn HirSelection>();

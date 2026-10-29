@@ -169,6 +169,7 @@ impl<'a> LoweringRegistry<'a> {
 pub(crate) mod arithmetic;
 pub(crate) mod calls;
 pub(crate) mod fpi;
+pub(crate) mod inline_asm;
 pub(crate) mod intrinsics;
 pub(crate) mod memory;
 
@@ -304,6 +305,8 @@ pub(crate) enum HirBody {
     Intrinsic(alloc::boxed::Box<intrinsics::Intrinsic>),
     /// A source rule's fully fixed straight-line instruction sequence.
     Plain(alloc::vec::Vec<masm::Instruction>),
+    /// Closed parsed inline assembly, with separately reconstructed call evidence.
+    InlineAsm(inline_asm::InlineAsm),
     /// One phase of a checked indirect call, with explicit storage between phases.
     Indirect(calls::Indirect),
     /// A resolved direct invocation with its declared procedure ABI.
@@ -336,6 +339,7 @@ impl LoweringDefinition for HirUnit {
                 }
                 Ok(body)
             }
+            HirBody::InlineAsm(definition) => Ok(definition.expand(unit.id)),
             HirBody::Direct(definition) => definition.expand(unit, bindings, frame, env),
             HirBody::Indirect(definition) => definition.expand(unit, bindings, frame, env),
             HirBody::Fpi => fpi::Fpi.expand(unit, bindings, frame, env),

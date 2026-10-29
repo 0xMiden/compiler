@@ -41,6 +41,14 @@ use midenc_session::{
 use super::{ArtifactId, CheckpointId, Flow, TargetContext};
 use crate::{CodegenOutput, CompilerResult, MidenComponent};
 
+/// Exact link inputs for a target compiled through a nested frontend. The root assembler's
+/// session bundle is borrowed unchanged, while direct packages belong to this target.
+#[derive(Clone, Copy)]
+pub(crate) struct LinkedCodegenInputs<'a> {
+    pub session: &'a midenc_codegen_masm::linked_callables::SessionLinkInputs,
+    pub dependencies: &'a [midenc_codegen_masm::linked_callables::LinkedPackageInput],
+}
+
 /// What lowering one target to Miden Assembly produced.
 ///
 /// The [`sources`](LoweredTarget::sources) are what the assembler assembles; the other three
@@ -125,14 +133,36 @@ pub fn masm_from_transformed_hir(
     hir: MidenComponent,
 ) -> CompilerResult<Flow<LoweredTarget>> {
     let context = hir.world.borrow().as_operation().context_rc();
+    let linked =
+        if midenc_codegen_masm::linked_callables::needs_metadata(hir.world.borrow().as_operation())
+        {
+            let dependencies = super::assembly::direct_dependencies(cx.assembly())?;
+            let fallback;
+            let base = if let Some(base) = cx.link_inputs() {
+                base
+            } else {
+                fallback = midenc_codegen_masm::linked_callables::SessionLinkInputs::load(
+                    &cx.session(),
+                    cx.assembly().package.dependencies().iter().map(|dep| dep.name().as_ref()),
+                )?;
+                &fallback
+            };
+            Some(midenc_codegen_masm::linked_callables::LinkedCallables::from_link_inputs(
+                base,
+                &dependencies,
+            )?)
+        } else {
+            None
+        };
     let CodegenOutput {
         component,
         sections,
         source_provenance,
-    } = codegen(
+    } = codegen_with_callables(
         hir,
         context,
         midenc_codegen_masm::EmissionNamespace::Target(cx.assembly().target),
+        linked.as_ref(),
     )?;
     let session = cx.session();
     let sources = component.source_inputs(cx.assembly().target, &session)?;
@@ -357,6 +387,17 @@ pub fn codegen(
     context: Rc<Context>,
     namespace: midenc_codegen_masm::EmissionNamespace<'_>,
 ) -> CompilerResult<CodegenOutput> {
+    let linked =
+        midenc_codegen_masm::linked_callables::for_operation(hir.world.borrow().as_operation())?;
+    codegen_with_callables(hir, context, namespace, linked.as_ref())
+}
+
+pub(crate) fn codegen_with_callables(
+    hir: MidenComponent,
+    context: Rc<Context>,
+    namespace: midenc_codegen_masm::EmissionNamespace<'_>,
+    linked: Option<&midenc_codegen_masm::linked_callables::LinkedCallables>,
+) -> CompilerResult<CodegenOutput> {
     let MidenComponent {
         world,
         component,
@@ -376,9 +417,12 @@ pub fn codegen(
     let masm_component = match component {
         Some(component) => component
             .borrow()
-            .to_masm_component(analysis_manager, namespace)
+            .to_masm_component_with_callables(analysis_manager, namespace, linked)
             .map(Box::new)?,
-        None => world.borrow().to_masm_component(analysis_manager, namespace).map(Box::new)?,
+        None => world
+            .borrow()
+            .to_masm_component_with_callables(analysis_manager, namespace, linked)
+            .map(Box::new)?,
     };
 
     let session = context.session();

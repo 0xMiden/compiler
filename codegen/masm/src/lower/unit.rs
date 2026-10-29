@@ -44,6 +44,20 @@ fn can_hold_a_wide_byte_address(op: &Operation) -> bool {
                 .chain(&signature.results)
                 .any(|abi| holds_a_byte_address(&abi.ty, false));
     }
+    if let Some(asm) = op.downcast_ref::<hir::InlineAsm>() {
+        // An untyped write can publish a wide address through memory even when the boundary
+        // has no pointers. Empty representation changes can reveal pointers through their types.
+        return !asm.get_body().trim().is_empty()
+            || passes_or_returns_an_address(op.operands().all().iter(), op);
+    }
+    if op.is::<hir::Load>() || op.is::<hir::LoadLocal>() {
+        // Source memory can be written by opaque same-context callees without any typed
+        // pointer boundary. Observe its pointer domain at the typed load, including locals.
+        return op
+            .results()
+            .iter()
+            .any(|result| holds_a_byte_address(result.borrow().ty(), false));
+    }
     if op.is::<hir::Alloca>() || op.is::<hir::LocalByteAddress>() {
         return true;
     }
@@ -159,6 +173,60 @@ mod tests {
     }
     fn facts(test: &Test) -> ByteAddressing {
         UnitFacts::derive(test.module().borrow().as_operation(), &[]).byte_addressing
+    }
+
+    #[test]
+    fn inline_assembly_hidden_writes_force_wide_but_empty_scalars_do_not() {
+        for (body, expected) in [
+            ("push.4294967296 mem_store.0", ByteAddressing::Wide),
+            ("", ByteAddressing::Narrow),
+        ] {
+            let mut test = Test::named("inline_facts").in_module("m");
+            test.with_function("f", &[], &[]);
+            let signature = Signature::new(&test.context_rc(), [], []);
+            let mut builder = test.function_builder();
+            builder.inline_asm(body, signature, [], SPAN).unwrap();
+            builder.ret(None, SPAN).unwrap();
+            assert_eq!(facts(&test), expected);
+        }
+        let byte = pointer(Type::U32, AddressSpace::Byte);
+        let mut test = Test::named("inline_typepun_facts").in_module("m");
+        test.with_function("f", &[Type::Felt], &[]);
+        let signature = Signature::new(&test.context_rc(), [Type::Felt], [byte]);
+        let mut builder = test.function_builder();
+        let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+        builder.inline_asm("", signature, [input], SPAN).unwrap();
+        builder.ret(None, SPAN).unwrap();
+        assert_eq!(facts(&test), ByteAddressing::Wide);
+    }
+
+    #[test]
+    fn typed_pointer_loads_are_wide_makers_but_scalar_loads_are_not() {
+        for (ty, expected) in [
+            (Type::U32, ByteAddressing::Narrow),
+            (Type::I32, ByteAddressing::Narrow),
+            (pointer(Type::U32, AddressSpace::Byte), ByteAddressing::Wide),
+            (
+                pointer(pointer(Type::U32, AddressSpace::Byte), AddressSpace::Element),
+                ByteAddressing::Wide,
+            ),
+        ] {
+            for local in [false, true] {
+                let mut test = Test::named("loaded_pointer_facts").in_module("m");
+                test.with_function("f", &[pointer(ty.clone(), AddressSpace::Element)], &[]);
+                test.function().borrow_mut().set_visibility(Visibility::Private);
+                let local_var = test.function().borrow_mut().alloc_local(ty.clone());
+                let mut builder = test.function_builder();
+                let address = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                if local {
+                    builder.load_local(local_var, SPAN).unwrap();
+                } else {
+                    builder.load(address, SPAN).unwrap();
+                }
+                builder.ret(None, SPAN).unwrap();
+                assert_eq!(facts(&test), expected, "{ty}, local={local}");
+            }
+        }
     }
 
     #[test]

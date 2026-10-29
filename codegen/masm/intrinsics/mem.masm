@@ -59,7 +59,7 @@ pub proc heap_init # [heap_base]
 end
 
 # Get the (byte) address where the base of the heap starts
-pub proc heap_base
+pub proc heap_base() -> u32
     exec.verify_heap_magic
     mem_load.HEAP_INFO_BASE
 end
