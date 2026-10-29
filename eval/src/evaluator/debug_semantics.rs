@@ -717,6 +717,94 @@ fn cse_coalesces_redundant_nested_captures() -> Result<(), Report> {
 }
 
 #[test]
+fn cse_preserves_captures_across_unrelated_records() -> Result<(), Report> {
+    let source = include_str!("../../../tests/lit/hir-opt/cse-unrelated-capture.hir");
+    let inputs = [false, true]
+        .into_iter()
+        .map(|condition| vec![condition.into(), 7u32.into(), 19u32.into()])
+        .collect::<Vec<_>>();
+    for nested in [false, true] {
+        for distinct_frame in [false, true] {
+            let record = r#"di.debug_value %right <{ variable = #di.variable<{ name = "other", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);"#;
+            let source = if nested {
+                source
+                    .replacen(
+                        record,
+                        &format!(
+                            "%intervening = scf.if %condition then {{ {record} scf.yield %right : \
+                             (u32); }} else {{ scf.yield %left : (u32); }} : (i1) -> u32;"
+                        ),
+                        1,
+                    )
+                    .replacen(
+                        "builtin.ret %sum",
+                        "%with_other = arith.add %sum, %intervening <{ overflow = \
+                         #builtin.overflow<wrapping> }>; builtin.ret %with_other",
+                        1,
+                    )
+            } else {
+                source.to_string()
+            };
+            let scenario = Scenario::new(&source, "unrelated")?;
+            if distinct_frame {
+                // The same name in another record-owned frame does not shadow branch.
+                // Executable owners have no inline provenance; the key must come from the record.
+                use midenc_hir::dialects::debuginfo::attributes::{InlineCallFrame, VariableAttr};
+                scenario.function.as_operation_ref().raw_prewalk_all::<Forward, _>(
+                    |mut op: OperationRef| {
+                        let variable =
+                            midenc_hir::dialects::debuginfo::debug_record_variable(&op.borrow());
+                        if let Some(mut variable) =
+                            variable.filter(|variable| variable.name.as_str() == "other")
+                        {
+                            variable.name = "branch".into();
+                            let attr =
+                                scenario.context.create_attribute::<VariableAttr, _>(variable);
+                            op.borrow_mut()
+                                .set_property("variable", attr.as_attribute_ref())
+                                .unwrap();
+                            let chain = scenario
+                                .context
+                                .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(
+                                    vec![InlineCallFrame {
+                                        name: "callee".into(),
+                                        linkage_name: None,
+                                        file: "callee.rs".into(),
+                                        line: 1,
+                                        column: 1,
+                                        call_file: "caller.rs".into(),
+                                        call_line: 10,
+                                        call_column: 1,
+                                    }],
+                                ))
+                                .as_attribute_ref();
+                            op.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, chain);
+                        }
+                    },
+                );
+            }
+            if let Err(error) = compare_rewrite(
+                &scenario,
+                &inputs,
+                vec![Box::new(CommonSubexpressionElimination)],
+                &[],
+            ) {
+                std::eprintln!(
+                    "nested={nested} distinct_frame={distinct_frame}: {}",
+                    scenario.function.borrow().as_operation()
+                );
+                return Err(error);
+            }
+            assert_eq!(
+                scenario.function.borrow().as_operation().to_string().matches("scf.if").count(),
+                if nested { 2 } else { 1 }
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
 fn cse_retains_live_declarations_across_stores() -> Result<(), Report> {
     let source = include_str!("../../../tests/lit/hir-opt/cse-nested-debug-captures.hir");
     let scenario = Scenario::new(source, "nested_declarations")?;

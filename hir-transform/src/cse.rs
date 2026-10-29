@@ -6,7 +6,9 @@ use midenc_hir::{
     adt::SmallDenseMap,
     cfg::Graph,
     dialects::debuginfo::{
-        DebugInfoMutation, DebugInfoUpdate, is_debug_record,
+        DebugInfoMutation, DebugInfoUpdate,
+        bindings::VisibilitySlot,
+        is_debug_record,
         transform::{DebugBindingInventory, collect_debug_ops},
     },
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
@@ -458,9 +460,9 @@ impl CSEDriver<'_> {
 
         drop(existing);
         if erase {
-            // Cached scans resume through linked operations. Erasing this owner (or its
-            // descendants) can detach a saved cursor, so discard those scans before erasure.
-            self.mem_effects_cache.clear();
+            // Scan frontiers refer only to already visited predecessors, never this duplicate.
+            // Nested block traversal clears the cache before an enclosing owner can be erased,
+            // so neither keys nor frontiers can be among this owner's erased descendants.
             // The recursive eraser also consumes any dead descendants queued while visiting
             // this owner's regions. Do not revisit detached descendants in the final drain.
             self.ops_to_erase.retain(|dead| !op.borrow().is_ancestor_of(&dead.borrow()));
@@ -545,6 +547,8 @@ impl CSEDriver<'_> {
         {
             next_op = next.next();
 
+            #[cfg(test)]
+            scan_tests::SCANS.with(|count| count.set(count.get() + 1));
             let effects = next.borrow().get_effects_recursively::<MemoryEffect>();
             if let Some(effects) = effects.as_deref() {
                 for effect in effects {
@@ -562,25 +566,41 @@ impl CSEDriver<'_> {
             }
         }
 
-        *result = (to, None);
+        // Keep the last checked predecessor linked when the unchecked duplicate is erased.
+        // Scans restart inclusively; revisiting one predecessor also catches a newly inserted
+        // store after it. Previously visited operations remain linked until block traversal ends.
+        *result = (to.prev().expect("read has a preceding canonical operation"), None);
         false
     }
 }
 
 /// Repeating the same capture trace is idempotent only if intervening execution cannot
 /// kill/rebind its state. Known memory writes preserve live recovery expressions, including
-/// LocalSlot declarations; unknown effects and all intervening captures are conservative barriers.
+/// LocalSlot declarations; unknown effects and captures in the same visibility slots are barriers.
 fn capture_state_unchanged(retained: OperationRef, original: OperationRef) -> bool {
     if retained.parent() != original.parent() {
         return false;
     }
+    let slots = collect_debug_ops(&original)
+        .into_iter()
+        .filter_map(VisibilitySlot::of)
+        .collect::<FxHashSet<_>>();
     let mut next = retained.next();
     while let Some(op) = next {
         if op == original {
             return true;
         }
-        if !collect_debug_ops(&op).is_empty()
-            || op.borrow().get_effects_recursively::<MemoryEffect>().is_none()
+        if collect_debug_ops(&op)
+            .into_iter()
+            .filter_map(VisibilitySlot::of)
+            .any(|slot| slots.contains(&slot))
+            || {
+                let op = op.borrow();
+                // The direct recursive-memory query recognizes concrete marker traits.
+                // The generic effect iterator can conservatively report unknown for them.
+                !op.is_memory_effect_free()
+                    && op.get_effects_recursively::<MemoryEffect>().is_none()
+            }
         {
             return false;
         }
@@ -1977,3 +1997,7 @@ func.func @cse_recursive_effects_failure() -> (i32, i32, i32) {
 #[cfg(test)]
 #[path = "cse/region_equivalence_tests.rs"]
 mod region_equivalence_tests;
+
+#[cfg(test)]
+#[path = "cse/scan_tests.rs"]
+mod scan_tests;

@@ -22,4 +22,24 @@ builtin.module public @cache {
         %result = arith.add %sum, %third <{ overflow = #builtin.overflow<wrapping> }>;
         builtin.ret %result : (u32);
     };
+
+    // CHECK-LABEL: @three_reads_without_debug
+    // CHECK: hir.store_local
+    // CHECK: %[[A:\d+]] = hir.load_local
+    // CHECK-NOT: hir.load_local
+    // CHECK: hir.store_local
+    // CHECK: %[[B:\d+]] = hir.load_local
+    // CHECK-NOT: hir.load_local
+    // CHECK: %[[C:\d+]] = arith.add %[[A]], %[[A]]
+    // CHECK: arith.add %[[C]], %[[B]]
+    builtin.function public extern("C") @three_reads_without_debug(%before: u32, %after: u32) -> u32 {
+        hir.store_local %before <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %first = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %second = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        hir.store_local %after <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %third = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %sum = arith.add %first, %second <{ overflow = #builtin.overflow<wrapping> }>;
+        %result = arith.add %sum, %third <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (u32);
+    };
 };
