@@ -284,96 +284,42 @@ pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<
 /// backend then selects the final semantic graph and assigns physical stack/frame locations;
 /// no HIR rewrite follows selection.
 ///
-/// # What is outside a component
+/// # Namespace-independent function rewrites
 ///
-/// A component's functions get the semantic rewrite pipeline above. But codegen lowers
-/// more than the component, and checks all of it: the modules and functions a world holds
-/// beside its component are lowered with it (a component's supporting modules), and a world
-/// with no component is lowered as it stands. They are legalized too — beside a component, its
-/// sibling modules and functions; without one, the world as a whole — and nothing follows that
-/// for them, so the ordering rule above holds for them as well.
+/// Every function in the world receives the same semantic rewrites, regardless of whether it
+/// belongs directly to a component, sits in nested modules, or supports a component from outside
+/// it. All function rewrites finish before world-wide legalization; final operand sinking then
+/// runs over the same function set. Scheduling does not decide which components are emitted.
 ///
 /// # Errors
 ///
 /// If `world` is not a `builtin.world`.
 fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult<PassManager> {
+    if !world.borrow().is::<builtin::World>() {
+        return Err(Report::msg(format!(
+            "the rewrite pipeline runs over a `builtin.world`, but was given a `{}`",
+            world.borrow().name()
+        )));
+    }
     let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
-    let mut pm = PassManager::on::<builtin::World>(context, Nesting::Implicit)
+    let mut pm = PassManager::on::<builtin::World>(context, Nesting::Explicit)
         .enable_ir_printing(ir_print_config);
 
     let mut rewrite_config = GreedyRewriteConfig::default();
     rewrite_config.with_region_simplification_level(RegionSimplificationLevel::Normal);
-
-    // Component passes
     {
-        let mut component_pm = pm.nest::<builtin::Component>();
-        // Function passes for module-level functions, up to the last canonicalization
-        {
-            let mut module_pm = component_pm.nest::<builtin::Module>();
-            let mut func_pm = module_pm.nest::<builtin::Function>();
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-            func_pm.add_pass(Box::new(CommonSubexpressionElimination));
-            func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            func_pm.add_pass(Box::new(Local2Reg));
-            func_pm.add_pass(Box::new(LiftControlFlowToSCF));
-            // Re-run canonicalization to clean up generated structured control flow
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-        }
-        // Function passes for component-level functions, up to the last canonicalization
-        {
-            let mut func_pm = component_pm.nest::<builtin::Function>();
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-            func_pm.add_pass(Box::new(CommonSubexpressionElimination));
-            func_pm.add_pass(Box::new(SparseConditionalConstantPropagation));
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            func_pm.add_pass(Box::new(Local2Reg));
-            func_pm.add_pass(Box::new(LiftControlFlowToSCF));
-            // Re-run canonicalization to clean up generated structured control flow
-            func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
-        }
-        // Representation legalization precedes final optional operand sinking
-        component_pm.add_pass(Box::new(LegalizeForMasm));
-        // Optional operand sinking for module-level functions, then component-level
-        // ones: the last passes before lowering
-        {
-            let mut module_pm = component_pm.nest::<builtin::Module>();
-            let mut func_pm = module_pm.nest::<builtin::Function>();
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            //func_pm.add_pass(Box::new(DeadCodeElimination));
-        }
-        {
-            let mut func_pm = component_pm.nest::<builtin::Function>();
-            func_pm.add_pass(Box::new(SinkOperandDefs));
-            //func_pm.add_pass(Box::new(ControlFlowSink));
-            //func_pm.add_pass(Box::new(DeadCodeElimination));
-        }
+        let mut functions = pm.nest_recursive::<builtin::Function>();
+        functions.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+        functions.add_pass(Box::new(CommonSubexpressionElimination));
+        functions.add_pass(Box::new(SparseConditionalConstantPropagation));
+        functions.add_pass(Box::new(SinkOperandDefs));
+        functions.add_pass(Box::new(Local2Reg));
+        functions.add_pass(Box::new(LiftControlFlowToSCF));
+        // Clean up generated structured control flow before representation legalization.
+        functions.add_pass(Canonicalizer::create_with_config(&rewrite_config));
     }
-
-    let has_component = {
-        let world = world.borrow();
-        let Some(world) = world.downcast_ref::<builtin::World>() else {
-            return Err(Report::msg(format!(
-                "the rewrite pipeline runs over a `builtin.world`, but was given a `{}`",
-                world.name()
-            )));
-        };
-        let body = world.body();
-        body.entry_block_ref().is_some_and(|entry| {
-            entry.borrow().body().iter().any(|op| op.is::<builtin::Component>())
-        })
-    };
-    if has_component {
-        // The component's siblings: modules and functions of the world itself
-        pm.nest::<builtin::Module>().add_pass(Box::new(LegalizeForMasm));
-        pm.nest::<builtin::Function>().add_pass(Box::new(LegalizeForMasm));
-    } else {
-        // A world without a component
-        pm.add_pass(Box::new(LegalizeForMasm));
-    }
+    pm.add_pass(Box::new(LegalizeForMasm));
+    pm.nest_recursive::<builtin::Function>().add_pass(Box::new(SinkOperandDefs));
 
     Ok(pm)
 }
@@ -799,6 +745,83 @@ mod tests {
             .expect("rewrite-only is the caller's policy, not ours");
     }
 
+    /// CFG restructuring must not depend on a frontend's namespace depth or component choice.
+    #[test]
+    fn function_rewrites_reach_every_namespace_depth() {
+        use midenc_hir::{Forward, RawWalk, WalkResult};
+
+        let function = |name| {
+            alloc::format!(
+                r#"
+            builtin.function public extern("C") @{name}(%p: i1, %a: u32, %b: u32) -> u32 {{
+                cf.cond_br %p ^left, ^right : (i1);
+            ^left:
+                %x = arith.incr %a;
+                cf.br ^join(%x : u32);
+            ^right:
+                %y = arith.incr %b;
+                cf.br ^join(%y : u32);
+            ^join(%result: u32):
+                builtin.ret %result : (u32);
+            }};
+        "#
+            )
+        };
+        for with_component in [false, true] {
+            let component = if with_component {
+                alloc::format!(
+                    "builtin.component private @component {{ {} builtin.module private @module {{ \
+                     {} builtin.module private @nested {{ {} }}; }}; }};",
+                    function("component_fn"),
+                    function("module_fn"),
+                    function("nested_fn"),
+                )
+            } else {
+                alloc::string::String::new()
+            };
+            let source = alloc::format!(
+                "builtin.world {{ {} builtin.module public @outer {{ {} builtin.module public \
+                 @inner {{ {} }}; }}; {component} }};",
+                function("root_fn"),
+                function("outer_fn"),
+                function("inner_fn"),
+            );
+            let context = Rc::new(Context::default());
+            let world = midenc_hir::parse::parse_any(
+                midenc_hir::parse::ParserConfig::new(context.clone()),
+                midenc_hir::diagnostics::Uri::new("recursive-rewrites.hir"),
+                &source,
+            )
+            .expect("valid namespace tree");
+            let function_shapes = || {
+                let mut functions = alloc::collections::BTreeMap::new();
+                let _: WalkResult<()> = world.raw_prewalk::<Forward, _, _>(|op| {
+                    if let Ok(function) = op.try_downcast_op::<builtin::Function>() {
+                        let function = function.borrow();
+                        functions.insert(
+                            midenc_hir::Symbol::name(&*function),
+                            function.body().body().len(),
+                        );
+                        WalkResult::Skip
+                    } else {
+                        WalkResult::Continue(())
+                    }
+                });
+                functions
+            };
+            let before = function_shapes();
+            assert_eq!(before.len(), if with_component { 6 } else { 3 });
+            assert!(before.values().all(|blocks| *blocks == 4));
+            apply_rewrites(world, context.clone()).expect("all functions should be rewritten");
+            // Conversion may replace function operations, so inspect the resulting world anew.
+            let after = function_shapes();
+            assert!(before.keys().eq(after.keys()), "rewrites preserve every public function");
+            for (name, blocks) in after {
+                assert_eq!(blocks, 1, "function {name} was not restructured");
+            }
+        }
+    }
+
     /// [`rewrite_pipeline`], as its textual pipeline.
     fn textual_pipeline(
         world: OperationRef,
@@ -825,10 +848,8 @@ mod tests {
         assert_eq!(
             pipeline,
             alloc::format!(
-                "builtin.world(builtin.component(builtin.module(builtin.function({functions})),\
-                 builtin.function({functions}),legalize-for-masm,builtin.module(builtin.\
-                 function({last})),builtin.function({last})),builtin.module(legalize-for-masm),\
-                 builtin.function(legalize-for-masm))"
+                "builtin.world(recursive(builtin.function({functions})),legalize-for-masm,\
+                 recursive(builtin.function({last})))"
             )
         );
     }
@@ -857,7 +878,10 @@ mod tests {
         )()
         .expect("an empty world should build");
         let pipeline = textual_pipeline(world.as_operation_ref(), context);
-        assert!(pipeline.ends_with(",legalize-for-masm)"), "{pipeline}");
+        assert!(
+            pipeline.contains("),legalize-for-masm,recursive(builtin.function("),
+            "{pipeline}"
+        );
     }
 
     #[test]
