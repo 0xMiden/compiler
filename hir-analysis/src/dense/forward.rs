@@ -196,6 +196,23 @@ where
         return Ok(());
     }
 
+    // ProgramPoint keeps operation entry, predecessor exit, and block entry as distinct
+    // anchors. Connect the sequential edge explicitly, including before region/call dispatch:
+    // those transfers and nested region entries consume the parent's before-state directly.
+    if let Some(block) = op.parent() {
+        let predecessor = op
+            .as_operation_ref()
+            .prev()
+            .map_or_else(|| ProgramPoint::at_start_of(block), ProgramPoint::after);
+        let incoming =
+            solver.require::<<A as DenseForwardDataFlowAnalysis>::Lattice, _>(predecessor, point);
+        let mut before = solver
+            .get_or_create_mut::<<A as DenseForwardDataFlowAnalysis>::Lattice, _>(
+                ProgramPoint::before(op),
+            );
+        before.join(incoming.lattice());
+    }
+
     // Get the dense lattice to update.
     let mut after = solver.get_or_create_mut(point);
 
@@ -450,6 +467,99 @@ pub fn visit_region_branch_operation<A>(
             } else {
                 after.join(before.lattice());
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        Op, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, pass::AnalysisManager,
+        testing::Test,
+    };
+
+    use super::*;
+    use crate::{BuildableDataFlowAnalysis, Lattice, LatticeLike, analyses::DeadCodeAnalysis};
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct Count(u32);
+    impl LatticeLike for Count {
+        fn join(&self, other: &Self) -> Self {
+            Self(self.0.max(other.0))
+        }
+
+        fn meet(&self, other: &Self) -> Self {
+            Self(self.0.min(other.0))
+        }
+    }
+
+    struct CountOperations;
+    impl BuildableDataFlowAnalysis for CountOperations {
+        type Strategy = DenseDataFlowAnalysis<Self, Forward>;
+
+        fn new(_: &mut DataFlowSolver) -> Self {
+            Self
+        }
+    }
+    impl DenseForwardDataFlowAnalysis for CountOperations {
+        type Lattice = Lattice<Count>;
+
+        fn set_to_entry_state(
+            &self,
+            lattice: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
+            _: &mut DataFlowSolver,
+        ) {
+            lattice.join(&Count(1));
+        }
+
+        fn visit_operation(
+            &self,
+            _: &Operation,
+            before: &Self::Lattice,
+            after: &mut AnalysisStateGuardMut<'_, Self::Lattice>,
+            _: &mut DataFlowSolver,
+        ) -> Result<(), Report> {
+            if before.value().0 != 0 {
+                after.join(&Count(before.value().0 + 1));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn sequential_dense_states_propagate_after_entry_becomes_executable() {
+        let mut test = Test::new("dense_sequence", &[], &[Type::U32]);
+        {
+            let mut builder = test.function_builder();
+            let value = builder.u32(7, SourceSpan::UNKNOWN);
+            builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+        }
+        let root = test.function().borrow().as_operation_ref();
+        let block = test.function().borrow().entry_block();
+        let operations = block
+            .borrow()
+            .body()
+            .iter()
+            .map(|op| op.as_operation_ref())
+            .collect::<alloc::vec::Vec<_>>();
+        let mut solver = DataFlowSolver::default();
+        // Deliberately initialize the dense analysis first. It must subscribe to reachability
+        // and propagate entry updates through the whole instruction sequence during the fixpoint.
+        solver.load::<CountOperations>();
+        solver.load::<DeadCodeAnalysis>();
+        solver
+            .initialize_and_run(&root.borrow(), AnalysisManager::new(root, None))
+            .unwrap();
+        for (point, expected) in [
+            (ProgramPoint::at_start_of(block), 1),
+            (ProgramPoint::before(operations[0]), 1),
+            (ProgramPoint::after(operations[0]), 2),
+            (ProgramPoint::before(operations[1]), 2),
+            (ProgramPoint::after(operations[1]), 3),
+        ] {
+            let state = solver.get::<Lattice<Count>, _>(&point);
+            assert_eq!(state.as_ref().map(|state| state.value().0), Some(expected), "at {point}");
         }
     }
 }
