@@ -709,7 +709,7 @@ pub(crate) mod tests {
         validate_note_codec_component(component, usize::MAX)
     }
 
-    /// Rejects component types nested far deeper than the structural limit with an error,
+    /// Rejects component types nested beyond wasmparser's type depth limit with that error,
     /// before the parser can exhaust the stack.
     #[test]
     fn deeply_nested_component_types_are_rejected_without_aborting() {
@@ -738,18 +738,23 @@ pub(crate) mod tests {
 
         assert_rejects_without_aborting(
             "codec_structure::tests::deeply_nested_component_types_are_rejected_without_aborting",
-            move || validate(&bytes).is_err(),
+            move || {
+                validate(&bytes).is_err_and(|error| {
+                    error.to_string().contains("component type nesting is too deep")
+                })
+            },
         );
     }
 
     /// Runs `rejects` on a 2 MiB stack in a child test process, so a stack overflow fails the
     /// test named `test_name` instead of aborting the entire suite. `rejects` returns whether
-    /// the input was rejected with an error.
+    /// the input was rejected with the expected error. `test_name` must be the full test path
+    /// without the crate name; a name that selects no test fails.
     pub(crate) fn assert_rejects_without_aborting(
         test_name: &str,
         rejects: impl FnOnce() -> bool + Send + 'static,
     ) {
-        const PROBE_ENV: &str = "MIDEN_NOTE_SCHEMA_PARSER_PROBE";
+        const PROBE_ENV: &str = "MIDEN_NOTE_SCHEMA_ABORT_PROBE";
         if std::env::var(PROBE_ENV).as_deref() == Ok(test_name) {
             let rejected = std::thread::Builder::new()
                 .stack_size(2 * 1024 * 1024)
@@ -765,10 +770,10 @@ pub(crate) mod tests {
             .env(PROBE_ENV, test_name)
             .output()
             .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            output.status.success(),
-            "parsing must return an error without aborting the host:\n{}\n{}",
-            String::from_utf8_lossy(&output.stdout),
+            output.status.success() && stdout.contains("test result: ok. 1 passed"),
+            "parsing must return an error without aborting the host:\n{stdout}\n{}",
             String::from_utf8_lossy(&output.stderr),
         );
     }
