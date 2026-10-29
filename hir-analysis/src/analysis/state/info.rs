@@ -471,7 +471,7 @@ mod tests {
             for subscription in expected.into_iter().rev() {
                 info.subscribe(subscription);
             }
-            assert!(&*info.subscriptions() == expected);
+            assert!(*info.subscriptions() == expected);
             assert_eq!(info.on_update_subscribers_count(), 2);
             assert!(info.on_update_subscribers().as_slice() == [first, same_address]);
         }
