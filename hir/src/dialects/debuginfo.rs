@@ -59,7 +59,7 @@ pub mod transform;
 
 pub use self::{
     builders::DIBuilder,
-    mutation::{DebugInfoMutation, DebugInfoUpdate},
+    mutation::{DebugInfoMutation, DebugInfoUpdate, is_debug_record},
     ops::*,
 };
 use crate::{

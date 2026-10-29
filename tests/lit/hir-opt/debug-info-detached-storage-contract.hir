@@ -1,0 +1,17 @@
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=detached-declare-new-store}))' 2>&1 | filecheck %s --check-prefix=INSERT
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=detached-declare-edit-store}))' 2>&1 | filecheck %s --check-prefix=EDIT
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=detached-declare-preserve}))' | filecheck %s --check-prefix=AUTHOR
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=detached-declare-prebuilt-store}))' | filecheck %s --check-prefix=AUTHOR
+// INSERT: unhandled debug-info storage insertion
+// EDIT: unhandled debug-info dependency mutation
+// AUTHOR: di.debug_declare
+// AUTHOR: di.debug_declare
+
+builtin.module public @detached_storage {
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        hir.store_local %0 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+};

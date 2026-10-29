@@ -10,7 +10,7 @@ use midenc_hir::{
         },
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
-    patterns::{NoopRewriterListener, RegionSimplificationLevel, RewriterImpl},
+    patterns::{NoopRewriterListener, RegionSimplificationLevel, RewriterExt, RewriterImpl},
 };
 
 /// Deliberately correct and incorrect mutations for testing the pass-manager debug contract.
@@ -157,6 +157,70 @@ impl Pass for TestDebugInfoMutation {
                     }
                 }
             }
+            "detached-declare-new-store"
+            | "detached-declare-edit-store"
+            | "detached-declare-preserve"
+            | "detached-declare-prebuilt-store" => {
+                let mut source = store.unwrap();
+                let (local, span) = {
+                    let op = source.borrow();
+                    (
+                        *op.downcast_ref::<midenc_dialect_hir::StoreLocal>()
+                            .unwrap()
+                            .local()
+                            .as_value(),
+                        op.span(),
+                    )
+                };
+                let mut detached = rewriter.create_block(body, None, &[]);
+                detached.borrow_mut().erase();
+                if self.action == "detached-declare-prebuilt-store" {
+                    source.borrow_mut().move_to(ProgramPoint::at_end_of(detached));
+                }
+                rewriter.set_insertion_point_to_end(detached);
+                let variable = record
+                    .borrow()
+                    .downcast_ref::<DebugDeclare>()
+                    .unwrap()
+                    .variable()
+                    .as_value()
+                    .clone();
+                rewriter.debug_declare(
+                    variable,
+                    Expression::with_ops(vec![ExpressionOp::LocalSlot(local.as_usize() as u32)]),
+                    span,
+                )?;
+                let mut region = body;
+                region.borrow_mut().body_mut().push_back(detached);
+                if self.action == "detached-declare-new-store" {
+                    rewriter.set_insertion_point_to_end(detached);
+                    rewriter.create::<midenc_dialect_hir::StoreLocal, (_, _)>(span)(
+                        local,
+                        replacement,
+                    )?;
+                } else if self.action == "detached-declare-edit-store" {
+                    let mut operand = source.borrow().operands()[0];
+                    operand.borrow_mut().set(replacement);
+                }
+            }
+            "retarget-local-store-salvage" => {
+                let mut source = store.unwrap();
+                let mut local = None;
+                root.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+                    if op != source
+                        && let Some(store) =
+                            op.borrow().downcast_ref::<midenc_dialect_hir::StoreLocal>()
+                    {
+                        local = Some(*store.local().as_value());
+                    }
+                });
+                let _update = DebugInfoMutation::new(source, DebugInfoUpdate::Salvage);
+                source
+                    .borrow_mut()
+                    .downcast_mut::<midenc_dialect_hir::StoreLocal>()
+                    .unwrap()
+                    .set_local(local.unwrap());
+            }
             "erase-local-store" => store.unwrap().borrow_mut().erase(),
             "invalidate-local-store-without-kills" => {
                 rewriter.erase_op_with_debug(store.unwrap(), DebugInfoUpdate::Invalidate);
@@ -165,7 +229,16 @@ impl Pass for TestDebugInfoMutation {
                 let mut operand = store.unwrap().borrow().operands()[0];
                 operand.borrow_mut().set(replacement);
             }
-            "insert-local-store" => {
+            "insert-local-store" | "insert-local-store-preserve" | "insert-local-store-salvage" => {
+                let _update = match self.action.as_str() {
+                    "insert-local-store-preserve" => {
+                        Some(DebugInfoMutation::new(record, DebugInfoUpdate::Preserve))
+                    }
+                    "insert-local-store-salvage" => {
+                        Some(DebugInfoMutation::new(record, DebugInfoUpdate::Salvage))
+                    }
+                    _ => None,
+                };
                 let store = store.unwrap();
                 let (local, span) = {
                     let operation = store.borrow();
@@ -310,8 +383,72 @@ impl Pass for TestDebugInfoMutation {
                 rewriter.debug_kill(variable, span)?;
                 record.borrow_mut().erase();
             }
+            "preserve-owner-roundtrip" | "equivalent-owner-roundtrip" => {
+                let mut owner = record.parent_op().unwrap();
+                let next = owner.next().unwrap();
+                let policy = if self.action == "preserve-owner-roundtrip" {
+                    DebugInfoUpdate::Preserve
+                } else {
+                    DebugInfoUpdate::Equivalent
+                };
+                let _update = DebugInfoMutation::new(owner, policy);
+                owner.borrow_mut().move_to(ProgramPoint::after(next));
+                owner.borrow_mut().move_to(ProgramPoint::before(next));
+            }
+            "invalidate-owner-anchor"
+            | "salvage-owner-anchor"
+            | "invalidate-unrelated-anchor"
+            | "invalidate-moved-owner-anchor"
+            | "salvage-moved-owner-anchor"
+            | "invalidate-roundtrip-owner-anchor"
+            | "salvage-roundtrip-owner-anchor"
+            | "invalidate-relocated-owner-anchor"
+            | "salvage-relocated-owner-anchor" => {
+                let mut owner = record.parent_op().unwrap();
+                let next = owner.next().unwrap();
+                if self.action.contains("-relocated-") {
+                    let _relocation = DebugInfoMutation::new(owner, DebugInfoUpdate::Relocate);
+                    owner.borrow_mut().move_to(ProgramPoint::after(next));
+                }
+                let policy = if self.action.starts_with("salvage-") {
+                    DebugInfoUpdate::Salvage
+                } else {
+                    DebugInfoUpdate::Invalidate
+                };
+                let mut update = DebugInfoMutation::new(owner, policy);
+                if self.action.contains("-moved-") || self.action.contains("-roundtrip-") {
+                    owner.borrow_mut().move_to(ProgramPoint::after(next));
+                    if self.action.contains("-roundtrip-") {
+                        owner.borrow_mut().move_to(ProgramPoint::before(next));
+                    }
+                }
+                let (variable, span) = {
+                    let operation = record.borrow();
+                    (
+                        operation
+                            .downcast_ref::<DebugValue>()
+                            .unwrap()
+                            .variable()
+                            .as_value()
+                            .clone(),
+                        operation.span(),
+                    )
+                };
+                let anchor = if self.action == "invalidate-unrelated-anchor" {
+                    root
+                } else {
+                    owner
+                };
+                let replacement = {
+                    let mut scope = rewriter.with_inline_call_chain(record);
+                    scope.set_insertion_point_before(anchor);
+                    scope.debug_kill(variable, span)?.as_operation_ref()
+                };
+                update.replace_capture(record, replacement, anchor)?;
+                owner.borrow_mut().erase();
+            }
             "raw-insert" | "raw-replace-checked" => {
-                let _update = (self.action == "raw-replace-checked")
+                let mut update = (self.action == "raw-replace-checked")
                     .then(|| DebugInfoMutation::new(record, DebugInfoUpdate::Salvage));
                 let (value, variable, expression, span) = {
                     let operation = record.borrow();
@@ -324,8 +461,11 @@ impl Pass for TestDebugInfoMutation {
                     )
                 };
                 rewriter.set_insertion_point_before(record);
-                rewriter.create::<DebugValue, (_, _, _)>(span)(value, variable, expression)?;
-                if self.action == "raw-replace-checked" {
+                let replacement =
+                    rewriter.create::<DebugValue, (_, _, _)>(span)(value, variable, expression)?
+                        .as_operation_ref();
+                if let Some(update) = update.as_mut() {
+                    update.replace_capture(record, replacement, record)?;
                     record.borrow_mut().erase();
                 }
             }

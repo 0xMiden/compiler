@@ -1,0 +1,35 @@
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=salvage-moved-owner-anchor}))' 2>&1 | filecheck %s --check-prefix=INVALID
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=salvage-roundtrip-owner-anchor}))' 2>&1 | filecheck %s --check-prefix=INVALID
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=salvage-relocated-owner-anchor}))' | filecheck %s --check-prefix=RELOCATED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-moved-owner-anchor}))' 2>&1 | filecheck %s --check-prefix=INVALID
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-roundtrip-owner-anchor}))' 2>&1 | filecheck %s --check-prefix=INVALID
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-relocated-owner-anchor}))' | filecheck %s --check-prefix=RELOCATED
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=salvage-owner-anchor}))' | filecheck %s
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=preserve-owner-roundtrip}))' 2>&1 | filecheck %s --check-prefix=MOTION
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=equivalent-owner-roundtrip}))' 2>&1 | filecheck %s --check-prefix=MOTION
+// MOTION: contract failed for
+// MOTION: variable 'x'
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-owner-anchor}))' | filecheck %s
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-unrelated-anchor}))' 2>&1 | filecheck %s --check-prefix=INVALID
+// CHECK-LABEL: @entrypoint(
+// CHECK-NEXT: di.debug_kill {{.*}}name = "x"
+// CHECK-NEXT: %{{.*}} = arith.bxor
+// CHECK-NEXT: builtin.ret
+// RELOCATED-LABEL: @entrypoint(
+// RELOCATED-NEXT: %{{.*}} = arith.bxor
+// RELOCATED-NEXT: di.debug_kill {{.*}}name = "x"
+// RELOCATED-NEXT: builtin.ret
+// INVALID: invalid debug-info owner-anchored capture replacement
+
+builtin.module public @owner_anchor {
+    builtin.function public extern("C") @entrypoint(%condition: i1, %value: u32) -> u32 {
+        scf.if %condition then {
+            di.debug_value %value <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield : ();
+        } else {
+            scf.yield : ();
+        } : (i1) -> ();
+        %marker = arith.bxor %value, %value;
+        builtin.ret %value : (u32);
+    };
+};

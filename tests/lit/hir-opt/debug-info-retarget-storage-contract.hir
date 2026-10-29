@@ -1,0 +1,13 @@
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=retarget-local-store-salvage}))' 2>&1 | filecheck %s
+// CHECK: unhandled debug-info storage insertion
+// CHECK: hir.store_local
+
+builtin.module public @retarget_storage {
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 2 }>, expression = #di.expression<[DI_OP_local_slot(1)]> }>;
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        builtin.ret %1 : (u32);
+    };
+};

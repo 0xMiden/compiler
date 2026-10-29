@@ -10,7 +10,7 @@
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=raw-insert}))' 2>&1 | filecheck %s --check-prefix=INSERT
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=equivalent-value}))' | filecheck %s --check-prefix=EQUIVALENT
 // RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-producer}))' | filecheck %s --check-prefix=INVALIDATE
-// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=move-record-checked}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=move-record-checked}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-wrong-point}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-record}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=retroactive-equivalent}))' 2>&1 | filecheck %s --check-prefix=UNHANDLED

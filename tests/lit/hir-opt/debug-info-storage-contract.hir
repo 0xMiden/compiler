@@ -1,3 +1,8 @@
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=insert-local-store-preserve}))' 2>&1 | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=insert-local-store-salvage}))' | filecheck %s --check-prefix=SALVAGE
+// SALVAGE: hir.store_local
+// SALVAGE: hir.store_local
+// SALVAGE: di.debug_declare
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=erase-local-store}))' 2>&1 | filecheck %s
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=rewrite-local-store}))' 2>&1 | filecheck %s
 // RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=insert-local-store}))' 2>&1 | filecheck %s

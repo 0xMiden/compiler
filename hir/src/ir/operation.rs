@@ -228,6 +228,7 @@ impl EntityListItem for Operation {
 
     fn on_transfer(this: OperationRef, _from: &mut EntityList<Self>, to: &mut EntityList<Self>) {
         this.context_ref().debug_info_mutations.borrow_mut().removed(this);
+        this.context_ref().debug_info_mutations.borrow_mut().inserted(this);
         // Invalidate the ordering of the new parent block
         let mut to = to.parent();
         to.borrow_mut().invalidate_op_order();

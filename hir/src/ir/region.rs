@@ -63,12 +63,18 @@ impl EntityWithParent for Region {
 }
 
 impl EntityListItem for Region {
+    fn on_inserted(this: RegionRef, _list: &mut RegionCursorMut<'_>) {
+        this.context_ref().debug_info_mutations.borrow_mut().inserted_region(this);
+    }
+
     fn on_removed(this: RegionRef, _list: &mut RegionCursorMut<'_>) {
         this.context_ref().debug_info_mutations.borrow_mut().removed_region(this);
     }
 
     fn on_transfer(this: RegionRef, _from: &mut RegionList, _to: &mut RegionList) {
-        this.context_ref().debug_info_mutations.borrow_mut().removed_region(this);
+        let mut state = this.context_ref().debug_info_mutations.borrow_mut();
+        state.removed_region(this);
+        state.inserted_region(this);
     }
 }
 
