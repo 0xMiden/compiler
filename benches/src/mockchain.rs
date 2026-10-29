@@ -51,6 +51,8 @@ const DEX_NOTE: &str = "dex-note";
 const P2ID_NOTE: &str = "p2id-note";
 const P2ID_TX_SCRIPT: &str = "p2id-tx-script";
 const P2IDE_NOTE: &str = "p2ide-note";
+const STD_WALLET_P2ID_NOTE: &str = "std-wallet-p2id-note";
+const STD_WALLET_TX_SCRIPT: &str = "std-wallet-tx-script";
 const COUNTER_STORAGE_KEY: Word = Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
 
 type ScenarioPackages = BTreeMap<&'static str, Arc<Package>>;
@@ -125,6 +127,18 @@ const TRANSACTION_SCENARIOS: &[TransactionScenario] = &[
         examples: &[DEX_NOTE],
         packages: &[BASIC_WALLET, DEX_NOTE],
         build: build_dex_consumption,
+    },
+    TransactionScenario {
+        name: STD_WALLET_P2ID_NOTE,
+        examples: &[STD_WALLET_P2ID_NOTE],
+        packages: &[STD_WALLET_P2ID_NOTE],
+        build: build_std_wallet_p2id_consumption,
+    },
+    TransactionScenario {
+        name: STD_WALLET_TX_SCRIPT,
+        examples: &[STD_WALLET_TX_SCRIPT],
+        packages: &[STD_WALLET_P2ID_NOTE, STD_WALLET_TX_SCRIPT],
+        build: build_std_wallet_script_transaction,
     },
 ];
 
@@ -369,20 +383,36 @@ fn build_counter_transaction(packages: &ScenarioPackages) -> Result<MockTransact
         .build()
 }
 
+/// Builds the Rust basic wallet component from its compiled example package.
+fn rust_wallet(packages: &ScenarioPackages) -> Result<AccountComponent> {
+    Ok(AccountComponent::from_package(
+        (**required_package(packages, BASIC_WALLET)?).clone(),
+        &InitStorageData::default(),
+    )?)
+}
+
+/// Encodes the storage of a P2ID note targeted at `account_id`.
+fn p2id_note_storage(account_id: AccountId) -> Vec<Felt> {
+    vec![account_id.suffix(), account_id.prefix().as_felt()]
+}
+
 fn build_p2id_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    build_note_consumption(packages, P2ID_NOTE, |account_id| {
-        vec![account_id.suffix(), account_id.prefix().as_felt()]
-    })
+    build_note_consumption(packages, rust_wallet(packages)?, P2ID_NOTE, p2id_note_storage)
+}
+
+/// Consumes the Rust P2ID note into an account with the standard (MASM) basic wallet.
+fn build_std_wallet_p2id_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
+    build_note_consumption(packages, BasicWallet.into(), STD_WALLET_P2ID_NOTE, p2id_note_storage)
 }
 
 fn build_p2ide_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    build_note_consumption(packages, P2IDE_NOTE, |account_id| {
+    build_note_consumption(packages, rust_wallet(packages)?, P2IDE_NOTE, |account_id| {
         vec![account_id.suffix(), account_id.prefix().as_felt(), Felt::ZERO, Felt::ZERO]
     })
 }
 
 fn build_dex_consumption(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    build_note_consumption(packages, DEX_NOTE, |account_id| {
+    build_note_consumption(packages, rust_wallet(packages)?, DEX_NOTE, |account_id| {
         let mut storage = vec![account_id.suffix(), account_id.prefix().as_felt()];
         let price = DexLimitPrice {
             numerator: 3,
@@ -393,15 +423,13 @@ fn build_dex_consumption(packages: &ScenarioPackages) -> Result<MockTransaction>
     })
 }
 
+/// Builds a transaction consuming a funded `note_name` note into an account with `wallet`.
 fn build_note_consumption(
     packages: &ScenarioPackages,
+    wallet: AccountComponent,
     note_name: &'static str,
     storage: impl FnOnce(AccountId) -> Vec<Felt>,
 ) -> Result<MockTransaction> {
-    let wallet_component = AccountComponent::from_package(
-        (**required_package(packages, BASIC_WALLET)?).clone(),
-        &InitStorageData::default(),
-    )?;
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
@@ -417,7 +445,7 @@ fn build_note_consumption(
         },
         AccountBuilder::new([3_u8; 32])
             .account_type(AccountType::Public)
-            .with_component(wallet_component),
+            .with_component(wallet),
         AccountState::Exists,
     )?;
     let asset: Asset = FungibleAsset::new(faucet.id(), 100)?.into();
@@ -442,7 +470,24 @@ fn build_note_consumption(
 }
 
 fn build_basic_wallet_script_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    let mut context = build_wallet_transfer_context(packages)?;
+    let context = build_wallet_transfer_context(packages, rust_wallet(packages)?, P2ID_NOTE)?;
+    build_wallet_script_transaction(packages, context, BASIC_WALLET_TX_SCRIPT)
+}
+
+/// Sends a P2ID note through the Rust tx script driving the standard (MASM) basic wallet.
+fn build_std_wallet_script_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
+    let context =
+        build_wallet_transfer_context(packages, BasicWallet.into(), STD_WALLET_P2ID_NOTE)?;
+    build_wallet_script_transaction(packages, context, STD_WALLET_TX_SCRIPT)
+}
+
+/// Builds a transaction running the `script_name` wallet tx script, which moves the context's
+/// asset into a P2ID note for the recipient.
+fn build_wallet_script_transaction(
+    packages: &ScenarioPackages,
+    mut context: WalletTransferContext,
+    script_name: &str,
+) -> Result<MockTransaction> {
     let serial_number = context.random_coin.draw_word();
     let output_note = build_p2id_note(&context, serial_number)?;
     let asset_elements = context.asset.as_elements();
@@ -453,8 +498,7 @@ fn build_basic_wallet_script_transaction(packages: &ScenarioPackages) -> Result<
         asset_key: to_field_word(asset_elements[..4].try_into()?),
         asset_value: to_field_word(asset_elements[4..].try_into()?),
     };
-    let script =
-        TransactionScript::from_package(required_package(packages, BASIC_WALLET_TX_SCRIPT)?)?;
+    let script = TransactionScript::from_package(required_package(packages, script_name)?)?;
     let builder = context
         .chain
         .build_transaction(context.sender_id)
@@ -466,7 +510,7 @@ fn build_basic_wallet_script_transaction(packages: &ScenarioPackages) -> Result<
 }
 
 fn build_p2id_script_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
-    let mut context = build_wallet_transfer_context(packages)?;
+    let mut context = build_wallet_transfer_context(packages, rust_wallet(packages)?, P2ID_NOTE)?;
     let serial_number = context.random_coin.draw_word();
     let output_note = build_p2id_note(&context, serial_number)?;
     let mut args = vec![
@@ -504,11 +548,13 @@ struct WalletTransferContext {
     note: Arc<Package>,
 }
 
-fn build_wallet_transfer_context(packages: &ScenarioPackages) -> Result<WalletTransferContext> {
-    let wallet_component = AccountComponent::from_package(
-        (**required_package(packages, BASIC_WALLET)?).clone(),
-        &InitStorageData::default(),
-    )?;
+/// Builds a chain with a sender funded by a `note_name` P2ID note and a recipient, both accounts
+/// with `wallet`.
+fn build_wallet_transfer_context(
+    packages: &ScenarioPackages,
+    wallet: AccountComponent,
+    note_name: &'static str,
+) -> Result<WalletTransferContext> {
     let mut builder = MockChain::builder();
     let faucet = builder.add_existing_basic_faucet(
         Auth::BasicAuth {
@@ -525,7 +571,7 @@ fn build_wallet_transfer_context(packages: &ScenarioPackages) -> Result<WalletTr
         },
         AccountBuilder::new([4_u8; 32])
             .account_type(AccountType::Public)
-            .with_component(wallet_component.clone()),
+            .with_component(wallet.clone()),
         AccountState::Exists,
     )?;
     let recipient = builder.add_account_from_builder(
@@ -534,16 +580,16 @@ fn build_wallet_transfer_context(packages: &ScenarioPackages) -> Result<WalletTr
         },
         AccountBuilder::new([5_u8; 32])
             .account_type(AccountType::Public)
-            .with_component(wallet_component),
+            .with_component(wallet),
         AccountState::Exists,
     )?;
-    let note = Arc::clone(required_package(packages, P2ID_NOTE)?);
+    let note = Arc::clone(required_package(packages, note_name)?);
     let note_root: Word = NoteScript::from_package(&note)?.root().into();
     let mut random_coin = RandomCoin::new(note_root);
     let funding_note = NoteBuilder::new(faucet.id(), &mut random_coin)
         .package((*note).clone())
         .add_assets([asset])
-        .note_storage(vec![sender.id().suffix(), sender.id().prefix().as_felt()])?
+        .note_storage(p2id_note_storage(sender.id()))?
         .tag(NoteTag::with_account_target(sender.id()).into())
         .build()?;
     builder.add_output_note(RawOutputNote::Full(funding_note.clone()));
@@ -622,7 +668,7 @@ fn build_p2id_note(
     Ok(NoteBuilder::new(context.sender_id, RandomCoin::new(serial_number))
         .serial_number(serial_number)
         .package((*context.note).clone())
-        .note_storage(vec![context.recipient_id.suffix(), context.recipient_id.prefix().as_felt()])?
+        .note_storage(p2id_note_storage(context.recipient_id))?
         .add_assets([context.asset])
         .tag(0)
         .build()?)
