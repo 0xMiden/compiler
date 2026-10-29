@@ -312,9 +312,23 @@ fn a_region_interface_alone_does_not_authorize_final_selection() {
 }
 
 #[test]
-fn unknown_source_calling_conventions_fail_closed() {
-    let f = parse("builtin.function public extern(\"custom\") @source() { builtin.ret; };");
-    assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+fn source_convention_classification_preserves_context_boundaries() {
+    use crate::plan::CallingConvention::{Context, SameContext};
+
+    for (name, expected) in [
+        ("C", SameContext),
+        ("fast", SameContext),
+        ("wasm", SameContext),
+        ("sigma", SameContext),
+        ("custom", SameContext),
+        ("component-model", Context),
+    ] {
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"{name}\") @source() {{ builtin.ret; }};"
+        ));
+        let selected = checked(&f, &SelectEnv::default());
+        assert_eq!(selected.abi.convention(), expected, "{name}");
+    }
 }
 
 #[test]
@@ -519,9 +533,12 @@ fn nested_selection_failure_retains_the_actual_operation_span_and_inline_chain()
 }
 
 #[test]
-fn unsupported_function_convention_retains_function_source_span() {
+fn oversized_context_signature_retains_function_source_span() {
     use midenc_hir::Spanned;
-    let f = parse("builtin.function public extern(\"custom\") @source() { builtin.ret; };");
+    let params = (0..17).map(|i| alloc::format!("%p{i}: felt")).collect::<Vec<_>>().join(", ");
+    let f = parse(&alloc::format!(
+        "builtin.function public extern(\"component-model\") @source({params}) {{ builtin.ret; }};"
+    ));
     let span = f.borrow().span();
     assert!(!span.source_id().is_unknown());
     let report = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();

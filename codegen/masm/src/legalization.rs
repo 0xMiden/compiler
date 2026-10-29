@@ -21,7 +21,7 @@ use midenc_hir::{
 };
 use midenc_session::diagnostics::{Severity, Spanned};
 
-use crate::{HirSelection, opt::operands::MASM_STACK_WINDOW_FELTS};
+use crate::{HirSelection, opt::operands::MASM_STACK_WINDOW_FELTS, plan::CallingConvention};
 
 /// Legality of an indirect call's signature, shared by `hir.exec_indirect` and `hir.dyncall`.
 ///
@@ -591,7 +591,9 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             let exec = op
                 .downcast_ref::<hir::ExecIndirect>()
                 .expect("this legality rule is registered for hir.exec_indirect");
-            if !matches!(exec.get_signature().cc, CallConv::C | CallConv::Fast | CallConv::Wasm) {
+            if CallingConvention::from_source(&exec.get_signature().cc)
+                != CallingConvention::SameContext
+            {
                 return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
                     "operation '{}' requires a same-context calling convention",
                     op.name()
@@ -1730,6 +1732,19 @@ mod tests {
     fn full_width_exec_indirect_arguments_pass_legalization() {
         let mut test = Test::named("full_width_exec_indirect").in_module("m");
         let signature = Signature::new(&test.context_rc(), vec![Type::U32; 16], []);
+        test_with_exec_indirect(&mut test, signature);
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
+    }
+
+    #[test]
+    fn source_convention_exec_indirect_passes_legalization() {
+        let mut test = Test::named("source_convention_exec_indirect").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::Extern("sigma".into()),
+            vec![Type::U32; 16],
+            [],
+        );
         test_with_exec_indirect(&mut test, signature);
         test.apply_pass::<LegalizeForMasm>(true).unwrap();
     }

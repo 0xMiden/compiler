@@ -25,6 +25,7 @@ use crate::{
     linker::{LinkInfo, Linker},
     lower::lowering::{qualified_invocation_target, symbol_module_path, world_root_module},
     masm,
+    plan::CallingConvention,
 };
 
 /// Namespace selection made before executable source is selected.
@@ -1036,10 +1037,8 @@ fn resolve_entrypoint_arity(
     })?;
     let function = function.borrow();
     let signature = function.signature();
-    if !matches!(
-        signature.cc,
-        midenc_hir::CallConv::C | midenc_hir::CallConv::Fast | midenc_hir::CallConv::Wasm
-    ) || crate::lower::units::calls::is_kernel(&*function)
+    if CallingConvention::from_source(&signature.cc) != CallingConvention::SameContext
+        || crate::lower::units::calls::is_kernel(&*function)
     {
         return Err(Report::msg(
             "executable entrypoint requires a same-context calling convention",

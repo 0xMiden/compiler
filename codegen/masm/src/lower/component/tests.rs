@@ -3349,3 +3349,58 @@ builtin.component private @"hir_ns:test@1.0.0" {{
         assemble_library(&context, &lowered, "hir_ns:test@1.0.0");
     }
 }
+
+#[test]
+fn source_convention_executable_entrypoint_lowers() {
+    let context = context_with_entrypoint_and_test_harness("hir_ns::test::entry");
+    let text = COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START
+        .replace("extern(\"component-model\")", "extern(\"sigma\")");
+    let op = parse(&context, &text);
+    let component = op.try_downcast_op::<builtin::Component>().unwrap();
+    component
+        .borrow()
+        .to_masm_component(AnalysisManager::new(op, None), super::EmissionNamespace::Source)
+        .expect("a frontend-defined same-context entrypoint must lower");
+}
+
+#[test]
+fn source_convention_survives_masm_and_manifest() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(
+        &context,
+        r#"
+        builtin.world {
+            builtin.component private @hir_ns::@test {
+                builtin.function public extern("sigma") @entry(%x: felt) -> felt {
+                    builtin.ret %x : (felt);
+                };
+            };
+        };
+    "#,
+    );
+    let lowered = lower_world(world).expect("a frontend-defined convention must lower");
+    let text = lowered
+        .modules
+        .iter()
+        .map(|module| module.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("@callconv(\"sigma\")"), "{text}");
+    let package = assemble_library(&context, &lowered, "hir_ns::test");
+    let export = package
+        .manifest
+        .exports()
+        .find_map(|export| match export {
+            miden_mast_package::PackageExport::Procedure(procedure)
+                if procedure.path.as_ref().as_str().ends_with("entry") =>
+            {
+                Some(procedure)
+            }
+            _ => None,
+        })
+        .expect("entry export");
+    assert_eq!(
+        export.signature.as_ref().unwrap().calling_convention(),
+        CallConv::Extern("sigma".into())
+    );
+}

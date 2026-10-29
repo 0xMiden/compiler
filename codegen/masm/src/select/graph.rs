@@ -189,7 +189,7 @@ impl<'a, 'e> Selector<'a, 'e> {
         let convention = if crate::lower::units::calls::is_kernel(function) {
             CallingConvention::Kernel
         } else {
-            calling_convention(&signature.cc)?
+            CallingConvention::from_source(&signature.cc)
         };
         let abi = ProcedureAbi::new(
             convention,
@@ -1621,7 +1621,7 @@ impl<'a, 'e> Selector<'a, 'e> {
         let convention = if calls::is_kernel(&*symbol) {
             CallingConvention::Kernel
         } else {
-            calling_convention(&signature.cc)?
+            CallingConvention::from_source(&signature.cc)
         };
         let abi = ProcedureAbi::new(
             convention,
@@ -1850,7 +1850,9 @@ impl<'a, 'e> Selector<'a, 'e> {
             )?;
         } else {
             let call = op.downcast_ref::<midenc_dialect_hir::ExecIndirect>().unwrap();
-            if calling_convention(&call.get_signature().cc)? != CallingConvention::SameContext {
+            if CallingConvention::from_source(&call.get_signature().cc)
+                != CallingConvention::SameContext
+            {
                 return Err(super::invalid(
                     "indirect exec target must use same-context convention",
                 ));
@@ -1889,7 +1891,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                 let convention = if crate::lower::units::calls::is_kernel(&*symbol) {
                     CallingConvention::Kernel
                 } else {
-                    calling_convention(&callee.signature().cc)?
+                    CallingConvention::from_source(&callee.signature().cc)
                 };
                 ProcedureAbi::new(convention, 0, 0)?.invocation(Invocation::DynExec)?;
             }
@@ -2156,12 +2158,4 @@ fn literal(value: Immediate) -> Result<Vec<miden_core::Felt>, Report> {
     Ok((0..count)
         .map(|lane| Felt::new_unchecked(((bits >> (lane * 32)) & u32::MAX as u128) as u64))
         .collect())
-}
-
-fn calling_convention(convention: &CallConv) -> Result<CallingConvention, Report> {
-    match convention {
-        CallConv::C | CallConv::Fast | CallConv::Wasm => Ok(CallingConvention::SameContext),
-        CallConv::ComponentModel => Ok(CallingConvention::Context),
-        CallConv::Extern(_) => Err(super::invalid("unregistered source calling convention")),
-    }
 }

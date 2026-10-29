@@ -593,3 +593,18 @@ fn source_dyncall_preserves_debugger_frames_with_full_argument_window() {
     )
     .unwrap();
 }
+
+#[test]
+fn source_convention_table_call_and_procedure_verify() {
+    let text = include_str!("fixtures/indirect-table.hir").replace("\"C\"", "\"sigma\"");
+    let f = parse_module_function(&text);
+    let info = linked(&f);
+    let env = SelectEnv {
+        link_info: Some(&info),
+        ..Default::default()
+    };
+    let selected = checked(&f, &env);
+    assert_eq!(selected.abi.convention(), crate::plan::CallingConvention::SameContext);
+    let (plan, frame, body) = ready(&f, &env);
+    verify::verify(&plan, &frame, body).unwrap();
+}

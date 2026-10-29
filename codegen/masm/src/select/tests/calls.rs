@@ -71,6 +71,20 @@ fn direct_exec_preserves_unknown_addressable_and_overflow_suffix() {
 }
 
 #[test]
+fn source_convention_direct_exec_preserves_suffix() {
+    for convention in ["sigma", "another-frontend"] {
+        let f = direct("exec", convention);
+        let procedure = selected_procedure(&f, &SelectEnv::default())
+            .replace("::direct_test::callee", "callee");
+        execute_code(&alloc::format!(
+            "proc callee nop end {procedure} begin push.902 push.901 push.42 exec.selected \
+             push.42 assert_eq push.901 assert_eq push.902 assert_eq end"
+        ))
+        .unwrap();
+    }
+}
+
+#[test]
 fn direct_context_call_uses_resolved_abi() {
     let f = direct("call", "component-model");
     let selected = checked(&f, &SelectEnv::default());
@@ -81,7 +95,13 @@ fn direct_context_call_uses_resolved_abi() {
 
 #[test]
 fn direct_invocation_family_mismatches_are_rejected() {
-    for (operation, convention) in [("exec", "component-model"), ("call", "C"), ("syscall", "C")] {
+    for (operation, convention) in [
+        ("exec", "component-model"),
+        ("call", "C"),
+        ("syscall", "C"),
+        ("call", "sigma"),
+        ("syscall", "sigma"),
+    ] {
         let f = direct(operation, convention);
         let err = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();
         assert!(alloc::format!("{err:?}").contains("invocation family"), "{err:?}");
