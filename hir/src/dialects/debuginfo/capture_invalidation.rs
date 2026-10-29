@@ -253,22 +253,20 @@ pub(crate) fn generation(context: &Context) -> u64 {
     context.capture_invalidation.borrow().next_id
 }
 
-pub(crate) fn audit_boundary(
-    context: &Context,
-    root: OperationRef,
-    since: u64,
-) -> Result<(), Report> {
-    check(context)?;
-    if context
-        .capture_invalidation
-        .borrow()
-        .frames
-        .iter()
-        .any(|frame| frame.id > since && under(frame.root, root))
-    {
-        return Err(Report::msg("capture invalidation phase outlived its audit"));
+/// Every phase opened during an audit must complete before that audit exits. The generation
+/// cutoff preserves caller-owned phases without relying on roots that rewrites can move or erase.
+/// Retire leaked state even after another failure; retained handles may only observe the poison.
+pub(crate) fn audit_boundary(context: &Context, since: u64) -> Result<(), Report> {
+    let mut state = context.capture_invalidation.borrow_mut();
+    if state.frames.iter().any(|frame| frame.id > since) {
+        state.frames.retain(|frame| frame.id <= since);
+        state.pending.retain(|_, request| request.phase <= since);
+        state
+            .failure
+            .get_or_insert("capture invalidation phase outlived its audit".into());
     }
-    Ok(())
+    drop(state);
+    check(context)
 }
 pub(super) fn under(mut op: OperationRef, root: OperationRef) -> bool {
     loop {
@@ -515,7 +513,8 @@ impl FlowGraph {
         let end = self.node();
         if let Some(branch) = operation.as_trait::<dyn RegionBranchOpInterface>() {
             let entries = regions.iter().map(|&r| (r, self.node())).collect::<FxHashMap<_, _>>();
-            for successor in branch.get_successor_regions(RegionBranchPoint::Parent) {
+            let unknown = alloc::vec![None; operation.num_operands()];
+            for successor in branch.get_entry_successor_regions(&unknown) {
                 self.edge(
                     start,
                     successor.successor().and_then(|r| entries.get(&r).copied()).unwrap_or(end),

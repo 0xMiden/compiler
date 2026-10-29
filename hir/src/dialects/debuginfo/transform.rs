@@ -437,6 +437,7 @@ pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
         return Ok(());
     }
     let context = owner.borrow().context_rc();
+    super::capture_invalidation::check(&context)?;
     let phase = if super::capture_invalidation::active(&context) {
         None
     } else {

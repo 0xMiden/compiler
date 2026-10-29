@@ -1434,11 +1434,9 @@ impl DebugInfoAudit {
         let mut state = self.context.debug_info_mutations.borrow_mut();
         let index = state.audits.iter().position(|audit| audit.id == self.id).unwrap();
         let mut audit = state.audits.remove(index);
-        if let Err(error) = super::capture_invalidation::audit_boundary(
-            &self.context,
-            audit.root,
-            self.phase_generation,
-        ) {
+        if let Err(error) =
+            super::capture_invalidation::audit_boundary(&self.context, self.phase_generation)
+        {
             audit.errors.push(format!("{error}"));
         }
         for permission in &mut state.permissions {
@@ -1508,16 +1506,31 @@ impl DebugInfoAudit {
             Err(Report::msg(audit.errors.join("\n")))
         }
     }
+
+    /// A failed pass skips capture validation, but still must close every phase it opened.
+    pub(crate) fn abort(mut self) -> Result<(), Report> {
+        self.close()
+    }
+
+    fn close(&mut self) -> Result<(), Report> {
+        if !self.active {
+            return Ok(());
+        }
+        self.active = false;
+        let mut state = self.context.debug_info_mutations.borrow_mut();
+        state.audits.retain(|audit| audit.id != self.id);
+        for permission in &mut state.permissions {
+            permission.audits.remove(&self.id);
+        }
+        drop(state);
+        super::capture_invalidation::audit_boundary(&self.context, self.phase_generation)
+    }
 }
 
 impl Drop for DebugInfoAudit {
     fn drop(&mut self) {
-        if self.active {
-            let mut state = self.context.debug_info_mutations.borrow_mut();
-            state.audits.retain(|audit| audit.id != self.id);
-            for permission in &mut state.permissions {
-                permission.audits.remove(&self.id);
-            }
-        }
+        // Unwinding/abandonment backstop only: lifecycle validation poisons and releases state;
+        // fallible IR materialization belongs to the explicit phase/pass completion paths.
+        let _ = self.close();
     }
 }

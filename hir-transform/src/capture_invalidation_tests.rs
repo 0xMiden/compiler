@@ -133,3 +133,80 @@ fn structured_join_unions_captures_from_both_predecessors() -> Result<(), Report
     assert_eq!(lines(root), [1, 2, 3]);
     Ok(())
 }
+
+#[test]
+fn structured_optional_else_preserves_both_first_clear_frontiers() -> Result<(), Report> {
+    use midenc_hir::{
+        EntityMut, Op, OperationName,
+        dialects::builtin::Function,
+        pass::{Pass, PassExecutionState},
+    };
+
+    struct ClearCaptures([OperationRef; 2]);
+    impl ClearCaptures {
+        fn run(&self, root: OperationRef) -> Result<(), Report> {
+            let phase = CaptureInvalidationPhase::begin(root, Some(Rc::new(NoopRewriterListener)))?;
+            let mut rewriter: RewriterImpl = RewriterImpl::new(root.borrow().context_rc());
+            for capture in self.0 {
+                invalidate_debug_captures(capture, &mut rewriter)?;
+            }
+            phase.finish()?;
+            Ok(())
+        }
+    }
+    impl Pass for ClearCaptures {
+        type Target = Function;
+
+        fn name(&self) -> &'static str {
+            "clear-optional-else-captures"
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Function>,
+            _: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let root = op.as_operation_ref();
+            drop(op);
+            self.run(root)
+        }
+    }
+
+    for audited in [false, true] {
+        let mut test = Test::new("optional_else_captures", &[Type::I1, Type::U32], &[Type::U32]);
+        let (owner, then_block, removed);
+        {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let condition = entry.borrow().arguments()[0] as ValueRef;
+            let value = entry.borrow().arguments()[1] as ValueRef;
+            record(BuiltinOpBuilder::builder_mut(&mut builder), value, 1)?;
+            owner = builder.r#if(condition, &[], SourceSpan::UNKNOWN)?;
+            let then_region = owner.borrow().then_body().as_region_ref();
+            then_block = builder.create_block_in_region(then_region);
+            builder.switch_to_block(then_block);
+            let inside = record(BuiltinOpBuilder::builder_mut(&mut builder), value, 2)?;
+            builder.r#yield([], SourceSpan::UNKNOWN)?;
+            builder.switch_to_block(entry);
+            let after = record(BuiltinOpBuilder::builder_mut(&mut builder), value, 3)?;
+            builder.ret([value], SourceSpan::UNKNOWN)?;
+            removed = [inside, after];
+        }
+        let root = test.function().as_operation_ref();
+        let pass = ClearCaptures(removed);
+        if audited {
+            test.apply_boxed_pass(alloc::boxed::Box::new(pass), true)?;
+        } else {
+            pass.run(root)?;
+        }
+        assert!(owner.borrow().else_body().is_empty());
+        assert_eq!(lines(owner.as_operation_ref()), [1, 2], "then frontier, audited={audited}");
+        assert_eq!(lines(root), [1, 2, 1, 3], "bypass frontier, audited={audited}");
+        assert_eq!(then_block.borrow().body().len(), 3);
+    }
+    Ok(())
+}

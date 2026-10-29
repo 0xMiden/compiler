@@ -1011,12 +1011,17 @@ impl OpToOpPassAdaptor {
             (Err(error), _) | (_, Err(error)) => Err(error),
         };
         if let Some(audit) = debug_audit {
-            if result.is_ok() {
-                if let Err(error) = audit.finish() {
-                    result = Err(Report::msg(format!("pass '{}': {error}", pass.name())));
-                }
+            let completion = if result.is_ok() {
+                audit.finish()
             } else {
-                drop(audit);
+                audit.abort()
+            };
+            if let Err(error) = completion {
+                let error = Report::msg(format!("pass '{}': {error}", pass.name()));
+                result = match result {
+                    Ok(()) => Err(error),
+                    Err(body) => Err(Report::msg(format!("{body}; {error}"))),
+                };
             }
         }
 

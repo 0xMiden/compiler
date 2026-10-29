@@ -854,3 +854,112 @@ fn removing_old_owner_does_not_discard_a_pending_anchor_that_escaped() -> Result
     }
     Ok(())
 }
+
+fn check_retained_phase_after_root_erasure(
+    body_error: bool,
+    outer_phase: bool,
+) -> Result<(), Report> {
+    use core::cell::RefCell;
+
+    use crate::{
+        BuilderExt, EntityMut, OperationName,
+        dialects::builtin::Function,
+        pass::{Pass, PassExecutionState},
+    };
+
+    struct RetainPhase {
+        owner: OperationRef,
+        retained: Rc<RefCell<Option<CaptureInvalidationPhase>>>,
+        body_error: bool,
+    }
+    impl Pass for RetainPhase {
+        type Target = Function;
+
+        fn name(&self) -> &'static str {
+            "retained-capture-phase"
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Function>,
+            _: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let context = op.as_operation().context_rc();
+            drop(op);
+            *self.retained.borrow_mut() = Some(phase(self.owner)?);
+            let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+            invalidate_debug_captures(self.owner, &mut rewriter)?;
+            rewriter.erase_op_with_debug(self.owner, DebugInfoUpdate::Invalidate);
+            if self.body_error {
+                Err(Report::msg("deliberate retained-phase pass failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    let (test, records, value) = capture_fixture(&[1, 3])?;
+    let root = test.function().as_operation_ref();
+    let mut builder = test.context_rc().builder();
+    builder.set_insertion_point_before(records[1]);
+    let owner = builder.create::<OpaqueCaptureOwner, ()>(SourceSpan::UNKNOWN)()?.as_operation_ref();
+    let region = owner.borrow().regions().front().as_pointer().unwrap();
+    builder.create_block(region, None, &[]);
+    builder.debug_value(
+        value,
+        Variable::new("x".into(), "test.rs".into(), 2, None),
+        SourceSpan::UNKNOWN,
+    )?;
+    let outer = outer_phase.then(|| phase(root)).transpose()?;
+    let retained = Rc::new(RefCell::new(None));
+    let result = test.apply_boxed_pass(
+        Box::new(RetainPhase {
+            owner,
+            retained: retained.clone(),
+            body_error,
+        }),
+        false,
+    );
+
+    // The post-body barrier successfully materialized the valid exact replacement, while the
+    // phase handle is still alive and its original root is detached.
+    assert!(retained.borrow().is_some());
+    assert!(owner.parent_op().is_none());
+    assert_eq!(kill_lines(root), [1, 2]);
+    let error = result.expect_err("audit accepted an unfinished phase after its root was erased");
+    let message = alloc::format!("{error}");
+    assert!(message.contains("capture invalidation phase outlived its audit"), "{message}");
+    if body_error {
+        assert!(message.contains("deliberate retained-phase pass failure"), "{message}");
+    }
+    assert_eq!(super::super::capture_invalidation::active(test.context()), outer_phase);
+    let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+    assert!(invalidate_debug_captures(records[1], &mut rewriter).is_err());
+    assert_eq!(kill_lines(root), [1, 2], "expired phase accepted a later helper request");
+    assert!(records[1].parent_op().is_some());
+    assert!(retained.borrow_mut().take().unwrap().finish().is_err());
+    if let Some(outer) = outer {
+        assert!(outer.finish().is_err());
+    }
+    Ok(())
+}
+
+#[test]
+fn audit_rejects_retained_phase_after_root_erasure() -> Result<(), Report> {
+    for outer_phase in [false, true] {
+        check_retained_phase_after_root_erasure(false, outer_phase)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn failed_pass_retires_retained_phase_after_root_erasure() -> Result<(), Report> {
+    for outer_phase in [false, true] {
+        check_retained_phase_after_root_erasure(true, outer_phase)?;
+    }
+    Ok(())
+}
