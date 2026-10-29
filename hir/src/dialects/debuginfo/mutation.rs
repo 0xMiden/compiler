@@ -14,6 +14,10 @@ use crate::{
     equivalence::{DefaultValueHasher, OperationEquivalenceFlags},
 };
 
+mod observed;
+
+use self::observed::ObservedCaptures;
+
 #[cfg(test)]
 mod tests;
 
@@ -122,30 +126,18 @@ pub fn is_debug_record(op: OperationRef) -> bool {
 }
 
 fn is_in_owner(record: OperationRef, owner: CaptureOwner) -> bool {
-    let mut current = Some(record);
-    while let Some(op) = current {
-        if owner == CaptureOwner::Operation(op) {
+    let mut current = Some(CaptureOwner::Operation(record));
+    while let Some(ancestor) = current {
+        if ancestor == owner {
             return true;
         }
-        let Some(block) = op.parent() else {
-            return false;
-        };
-        if owner == CaptureOwner::Block(block) {
-            return true;
-        }
-        let Some(region) = block.parent() else {
-            return false;
-        };
-        if owner == CaptureOwner::Region(region) {
-            return true;
-        }
-        current = region.parent();
+        current = ancestor.parent();
     }
     false
 }
 
 fn records_under(root: OperationRef) -> FxHashMap<OperationRef, Record> {
-    if root.context_ref().debug_info_mutations.borrow().observed.is_empty()
+    if !root.context_ref().debug_info_mutations.borrow().has_observed_records()
         && !is_debug_record(root)
     {
         return FxHashMap::default();
@@ -170,6 +162,8 @@ type LocalSources = FxHashMap<LocalKey, SmallVec<[(OperationRef, u64); 2]>>;
 type LocalRecords = FxHashMap<LocalKey, FxHashSet<OperationRef>>;
 
 fn local_writes(op: OperationRef) -> SmallVec<[(u32, u64); 1]> {
+    #[cfg(test)]
+    tests::LOCAL_WRITE_INSPECTIONS.with(|count| count.set(count.get() + 1));
     let operation = op.borrow();
     if operation.has_regions() {
         return SmallVec::new();
@@ -193,6 +187,8 @@ fn local_writes(op: OperationRef) -> SmallVec<[(u32, u64); 1]> {
 fn index_local_sources(root: OperationRef) -> LocalSources {
     let mut sources = LocalSources::default();
     root.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+        #[cfg(test)]
+        tests::LOCAL_SOURCE_VISITS.with(|count| count.set(count.get() + 1));
         let Some(function) = enclosing_function(op) else {
             return;
         };
@@ -245,13 +241,7 @@ fn authored_local_sources(
         function.raw_prewalk_all::<Forward, _>(&mut visit);
     } else {
         let mut owner = CaptureOwner::Operation(op);
-        loop {
-            let parent = match owner {
-                CaptureOwner::Operation(op) => op.parent().map(CaptureOwner::Block),
-                CaptureOwner::Block(block) => block.parent().map(CaptureOwner::Region),
-                CaptureOwner::Region(region) => region.parent().map(CaptureOwner::Operation),
-            };
-            let Some(parent) = parent else { break };
+        while let Some(parent) = owner.parent() {
             owner = parent;
         }
         match owner {
@@ -358,42 +348,48 @@ impl Audit {
             })
     }
 
-    fn register(&mut self, op: OperationRef, record: Record) {
-        self.pending.remove(&op);
-        self.unregister(op);
-        if let Some(value) = record.value
-            && let Some(definition) = value.borrow().get_defining_op()
-        {
-            let dependency = self.dependencies.entry(definition).or_insert_with(|| Dependency {
-                fingerprint: Some(semantic_fingerprint(&definition.borrow())),
-                records: SmallVec::new(),
-                locals: SmallVec::new(),
-            });
-            if !dependency.records.contains(&op) {
-                dependency.records.push(op);
-            }
-        }
-        if let Some(function) = record.function {
-            for index in record.local_slots() {
-                let local = (function, index);
-                if !self.local_records.contains_key(&local) {
-                    let sources = index_local_sources(self.root);
-                    for &(source, fingerprint) in sources.get(&local).into_iter().flatten() {
-                        self.dependencies
-                            .entry(source)
-                            .or_insert_with(|| Dependency {
-                                fingerprint: Some(fingerprint),
-                                records: SmallVec::new(),
-                                locals: SmallVec::new(),
-                            })
-                            .locals
-                            .push(local);
-                    }
+    /// Registrations at one completion boundary share a fresh source snapshot. Separate authoring
+    /// calls must rescan: list hooks cannot observe in-place operand or property edits.
+    fn register(&mut self, records: impl IntoIterator<Item = (OperationRef, Record)>) {
+        let mut sources = None;
+        for (op, record) in records {
+            self.pending.remove(&op);
+            self.unregister(op);
+            if let Some(value) = record.value
+                && let Some(definition) = value.borrow().get_defining_op()
+            {
+                let dependency =
+                    self.dependencies.entry(definition).or_insert_with(|| Dependency {
+                        fingerprint: Some(semantic_fingerprint(&definition.borrow())),
+                        records: SmallVec::new(),
+                        locals: SmallVec::new(),
+                    });
+                if !dependency.records.contains(&op) {
+                    dependency.records.push(op);
                 }
-                self.local_records.entry(local).or_default().insert(op);
             }
+            if let Some(function) = record.function {
+                for index in record.local_slots() {
+                    let local = (function, index);
+                    if !self.local_records.contains_key(&local) {
+                        let sources = sources.get_or_insert_with(|| index_local_sources(self.root));
+                        for &(source, fingerprint) in sources.get(&local).into_iter().flatten() {
+                            self.dependencies
+                                .entry(source)
+                                .or_insert_with(|| Dependency {
+                                    fingerprint: Some(fingerprint),
+                                    records: SmallVec::new(),
+                                    locals: SmallVec::new(),
+                                })
+                                .locals
+                                .push(local);
+                        }
+                    }
+                    self.local_records.entry(local).or_default().insert(op);
+                }
+            }
+            self.records.insert(op, record);
         }
-        self.records.insert(op, record);
     }
 
     fn unregister(&mut self, op: OperationRef) {
@@ -412,6 +408,17 @@ enum CaptureOwner {
     Operation(OperationRef),
     Block(BlockRef),
     Region(RegionRef),
+}
+
+impl CaptureOwner {
+    /// Intrusive parent links remain accessible while their entities are mutably borrowed.
+    fn parent(self) -> Option<Self> {
+        match self {
+            Self::Operation(op) => op.parent().map(Self::Block),
+            Self::Block(block) => block.parent().map(Self::Region),
+            Self::Region(region) => region.parent().map(Self::Operation),
+        }
+    }
 }
 
 struct CaptureMapping {
@@ -467,20 +474,19 @@ pub(crate) struct DebugInfoMutationState {
     audits: Vec<Audit>,
     permissions: Vec<Permission>,
     next_id: u64,
-    observed: FxHashSet<OperationRef>,
-    // Monotonic candidate index: ancestry is checked before using an entry. Retaining stale
-    // candidates avoids needing to read a container after intrusive removal clears its parent.
-    observed_by_owner: FxHashMap<CaptureOwner, FxHashSet<OperationRef>>,
+    has_observed_records: bool,
+    observed: ObservedCaptures,
 }
 
 impl DebugInfoMutationState {
     pub(super) fn has_observed_records(&self) -> bool {
-        !self.observed.is_empty()
+        self.has_observed_records
     }
 
     pub(crate) fn inserted(&mut self, op: OperationRef) {
         if is_debug_record(op) {
-            self.observed.insert(op);
+            self.has_observed_records = true;
+            self.observed.observe(op);
             self.observe_attachment(op);
         } else {
             self.attached(CaptureOwner::Operation(op));
@@ -497,24 +503,6 @@ impl DebugInfoMutationState {
     }
 
     fn observe_attachment(&mut self, record: OperationRef) {
-        let mut current = Some(record);
-        while let Some(op) = current {
-            self.observed_by_owner
-                .entry(CaptureOwner::Operation(op))
-                .or_default()
-                .insert(record);
-            let Some(block) = op.parent() else { break };
-            self.observed_by_owner
-                .entry(CaptureOwner::Block(block))
-                .or_default()
-                .insert(record);
-            let Some(region) = block.parent() else { break };
-            self.observed_by_owner
-                .entry(CaptureOwner::Region(region))
-                .or_default()
-                .insert(record);
-            current = region.parent();
-        }
         for audit in &mut self.audits {
             if is_under(record, audit.root) && !audit.records.contains_key(&record) {
                 if let Some(mut authored) = audit.authored.remove(&record) {
@@ -567,17 +555,7 @@ impl DebugInfoMutationState {
     }
 
     fn attached(&mut self, owner: CaptureOwner) {
-        let records = self
-            .observed_by_owner
-            .get(&owner)
-            .map(|records| {
-                records
-                    .iter()
-                    .copied()
-                    .filter(|&record| is_in_owner(record, owner))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let records = self.observed.reparent(owner);
         for record in records {
             self.observe_attachment(record);
         }
@@ -605,17 +583,7 @@ impl DebugInfoMutationState {
     }
 
     fn moved(&mut self, owner: CaptureOwner) {
-        let records = self
-            .observed_by_owner
-            .get(&owner)
-            .map(|records| {
-                records
-                    .iter()
-                    .copied()
-                    .filter(|&record| is_in_owner(record, owner))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let records = self.observed.reparent(owner);
         for record in records {
             self.require_intent(record, "removing or moving its owner");
             for permission in &mut self.permissions {
@@ -1214,21 +1182,21 @@ impl DebugInfoMutation {
                     .filter_map(|slot| record.function.map(|function| (function, slot)))
             })
             .collect::<FxHashSet<_>>();
+        let mut registrations = Vec::new();
         for (op, record) in updates {
             if let Some(record) = record {
-                audit.register(op, record);
+                registrations.push((op, record));
             } else {
                 audit.unregister(op);
             }
         }
-        for (_, op, record) in replacements {
-            audit.register(op, record);
-        }
+        registrations.extend(replacements.into_iter().map(|(_, op, record)| (op, record)));
         for (&original, mapping) in &permission.mappings {
             if originals.contains(&original) && is_under(mapping.target, root) {
-                audit.register(mapping.target, mapping.expected.clone());
+                registrations.push((mapping.target, mapping.expected.clone()));
             }
         }
+        audit.register(registrations);
         for &op in &self.dependencies {
             if let Some(dependency) = audit.dependencies.get_mut(&op) {
                 dependency.fingerprint =
@@ -1240,13 +1208,23 @@ impl DebugInfoMutation {
         if !affected_locals.is_empty()
             && matches!(self.update, DebugInfoUpdate::Salvage | DebugInfoUpdate::Invalidate)
         {
-            let current = index_local_sources(root);
-            for (local, sources) in current {
-                if affected_locals.contains(&local) {
-                    for (op, fingerprint) in sources {
-                        if permission.inserted.contains_key(&op) || self.descendants.contains(&op) {
-                            audit.approved_sources.insert((op, local), fingerprint);
-                        }
+            let candidates = permission
+                .inserted
+                .keys()
+                .chain(self.descendants.iter())
+                .copied()
+                .collect::<FxHashSet<_>>();
+            for op in candidates {
+                if !is_under(op, root) {
+                    continue;
+                }
+                let Some(function) = enclosing_function(op) else {
+                    continue;
+                };
+                for (slot, fingerprint) in local_writes(op) {
+                    let local = (function, slot);
+                    if affected_locals.contains(&local) {
+                        audit.approved_sources.insert((op, local), fingerprint);
                     }
                 }
             }
@@ -1273,7 +1251,7 @@ pub(crate) fn register_debug_record(op: OperationRef) {
     }
     for audit in &mut state.audits {
         if is_under(op, audit.root) {
-            audit.register(op, record.clone());
+            audit.register(core::iter::once((op, record.clone())));
         } else {
             audit.authored.insert(
                 op,
