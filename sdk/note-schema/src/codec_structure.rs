@@ -736,20 +736,21 @@ pub(crate) mod tests {
         }
         bytes.extend(types);
 
-        assert_rejects_without_aborting(
-            "codec_structure::tests::deeply_nested_component_types_are_rejected_without_aborting",
-            move || {
-                validate(&bytes).is_err_and(|error| {
-                    error.to_string().contains("component type nesting is too deep")
-                })
-            },
+        let test_name = concat!(
+            module_path!(),
+            "::deeply_nested_component_types_are_rejected_without_aborting"
         );
+        assert_rejects_without_aborting(test_name.split_once("::").unwrap().1, move || {
+            validate(&bytes).is_err_and(|error| {
+                error.to_string().contains("component type nesting is too deep")
+            })
+        });
     }
 
     /// Runs `rejects` on a 2 MiB stack in a child test process, so a stack overflow fails the
     /// test named `test_name` instead of aborting the entire suite. `rejects` returns whether
-    /// the input was rejected with the expected error. `test_name` must be the full test path
-    /// without the crate name; a name that selects no test fails.
+    /// the input was rejected; a caller that cares which error pins it there. `test_name` must
+    /// be the full test path without the crate name; a name that selects no test fails.
     pub(crate) fn assert_rejects_without_aborting(
         test_name: &str,
         rejects: impl FnOnce() -> bool + Send + 'static,
@@ -762,7 +763,7 @@ pub(crate) mod tests {
                 .unwrap()
                 .join()
                 .unwrap();
-            assert!(rejected, "the input must be rejected");
+            assert!(rejected, "the input must be rejected with the expected error");
             return;
         }
         let output = std::process::Command::new(std::env::current_exe().unwrap())
@@ -773,7 +774,8 @@ pub(crate) mod tests {
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
             output.status.success() && stdout.contains("test result: ok. 1 passed"),
-            "parsing must return an error without aborting the host:\n{stdout}\n{}",
+            "the probe must run `{test_name}` alone and reject its input without aborting the \
+             host:\n{stdout}\n{}",
             String::from_utf8_lossy(&output.stderr),
         );
     }

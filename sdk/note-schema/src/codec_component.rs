@@ -25,7 +25,7 @@ const MAX_WASM_STACK_BYTES: usize = 512 * 1024;
 /// Ceiling on the host copy budget of one call: wasmtime's own default.
 const MAX_HOSTCALL_FUEL: usize = 128 << 20;
 
-/// The message wasmtime reports when a lift reaches the host copy budget.
+/// The message wasmtime reports when a lift would exceed the host copy budget.
 ///
 /// Wasmtime keeps that error type private, so the message is the only handle on it.
 const HOST_COPY_BUDGET_EXHAUSTED: &str = "too much data is being copied between the host and the \
@@ -67,10 +67,10 @@ wasmtime::component::bindgen!({
 /// in [`validate_note_codec_component`] counts what one instantiation creates and applies the
 /// same values, so a component that loads instantiates within these counts.
 ///
-/// The result caps also size how much one call may lift from guest memory into the host, up to
-/// a ceiling of 128 MiB. A result that lifts past that, and an argument of a refused import
-/// call that lifts past it, fails as [`CodecFailure::LimitExceeded`] with a generic message
-/// instead of the message of the cap it exceeds.
+/// The result caps also size the host copy budget of one call, up to a ceiling of 128 MiB. A
+/// result that lifts past the budget, and an argument of a refused import call that lifts past
+/// it, fails as [`CodecFailure::LimitExceeded`] with a generic message rather than a cap's own
+/// message.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodecLimits {
     /// Fuel budget for one codec call, about one unit per Wasm instruction.
@@ -109,12 +109,13 @@ impl Default for CodecLimits {
 }
 
 impl CodecLimits {
-    /// The host copy budget of one call, in the units wasmtime charges a lift: guest bytes of
-    /// strings and lists, and one host element per list entry.
+    /// The host copy budget of one call, in the units wasmtime charges a lift: the guest bytes
+    /// of each string, and the host size of each list element.
     ///
-    /// The budget admits the largest result any operation may return within the caps, so it
-    /// refuses an aliasing result before the host copies it. It never exceeds wasmtime's own
-    /// default, so caps beyond that ceiling refuse results that lift past it.
+    /// The budget admits the largest result any operation may return within the caps in any
+    /// string encoding, and refuses a result past that before the host copies it. It never
+    /// exceeds wasmtime's own default, so caps beyond that ceiling refuse results that lift
+    /// past it.
     fn hostcall_fuel(&self) -> usize {
         // Wasmtime charges a lifted string by its size in guest memory, which for a codec that
         // lifts with UTF-16 is up to twice its UTF-8 length, and a lifted list one owned element
@@ -326,7 +327,8 @@ impl ComponentRuntime {
     ///
     /// The count and byte caps bound the names the registry keeps. A `list<string>` is the one
     /// result whose elements can alias one region of guest memory, so the call's host copy
-    /// budget refuses a list far larger than those caps before it reaches the host.
+    /// budget refuses a list the caps could not admit in any encoding before it reaches the
+    /// host. Which of the two refusals the host sees depends on the encoding.
     fn supported_types(&self) -> Result<Vec<String>> {
         let ComponentInstance {
             mut store,
@@ -544,7 +546,7 @@ fn reports_store_count_limit(error: &wasmtime::Error) -> bool {
         .any(|cause| cause.to_string().starts_with(STORE_COUNT_LIMIT_PREFIX))
 }
 
-/// Returns true when one wasmtime error reports that a lift reached the host copy budget.
+/// Returns true when one wasmtime error reports that a lift would exceed the host copy budget.
 fn reports_host_copy_budget(error: &wasmtime::Error) -> bool {
     error.chain().any(|cause| cause.to_string() == HOST_COPY_BUDGET_EXHAUSTED)
 }
@@ -823,7 +825,7 @@ package miden:base@1.0.0 {
     }
 
     /// Returns core module text that reports `count` string descriptors, all aliasing the
-    /// string of `length` code units at `ptr`. The bytes `abcd` live at 0, the list header at 8
+    /// string at `ptr` whose length word is `length`: code units, tagged for `latin1+utf16`. The bytes `abcd` live at 0, the list header at 8
     /// and the descriptors from 16 on, so a string other than `abcd` must start past
     /// `16 + 8 * count`.
     fn descriptors(count: usize, ptr: usize, length: usize) -> String {
@@ -889,38 +891,47 @@ package miden:base@1.0.0 {
         assert!(fqns.iter().all(|fqn| fqn.len() == limits.max_fqn_bytes));
     }
 
-    /// Accepts a discovery list at both caps in each encoding that stores a name in twice its
-    /// UTF-8 length.
+    /// Accepts a discovery list at both caps in each encoding that stores a name in up to
+    /// twice its UTF-8 length, and refuses one code unit more per name inside the call.
     #[test]
     fn discovery_accepts_utf16_names_at_both_caps() {
-        // A count cap of 1024 keeps the names apart from the descriptor table, and each name is
-        // 512 zeroed UTF-16 code units, which decode to 512 UTF-8 bytes. `latin1+utf16` tags a
-        // UTF-16 length with the top bit.
+        // At the default caps a budget that counted names at their UTF-8 length plus the other
+        // results' terms would also admit this list, so a count cap of 1024 leaves the
+        // discovery term alone to decide. Each name is zeroed UTF-16 code units, one UTF-8 byte
+        // each. `latin1+utf16` tags a UTF-16 length with the top bit; read untagged, one unit
+        // over would lift as Latin-1 within the budget and reach the byte cap instead.
         let limits = CodecLimits {
             max_supported_types: 1024,
             ..CodecLimits::default()
         };
-        let units = limits.max_fqn_bytes;
-        for (encoding, length) in [
-            ("string-encoding=utf16", units),
-            ("string-encoding=latin1+utf16", units | 1 << 31),
-        ] {
-            let component = codec_shaped_component_with(
-                &descriptors(limits.max_supported_types, 16384, length),
-                "(i32.const 8)",
-                "",
-                encoding,
-                "",
-                "(i32.const 1024)",
-            );
+        const UTF16_TAG: usize = 1 << 31;
+        for (encoding, tag) in
+            [("string-encoding=utf16", 0), ("string-encoding=latin1+utf16", UTF16_TAG)]
+        {
+            let discover = |units: usize| {
+                let component = codec_shaped_component_with(
+                    &descriptors(limits.max_supported_types, 16384, units | tag),
+                    "(i32.const 8)",
+                    "",
+                    encoding,
+                    "",
+                    "(i32.const 1024)",
+                );
+                ComponentRuntime::new(&component, limits.clone()).unwrap().supported_types()
+            };
 
-            let fqns = ComponentRuntime::new(&component, limits.clone())
-                .unwrap()
-                .supported_types()
+            let fqns = discover(limits.max_fqn_bytes)
                 .unwrap_or_else(|error| panic!("a {encoding} list at both caps failed: {error}"));
-
             assert_eq!(fqns.len(), limits.max_supported_types);
             assert!(fqns.iter().all(|fqn| fqn.len() == limits.max_fqn_bytes));
+
+            let over = discover(limits.max_fqn_bytes + 1)
+                .expect_err("a list past the host copy budget must be refused");
+            assert!(
+                over.to_string().contains("failed in `supported-types`"),
+                "{encoding}: unexpected error: {over}"
+            );
+            assert_eq!(over.codec_failure(), Some(CodecFailure::LimitExceeded));
         }
     }
 
@@ -943,8 +954,9 @@ package miden:base@1.0.0 {
         assert_eq!(error.codec_failure(), Some(CodecFailure::LimitExceeded));
     }
 
-    /// Lifts a UTF-16 `display` value at the string cap, and refuses one code unit more inside
-    /// the call, where the value string is the largest result the caps admit.
+    /// Lifts a UTF-16 `display` value at the string cap and refuses one code unit more inside
+    /// the call, where the value string is the largest result the caps admit, and refuses a
+    /// UTF-8 value one byte over the cap, which fits the budget, with the cap's own message.
     #[test]
     fn display_results_lift_utf16_up_to_the_string_cap() {
         let limits = CodecLimits {
@@ -957,13 +969,13 @@ package miden:base@1.0.0 {
         assert_eq!(limits.hostcall_fuel(), 2 * limits.max_returned_string_bytes);
         // `result<string, string>` at 512: the `ok` tag, then the pointer and the length in
         // code units of a zeroed string at 2048, which decodes to one UTF-8 byte per unit.
-        let display = |units: usize| {
+        let display = |encoding: &str, units: usize| {
             let component = codec_shaped_component_with(
                 &format!(r#"(data (i32.const 512) "\00\00\00\00{}{}")"#, le(2048), le(units)),
                 "(i32.const 8)",
                 "",
                 "",
-                "string-encoding=utf16",
+                encoding,
                 "(i32.const 512)",
             );
             ComponentCodec {
@@ -973,34 +985,53 @@ package miden:base@1.0.0 {
             .display(&[])
         };
 
-        let at_cap = display(limits.max_returned_string_bytes)
+        let cap = limits.max_returned_string_bytes;
+        let at_cap = display("string-encoding=utf16", cap)
             .expect("a UTF-16 display value at the string cap must lift");
-        assert_eq!(at_cap.len(), limits.max_returned_string_bytes);
+        assert_eq!(at_cap.len(), cap);
 
-        let over = display(limits.max_returned_string_bytes + 1)
+        let over_budget = display("string-encoding=utf16", cap + 1)
             .expect_err("a display value past the host copy budget must be refused");
         assert!(
-            over.to_string().contains("exceeded a resource limit in `display`"),
-            "unexpected error: {over}"
+            over_budget.to_string().contains("exceeded a resource limit in `display`"),
+            "unexpected error: {over_budget}"
         );
-        assert_eq!(over.codec_failure(), Some(CodecFailure::LimitExceeded));
+        assert_eq!(over_budget.codec_failure(), Some(CodecFailure::LimitExceeded));
+
+        let over_cap =
+            display("", cap + 1).expect_err("a display value over the string cap must be rejected");
+        assert!(
+            over_cap
+                .to_string()
+                .contains(&format!("display value of {} bytes; the limit is {cap}", cap + 1)),
+            "unexpected error: {over_cap}"
+        );
+        assert_eq!(over_cap.codec_failure(), Some(CodecFailure::LimitExceeded));
     }
 
-    /// Classifies wasmtime's limit errors by a whole cause, so the import name a codec chooses,
-    /// which the import stub error embeds, cannot pass as either.
+    /// Classifies wasmtime's store-count and host-copy errors as limits by matching each cause
+    /// on its own, so the import name a codec chooses, which the import stub error embeds,
+    /// cannot pass as either.
     #[test]
-    fn limit_errors_are_classified_by_a_whole_cause() {
-        assert!(reports_store_count_limit(&wasmtime::format_err!(
-            "resource limit exceeded: instance count too high at 33"
-        )));
-        assert!(reports_host_copy_budget(&wasmtime::format_err!("{HOST_COPY_BUDGET_EXHAUSTED}")));
-
+    fn limit_errors_are_classified_by_their_own_cause() {
+        let store = Store::new(
+            &Engine::default(),
+            ComponentStore {
+                limits: component_store_limits(&CodecLimits::default()),
+                limit_hit: false,
+            },
+        );
+        let store_count =
+            wasmtime::format_err!("resource limit exceeded: instance count too high at 33");
+        let host_copy = wasmtime::format_err!("{HOST_COPY_BUDGET_EXHAUSTED}");
         let spoofed = wasmtime::format_err!(
             "unknown import: `url=<resource limit exceeded: instance count too high at 9 \
              {HOST_COPY_BUDGET_EXHAUSTED}>` has not been defined"
         );
-        assert!(!reports_store_count_limit(&spoofed));
-        assert!(!reports_host_copy_budget(&spoofed));
+
+        assert_eq!(classify_failure(&store, &store_count), CodecFailure::LimitExceeded);
+        assert_eq!(classify_failure(&store, &host_copy), CodecFailure::LimitExceeded);
+        assert_eq!(classify_failure(&store, &spoofed), CodecFailure::Trapped);
     }
 
     /// Refuses a discovery list whose names alias more guest bytes than the budget inside the
@@ -1091,6 +1122,8 @@ package miden:base@1.0.0 {
         assert_eq!(error.codec_failure(), Some(CodecFailure::OutOfFuel));
     }
 
+    /// Classifies a post-return that spins, grows memory past the limit, or traps like the call
+    /// it cleans up after.
     #[test]
     fn discovery_post_return_failures_are_classified() {
         for (post_return_body, expected) in [
