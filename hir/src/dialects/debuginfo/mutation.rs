@@ -108,7 +108,7 @@ fn hash_operation(operation: &Operation, flags: OperationEquivalenceFlags) -> u6
     hasher.finish()
 }
 
-fn is_under(op: OperationRef, root: OperationRef) -> bool {
+pub(super) fn is_under(op: OperationRef, root: OperationRef) -> bool {
     let mut current = Some(op);
     while let Some(operation) = current {
         if operation == root {
@@ -977,7 +977,7 @@ impl DebugInfoMutation {
                         &self.context,
                         "invalid pending owner-anchored replacement",
                     );
-                    return Err(Report::msg("invalid pending owner-anchored replacement"));
+                    return super::capture_invalidation::check(&self.context);
                 }
                 super::capture_invalidation::transfer(original, replacement)?;
             }
@@ -1434,11 +1434,8 @@ impl DebugInfoAudit {
         let mut state = self.context.debug_info_mutations.borrow_mut();
         let index = state.audits.iter().position(|audit| audit.id == self.id).unwrap();
         let mut audit = state.audits.remove(index);
-        if let Err(error) =
-            super::capture_invalidation::audit_boundary(&self.context, self.phase_generation)
-        {
-            audit.errors.push(format!("{error}"));
-        }
+        let lifecycle =
+            super::capture_invalidation::audit_boundary(&self.context, self.phase_generation);
         for permission in &mut state.permissions {
             if permission.audits.remove(&self.id) {
                 audit.errors.push("debug-info rewrite guard outlived its audit".into());
@@ -1501,9 +1498,15 @@ impl DebugInfoAudit {
         audit.errors.sort();
         audit.errors.dedup();
         if audit.errors.is_empty() {
-            Ok(())
+            lifecycle
         } else {
-            Err(Report::msg(audit.errors.join("\n")))
+            let error = Report::msg(audit.errors.join("\n"));
+            Err(match lifecycle {
+                Ok(()) => error,
+                Err(lifecycle) => {
+                    super::capture_invalidation::combine_capture_errors(error, lifecycle)
+                }
+            })
         }
     }
 

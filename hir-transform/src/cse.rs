@@ -10,8 +10,8 @@ use midenc_hir::{
         bindings::VisibilitySlot,
         is_debug_record,
         transform::{
-            CaptureInvalidationPhase, collect_debug_ops, invalidate_debug_captures,
-            is_pending_capture,
+            CaptureInvalidationPhase, collect_debug_ops, combine_capture_errors,
+            invalidate_debug_captures, is_pending_capture,
         },
     },
     dominance::{DomTreeNode, DominanceInfo, PostDominanceInfo},
@@ -82,7 +82,7 @@ impl Pass for CommonSubexpressionElimination {
                 status
             }
             (Err(body), Err(finish)) => {
-                return Err(Report::msg(alloc::format!("{body}; {finish}")));
+                return Err(combine_capture_errors(body, finish));
             }
             (Err(error), _) | (_, Err(error)) => return Err(error),
         };
@@ -491,15 +491,14 @@ impl CSEDriver<'_> {
         retained: OperationRef,
         has_ssa_dominance: bool,
     ) -> Result<(), Report> {
-        if collect_debug_ops(&original).is_empty() {
+        let original_captures = collect_debug_ops(&original);
+        if original_captures.is_empty() {
             return Ok(());
         }
         if has_ssa_dominance
-            && !collect_debug_ops(&original)
-                .into_iter()
-                .chain(collect_debug_ops(&retained))
-                .any(is_pending_capture)
-            && capture_state_unchanged(retained, original)
+            && !original_captures.iter().copied().any(is_pending_capture)
+            && !collect_debug_ops(&retained).into_iter().any(is_pending_capture)
+            && capture_state_unchanged(retained, original, &original_captures)
             && let Some((captures, values)) = corresponding_captures(original, retained)
         {
             let mut update = DebugInfoMutation::for_operations(
@@ -595,12 +594,17 @@ impl CSEDriver<'_> {
 /// Repeating the same capture trace is idempotent only if intervening execution cannot
 /// kill/rebind its state. Known memory writes preserve live recovery expressions, including
 /// LocalSlot declarations; unknown effects and captures in the same visibility slots are barriers.
-fn capture_state_unchanged(retained: OperationRef, original: OperationRef) -> bool {
+fn capture_state_unchanged(
+    retained: OperationRef,
+    original: OperationRef,
+    captures: &[OperationRef],
+) -> bool {
     if retained.parent() != original.parent() {
         return false;
     }
-    let slots = collect_debug_ops(&original)
-        .into_iter()
+    let slots = captures
+        .iter()
+        .copied()
         .filter_map(VisibilitySlot::of)
         .collect::<FxHashSet<_>>();
     let mut next = retained.next();

@@ -424,7 +424,8 @@ fn collect_debug_ops_recursive(op: &OperationRef, debug_ops: &mut Vec<OperationR
 }
 
 pub use super::capture_invalidation::{
-    CaptureInvalidationPhase, capture_invalidation_barrier, is_pending_capture,
+    CaptureInvalidationPhase, capture_invalidation_barrier, combine_capture_errors,
+    is_pending_capture,
 };
 
 /// Replace disappearing captures immediately, then clear surviving shadows at phase completion.
@@ -446,16 +447,16 @@ pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
             None,
         )?)
     };
-    let result = invalidate_records(owner, records, rewriter);
-    if let Err(error) = &result {
+    let result = invalidate_records(owner, records, rewriter).map_err(|error| {
         super::capture_invalidation::poison(
             &context,
             alloc::format!("capture replacement failed: {error}"),
         );
-    }
+        super::capture_invalidation::check(&context).unwrap_err()
+    });
     let finish = phase.map(|phase| phase.finish_with(rewriter)).transpose();
     match (result, finish) {
-        (Err(body), Err(finish)) => Err(Report::msg(alloc::format!("{body}; {finish}"))),
+        (Err(body), Err(finish)) => Err(combine_capture_errors(body, finish)),
         (Err(error), _) | (_, Err(error)) => Err(error),
         _ => Ok(()),
     }

@@ -231,13 +231,16 @@ impl Pass for Canonicalizer {
             log::debug!(target: Self::NAME, "  require_convergence = {}", self.require_convergence);
             ptr
         };
-        let converged =
-            patterns::apply_patterns_and_fold_greedily(op, rewrites.clone(), self.config.clone());
-        let converged = match converged {
+        let (changed, converged) = match patterns::apply_patterns_and_fold_greedily(
+            op,
+            rewrites.clone(),
+            self.config.clone(),
+        ) {
+            Ok(changed) => (changed, true),
+            Err(patterns::GreedyRewriteError::NonConverged(changed)) => (changed, false),
             Err(patterns::GreedyRewriteError::Failed(error)) => return Err(error),
-            result => result,
         };
-        if self.require_convergence && converged.is_err() {
+        if self.require_convergence && !converged {
             log::debug!(target: Self::NAME, "canonicalization could not converge");
             let span = op.borrow().span();
             return Err(state
@@ -259,21 +262,11 @@ impl Pass for Canonicalizer {
         }
 
         let op = op.borrow();
-        let changed = match converged {
-            Err(patterns::GreedyRewriteError::Failed(error)) => return Err(error),
-            Ok(changed) => {
-                log::debug!(target: Self::NAME, "canonicalization converged for '{}', changed={changed}", op.name());
-                changed
-            }
-            Err(patterns::GreedyRewriteError::NonConverged(changed)) => {
-                log::warn!(
-                    target: Self::NAME,
-                    "canonicalization failed to converge for '{}', changed={changed}",
-                    op.name()
-                );
-                changed
-            }
-        };
+        if converged {
+            log::debug!(target: Self::NAME, "canonicalization converged for '{}', changed={changed}", op.name());
+        } else {
+            log::warn!(target: Self::NAME, "canonicalization failed to converge for '{}', changed={changed}", op.name());
+        }
         let ir_changed = changed.into();
         state.set_post_pass_status(ir_changed);
 
@@ -421,7 +414,11 @@ mod capture_failure_tests {
             builder.ret([value], SourceSpan::UNKNOWN)?;
         }
         let error = test.apply_boxed_pass(Box::new(Run), false).unwrap_err();
-        assert!(alloc::format!("{error}").contains("pending capture anchor"), "{error}");
+        assert_eq!(
+            alloc::format!("{error}").matches("pending capture anchor").count(),
+            1,
+            "{error}"
+        );
         assert!(collect_debug_ops(&test.function().as_operation_ref()).is_empty());
         Ok(())
     }

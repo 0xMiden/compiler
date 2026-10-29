@@ -211,15 +211,10 @@ pub fn apply_patterns_and_fold(
     let max_rewrites = config.max_rewrites.map(|max| max.get()).unwrap_or(u32::MAX);
     let context = ops[0].borrow().context_rc();
     let mut driver = MultiOpPatternRewriteDriver::new(context, patterns, config, ops);
-    let converged = driver.simplify(ops);
-    let changed = match converged.as_ref() {
-        Ok(changed) | Err(GreedyRewriteError::NonConverged(changed)) => *changed,
-        Err(GreedyRewriteError::Failed(_)) => {
-            let Err(GreedyRewriteError::Failed(error)) = converged else {
-                unreachable!()
-            };
-            return Err(GreedyRewriteError::Failed(error));
-        }
+    let (changed, converged) = match driver.simplify(ops) {
+        Ok(changed) => (changed, true),
+        Err(GreedyRewriteError::NonConverged(changed)) => (changed, false),
+        Err(GreedyRewriteError::Failed(error)) => return Err(GreedyRewriteError::Failed(error)),
     };
     let erased = driver.inner.surviving_ops.borrow().is_empty();
     let effect = if erased {
@@ -229,7 +224,7 @@ pub fn apply_patterns_and_fold(
     } else {
         ApplyPatternsAndFoldEffect::None
     };
-    if converged.is_ok() {
+    if converged {
         Ok(effect)
     } else {
         log::trace!(target: "pattern-rewrite-driver", "pattern rewrite did not converge after {max_rewrites} rewrites");

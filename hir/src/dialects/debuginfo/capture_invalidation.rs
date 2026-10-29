@@ -4,12 +4,16 @@ use alloc::{
     format,
     rc::{Rc, Weak},
     string::String,
+    sync::Arc,
     vec::Vec,
 };
+
+use midenc_session::diagnostics::{Diagnostic, miette};
 
 use super::{
     DIBuilder, DebugKill,
     bindings::{SourceBinding, VisibilitySlot},
+    mutation::is_under,
 };
 use crate::{
     Context, FxHashMap, FxHashSet, OperationRef, RegionBranchOpInterface, RegionBranchPoint,
@@ -17,12 +21,94 @@ use crate::{
     patterns::{Rewriter, RewriterImpl, RewriterListener},
 };
 
+/// Every observation of the sticky failure shares this identity. Equal messages from
+/// independent reports are deliberately not interchangeable.
+#[derive(Clone, Debug, thiserror::Error, Diagnostic)]
+#[error("{0}")]
+struct CaptureFailure(Arc<String>);
+impl CaptureFailure {
+    fn new(message: impl Into<String>) -> Self {
+        Self(Arc::new(message.into()))
+    }
+}
+
+#[derive(Debug)]
+struct CaptureError {
+    report: Report,
+    passes: Vec<&'static str>,
+}
+
+/// Composition at capture lifecycle boundaries retains original reports and their provenance.
+#[derive(Debug, thiserror::Error, Diagnostic)]
+struct CaptureErrors(Vec<CaptureError>);
+impl core::fmt::Display for CaptureErrors {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for (index, error) in self.0.iter().enumerate() {
+            if index > 0 {
+                f.write_str("; ")?;
+            }
+            for pass in &error.passes {
+                write!(f, "pass '{pass}': ")?;
+            }
+            write!(f, "{}", error.report)?;
+        }
+        Ok(())
+    }
+}
+impl CaptureErrors {
+    fn from_report(report: Report) -> Self {
+        match report.downcast::<Self>() {
+            Ok(errors) => errors,
+            Err(report) => Self(alloc::vec![CaptureError {
+                report,
+                passes: Vec::new()
+            }]),
+        }
+    }
+}
+
+/// Combine failures from a rewrite body and capture cleanup, reporting repeated observations
+/// of the same sticky capture failure once. Independent reports always remain independent.
+pub fn combine_capture_errors(body: Report, cleanup: Report) -> Report {
+    let mut errors = CaptureErrors::from_report(body);
+    for error in CaptureErrors::from_report(cleanup).0 {
+        let duplicate = error.report.downcast_ref::<CaptureFailure>().and_then(|failure| {
+            errors.0.iter_mut().find(|existing| {
+                existing
+                    .report
+                    .downcast_ref::<CaptureFailure>()
+                    .is_some_and(|other| Arc::ptr_eq(&failure.0, &other.0))
+            })
+        });
+        if let Some(existing) = duplicate {
+            for pass in error.passes {
+                if !existing.passes.contains(&pass) {
+                    existing.passes.push(pass);
+                }
+            }
+        } else {
+            errors.0.push(error);
+        }
+    }
+    Report::new(errors)
+}
+
+pub(crate) fn capture_error_in_pass(report: Report, pass: &'static str) -> Report {
+    let mut errors = CaptureErrors::from_report(report);
+    for error in &mut errors.0 {
+        if !error.passes.contains(&pass) {
+            error.passes.push(pass);
+        }
+    }
+    Report::new(errors)
+}
+
 #[derive(Default)]
 pub(crate) struct CaptureInvalidationState {
     next_id: u64,
     frames: Vec<Frame>,
     pending: FxHashMap<OperationRef, Request>,
-    failure: Option<String>,
+    failure: Option<CaptureFailure>,
     resolving: bool,
 }
 struct Frame {
@@ -72,7 +158,7 @@ impl CaptureInvalidationPhase {
         })
     }
 
-    pub fn finish(mut self) -> Result<bool, Report> {
+    pub fn finish(self) -> Result<bool, Report> {
         let result = drain(&self.context, self.id, |binding, anchor, listener| {
             let mut rewriter =
                 RewriterImpl::<crate::patterns::NoopRewriterListener>::new(
@@ -83,51 +169,66 @@ impl CaptureInvalidationPhase {
                 })?);
             emit(&mut rewriter, binding, anchor)
         });
-        self.close();
-        check(&self.context)?;
-        result
+        self.complete(result)
     }
 
     pub(super) fn finish_with<R: ?Sized + Rewriter>(
-        mut self,
+        self,
         rewriter: &mut R,
     ) -> Result<bool, Report> {
         let result =
             drain(&self.context, self.id, |binding, anchor, _| emit(rewriter, binding, anchor));
-        self.close();
-        check(&self.context)?;
-        result
+        self.complete(result)
     }
 
-    fn close(&mut self) {
-        let mut state = self.context.capture_invalidation.borrow_mut();
-        if state.frames.last().is_some_and(|frame| frame.id != self.id) {
-            state
-                .failure
-                .get_or_insert("capture invalidation phases completed out of order".into());
+    fn complete(mut self, result: Result<bool, Report>) -> Result<bool, Report> {
+        match (result, self.close()) {
+            (Err(body), Err(cleanup)) => Err(combine_capture_errors(body, cleanup)),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            (Ok(changed), Ok(())) => Ok(changed),
         }
+    }
+
+    fn close(&mut self) -> Result<(), Report> {
+        let mut state = self.context.capture_invalidation.borrow_mut();
+        let out_of_order = (state.frames.iter().any(|frame| frame.id == self.id)
+            && state.frames.last().is_some_and(|frame| frame.id != self.id))
+        .then(|| {
+            let failure = CaptureFailure::new("capture invalidation phases completed out of order");
+            state.failure.get_or_insert_with(|| failure.clone());
+            Report::new(failure)
+        });
         state.frames.retain(|frame| frame.id != self.id);
         state.pending.retain(|_, request| request.phase != self.id);
         state.resolving = false;
         self.finished = true;
+        drop(state);
+        match (check(&self.context), out_of_order) {
+            (Err(sticky), Some(out_of_order)) => Err(combine_capture_errors(sticky, out_of_order)),
+            (result, _) => result,
+        }
     }
 }
 impl Drop for CaptureInvalidationPhase {
     fn drop(&mut self) {
         if !self.finished {
             poison(&self.context, "capture invalidation phase dropped without completion");
-            self.close();
+            let _ = self.close();
         }
     }
 }
 
 pub(crate) fn poison(context: &Context, message: impl Into<String>) {
     let message = message.into();
-    context.capture_invalidation.borrow_mut().failure.get_or_insert(message);
+    context
+        .capture_invalidation
+        .borrow_mut()
+        .failure
+        .get_or_insert_with(|| CaptureFailure::new(message));
 }
 pub(crate) fn check(context: &Context) -> Result<(), Report> {
     match &context.capture_invalidation.borrow().failure {
-        Some(error) => Err(Report::msg(error.clone())),
+        Some(error) => Err(Report::new(error.clone())),
         None => Ok(()),
     }
 }
@@ -162,9 +263,9 @@ pub(super) fn submit(anchor: OperationRef) {
     let context = anchor.context_ref();
     let mut state = context.capture_invalidation.borrow_mut();
     if state.resolving {
-        state
-            .failure
-            .get_or_insert("capture rewrite invoked during materialization".into());
+        state.failure.get_or_insert_with(|| {
+            CaptureFailure::new("capture rewrite invoked during materialization")
+        });
         return;
     }
     if state.pending.contains_key(&anchor) {
@@ -196,8 +297,10 @@ pub(super) fn transfer(original: OperationRef, replacement: OperationRef) -> Res
     if !replacement.name().is::<DebugKill>()
         || SourceBinding::of(replacement).as_ref() != Some(&request.binding)
     {
-        state.failure.get_or_insert("invalid pending capture replacement".into());
-        return Err(Report::msg("invalid pending capture replacement"));
+        state
+            .failure
+            .get_or_insert_with(|| CaptureFailure::new("invalid pending capture replacement"));
+        return Err(Report::new(state.failure.as_ref().unwrap().clone()));
     }
     state.pending.remove(&original);
     if !state.pending.contains_key(&replacement) {
@@ -225,7 +328,7 @@ pub fn capture_invalidation_barrier(context: &Rc<Context>) -> Result<bool, Repor
     check(context)?;
     if context.capture_invalidation.borrow().resolving {
         poison(context, "capture observer invoked during materialization");
-        return Err(Report::msg("capture observer invoked during materialization"));
+        return check(context).map(|()| false);
     }
     let ids = {
         let state = context.capture_invalidation.borrow();
@@ -258,25 +361,17 @@ pub(crate) fn generation(context: &Context) -> u64 {
 /// Retire leaked state even after another failure; retained handles may only observe the poison.
 pub(crate) fn audit_boundary(context: &Context, since: u64) -> Result<(), Report> {
     let mut state = context.capture_invalidation.borrow_mut();
-    if state.frames.iter().any(|frame| frame.id > since) {
+    let abandoned = state.frames.iter().any(|frame| frame.id > since).then(|| {
         state.frames.retain(|frame| frame.id <= since);
         state.pending.retain(|_, request| request.phase <= since);
-        state
-            .failure
-            .get_or_insert("capture invalidation phase outlived its audit".into());
-    }
+        let failure = CaptureFailure::new("capture invalidation phase outlived its audit");
+        state.failure.get_or_insert_with(|| failure.clone());
+        Report::new(failure)
+    });
     drop(state);
-    check(context)
-}
-pub(super) fn under(mut op: OperationRef, root: OperationRef) -> bool {
-    loop {
-        if op == root {
-            return true;
-        }
-        let Some(parent) = op.parent_op() else {
-            return false;
-        };
-        op = parent;
+    match (check(context), abandoned) {
+        (Err(sticky), Some(abandoned)) => Err(combine_capture_errors(sticky, abandoned)),
+        (result, _) => result,
     }
 }
 
@@ -332,7 +427,7 @@ fn drain(
         for (anchor, request) in requests {
             let function = request.binding.function.unwrap_or(root);
             if !anchor.name().is::<DebugKill>()
-                || !under(anchor, function)
+                || !is_under(anchor, function)
                 || SourceBinding::of(anchor).as_ref() != Some(&request.binding)
                 || request.binding.function.and_then(|f| f.parent_op()) != request.function_parent
             {

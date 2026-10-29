@@ -956,6 +956,8 @@ impl OpToOpPassAdaptor {
                         .into_report());
                 }
                 assert!(pipeline.can_schedule_on(&root_op.name()));
+                drop(root_op);
+                drop(op);
                 // Before running, finalize the passes held by the pipeline
                 pipeline.finalize_pass_list()?;
 
@@ -1007,7 +1009,9 @@ impl OpToOpPassAdaptor {
                 }
                 Ok(())
             }
-            (Err(body), Err(finish)) => Err(Report::msg(format!("{body}; {finish}"))),
+            (Err(body), Err(finish)) => {
+                Err(crate::dialects::debuginfo::transform::combine_capture_errors(body, finish))
+            }
             (Err(error), _) | (_, Err(error)) => Err(error),
         };
         if let Some(audit) = debug_audit {
@@ -1017,10 +1021,15 @@ impl OpToOpPassAdaptor {
                 audit.abort()
             };
             if let Err(error) = completion {
-                let error = Report::msg(format!("pass '{}': {error}", pass.name()));
+                let error = crate::dialects::debuginfo::capture_invalidation::capture_error_in_pass(
+                    error,
+                    pass.name(),
+                );
                 result = match result {
                     Ok(()) => Err(error),
-                    Err(body) => Err(Report::msg(format!("{body}; {error}"))),
+                    Err(body) => Err(
+                        crate::dialects::debuginfo::transform::combine_capture_errors(body, error),
+                    ),
                 };
             }
         }

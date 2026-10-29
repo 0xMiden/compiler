@@ -963,3 +963,149 @@ fn failed_pass_retires_retained_phase_after_root_erasure() -> Result<(), Report>
     }
     Ok(())
 }
+
+#[test]
+fn capture_failure_is_reported_once_through_nested_pass_cleanup() -> Result<(), Report> {
+    use core::cell::RefCell;
+
+    use crate::{
+        EntityMut, OperationName,
+        dialects::builtin::Function,
+        pass::{Nesting, OpPassManager, Pass, PassExecutionState},
+    };
+
+    const ROOT_FAILURE: &str =
+        "pending capture anchor erased, detached, or changed without a mapping";
+    struct FailCapture {
+        depth: usize,
+        corrupt: bool,
+        body: Option<&'static str>,
+        retained: Rc<RefCell<Option<CaptureInvalidationPhase>>>,
+    }
+    impl Pass for FailCapture {
+        type Target = Function;
+
+        fn name(&self) -> &'static str {
+            if self.depth == 0 {
+                "capture-diagnostic-fixture"
+            } else {
+                "outer-capture-pipeline"
+            }
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Function>,
+            state: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let root = op.as_operation_ref();
+            let context = op.as_operation().context_rc();
+            drop(op);
+            if self.depth > 0 {
+                let mut pipeline =
+                    OpPassManager::new(OpPassManager::ANY, Nesting::Explicit, context);
+                pipeline.add_pass(Box::new(Self {
+                    depth: self.depth - 1,
+                    corrupt: self.corrupt,
+                    body: self.body,
+                    retained: self.retained.clone(),
+                }));
+                return state.run_pipeline(&mut pipeline, root);
+            }
+            if self.corrupt {
+                *self.retained.borrow_mut() = Some(phase(root)?);
+                let record = collect_debug_ops(&root)[1];
+                let next = record.next().unwrap();
+                let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+                invalidate_debug_captures(record, &mut rewriter)?;
+                next.prev().unwrap().borrow_mut().erase();
+            }
+            if let Some(body) = self.body {
+                return Err(Report::msg(body));
+            }
+            self.retained.borrow_mut().take().unwrap().finish()?;
+            Ok(())
+        }
+    }
+    // Dropping independent errors by their text would lose the last case's body failure.
+    for depth in [0, 2] {
+        for (corrupt, body, expected_roots) in [
+            (false, Some("independent pass body failure"), 0),
+            (true, None, 1),
+            (true, Some("independent pass body failure"), 1),
+            (
+                true,
+                Some(
+                    "capture invalidation failed: pending capture anchor erased, detached, or \
+                     changed without a mapping",
+                ),
+                2,
+            ),
+        ] {
+            let (test, ..) = capture_fixture(&[1, 2, 3])?;
+            let retained = Rc::new(RefCell::new(None));
+            let error = test
+                .apply_boxed_pass(
+                    Box::new(FailCapture {
+                        depth,
+                        corrupt,
+                        body,
+                        retained: retained.clone(),
+                    }),
+                    false,
+                )
+                .expect_err("failing pass must remain fatal without verification");
+            let message = alloc::format!("{error}");
+            assert_eq!(message.matches(ROOT_FAILURE).count(), expected_roots, "{message}");
+            if let Some(body) = body {
+                assert!(message.contains(body), "{message}");
+            }
+            if corrupt {
+                assert!(message.contains("capture-diagnostic-fixture"), "{message}");
+                if depth > 0 {
+                    assert!(message.contains("outer-capture-pipeline"), "{message}");
+                }
+                if body.is_some() {
+                    assert_eq!(
+                        message.matches("capture invalidation phase outlived its audit").count(),
+                        1,
+                        "{message}"
+                    );
+                }
+                assert!(capture_invalidation_barrier(&test.context_rc()).is_err());
+                assert!(!super::super::capture_invalidation::active(test.context()));
+                if let Some(phase) = retained.borrow_mut().take() {
+                    assert!(phase.finish().is_err());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn capture_failure_preserves_independent_out_of_order_cleanup() -> Result<(), Report> {
+    let (test, records, _) = capture_fixture(&[1, 2])?;
+    let root = test.function().as_operation_ref();
+    let outer = phase(root)?;
+    let inner = phase(root)?;
+    let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+    invalidate_debug_captures(records[1], &mut rewriter)?;
+    collect_debug_ops(&root)[1].borrow_mut().erase();
+    let _ = capture_invalidation_barrier(&test.context_rc()).unwrap_err();
+    let error = outer.finish().unwrap_err();
+    let message = alloc::format!("{error}");
+    assert_eq!(message.matches("pending capture anchor").count(), 1, "{message}");
+    assert_eq!(
+        message.matches("capture invalidation phases completed out of order").count(),
+        1,
+        "{message}"
+    );
+    assert!(inner.finish().is_err());
+    assert!(!super::super::capture_invalidation::active(test.context()));
+    Ok(())
+}
