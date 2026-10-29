@@ -29,9 +29,10 @@ midenc-package-interface.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-# The 33 standard account components, for the snapshot tests.
+# The 34 standard account components, for the snapshot tests.
 miden-standards = { workspace = true, features = ["std"] }
-# `check_generated`, the snapshot comparison shared with the SDK binding tests.
+midenc-expect-test.workspace = true
+# `SDK_MIDEN_WIT`, the core-types WIT the generated interfaces import.
 midenc-integration-test-support.workspace = true
 midenc-package-interface = { workspace = true, features = ["testing"] }
 # `to_rust_ident`, to check `UNESCAPED_RUST_KEYWORDS` against the bindings generator.

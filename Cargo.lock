@@ -4752,6 +4752,7 @@ dependencies = [
  "miden-mast-package",
  "miden-standards",
  "miden-thiserror",
+ "midenc-expect-test",
  "midenc-frontend-wasm-metadata",
  "midenc-hir-type",
  "midenc-integration-test-support",

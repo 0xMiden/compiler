@@ -1,7 +1,7 @@
 //! The WIT interfaces of the `miden-standards` account components, pinned as snapshots.
 //!
 //! Each component that has an interface has its snapshot at `tests/standards/<package name>.wit`;
-//! run with `UPDATE_BINDINGS=1` to regenerate them.
+//! run with `UPDATE_EXPECT=1` to regenerate them.
 
 use std::path::Path;
 
@@ -24,9 +24,8 @@ use miden_standards::account::{
     upgrade::UpgradeManager,
     wallets::BasicWallet,
 };
-use midenc_integration_test_support::{
-    SDK_MIDEN_WIT as MIDEN_WIT, testing::bindings::check_generated,
-};
+use midenc_expect_test::expect_file;
+use midenc_integration_test_support::SDK_MIDEN_WIT as MIDEN_WIT;
 use midenc_package_interface::PackageInterface;
 use midenc_package_wit::{AUTH_PROCEDURE_REASON, Error, Generated, Skipped, generate};
 
@@ -123,7 +122,7 @@ fn every_component_matches_its_snapshot() {
     let generated = generated();
     assert_eq!(generated.len(), 34 - WITHOUT_INTERFACE.len());
     for (name, generated) in &generated {
-        check_generated(manifest_dir, &format!("tests/standards/{name}.wit"), &generated.wit);
+        expect_file![format!("standards/{name}.wit")].assert_eq(&generated.wit);
     }
     // A snapshot of a component renamed or removed upstream is stale, too.
     let mut expected: Vec<String> =
