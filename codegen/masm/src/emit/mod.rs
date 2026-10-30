@@ -3368,6 +3368,7 @@ mod tests {
             |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
             expect![[r#"
             mem_load.32
+            u32cast
             push.4294967040
             u32and
             swap.1
@@ -3385,6 +3386,7 @@ mod tests {
             |emitter| emitter.store_imm(129, SourceSpan::UNKNOWN),
             expect![[r#"
             mem_load.32
+            u32cast
             push.4294902015
             u32and
             swap.1
@@ -3403,6 +3405,7 @@ mod tests {
             |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
             expect![[r#"
             mem_load.32
+            u32cast
             push.4294901760
             u32and
             swap.1
@@ -3420,6 +3423,7 @@ mod tests {
             |emitter| emitter.store_imm(0, SourceSpan::UNKNOWN),
             expect![[r#"
             mem_load.0
+            u32cast
             push.4294967294
             u32and
             swap.1
@@ -3462,6 +3466,7 @@ mod tests {
                 swap.1
                 dup.1
                 mem_load
+                u32cast
                 swap.1
                 push.8
                 u32wrapping_mul

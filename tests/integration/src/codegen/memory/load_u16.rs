@@ -245,17 +245,19 @@ fn public_load_u16_touches_only_requested_cells() {
             false,
         );
     }
-    for offset in 0..=3 {
+    for (offset, expected) in [(0, 7), (1, 0), (2, 0), (3, 0)] {
         check_u16_intrinsic(
             &format!(
                 "push.1099511627783 mem_store.16 push.{offset}.16 \
-                 exec.::intrinsics::mem::load_u16 drop"
+                 exec.::intrinsics::mem::load_u16 push.{expected} assert_eq mem_load.16 \
+                 push.1099511627783 assert_eq"
             ),
-            false,
+            true,
         );
     }
     check_u16_intrinsic(
-        "push.1099511627783 mem_store.17 push.3.16 exec.::intrinsics::mem::load_u16 drop",
-        false,
+        "push.1099511627783 mem_store.17 push.3.16 exec.::intrinsics::mem::load_u16 push.1792 \
+         assert_eq mem_load.17 push.1099511627783 assert_eq",
+        true,
     );
 }

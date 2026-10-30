@@ -247,6 +247,7 @@ impl OpEmitter<'_> {
                 if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&ty) {
                     self.emit(masm::Instruction::MemLoad, span);
                     if ty.size_in_bits() < 32 {
+                        self.emit(masm::Instruction::U32Cast, span);
                         self.const_mask_u32((1u32 << ty.size_in_bits()) - 1, span);
                     }
                     self.push(ty);
@@ -254,16 +255,7 @@ impl OpEmitter<'_> {
                 }
                 // Convert the pointer to a native pointer representation
                 self.convert_to_native_ptr(ptr_ty, span);
-                match &ty {
-                    Type::I128 | Type::U128 => self.load_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.load_double_word_int(None, span),
-                    Type::Felt => self.load_felt(None, span),
-                    Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(None, span),
-                    ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
-                        self.load_small(ty, None, span);
-                    }
-                    ty => todo!("support for loading {ty} is not yet implemented"),
-                }
+                self.load_native(&ty, span);
                 self.push(ty);
             }
             ty if !ty.is_pointer() => {
@@ -310,6 +302,19 @@ impl OpEmitter<'_> {
     fn push_native_ptr(&mut self, ptr: NativePtr, span: SourceSpan) {
         self.emit_push(ptr.offset, span);
         self.emit_push(ptr.addr, span);
+    }
+
+    /// Load through an already normalized `[element_addr, byte_offset]` pair.
+    /// Shared by scalar accesses and validated aggregate lanes; does not update typed operands.
+    pub(crate) fn load_native(&mut self, ty: &Type, span: SourceSpan) {
+        match ty {
+            Type::I128 | Type::U128 => self.load_quad_word(None, span),
+            Type::I64 | Type::U64 => self.load_double_word_int(None, span),
+            Type::Felt => self.load_felt(None, span),
+            _ if ty.size_in_bits() == 32 => self.load_word(None, span),
+            _ if (1..32).contains(&ty.size_in_bits()) => self.load_small(ty, None, span),
+            ty => todo!("support for loading {ty} is not yet implemented"),
+        }
     }
 
     /// Load a field element from a naturally aligned address, either immediate or dynamic
@@ -380,19 +385,16 @@ impl OpEmitter<'_> {
     ///
     /// After execution, the stack will contain: `[loaded_value]`
     fn load_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
+        let bits = ty.size_in_bits();
+        assert!((1..32).contains(&bits), "load_small requires a sub-word width");
         // If we have an immediate pointer, handle it based on alignment
         if let Some(imm) = ptr {
             if imm.is_element_aligned() {
                 // For aligned loads, we can use MemLoadImm
                 self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
                 // The value is already loaded, just need to mask it
-                let mask = match ty.size_in_bits() {
-                    1 => 0x1,
-                    8 => 0xff,
-                    16 => 0xffff,
-                    _ => unreachable!("load_small called with non-small type"),
-                };
-                self.emit_push(mask as u32, span);
+                self.emit(masm::Instruction::U32Cast, span);
+                self.emit_push((1u32 << bits) - 1, span);
                 self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
@@ -405,8 +407,24 @@ impl OpEmitter<'_> {
             self.load_16bit_dynamic(span);
             return;
         }
-
-        self.load_small_from_current_element(ty, span);
+        if bits <= 8 {
+            self.load_small_from_current_element(ty, span);
+            return;
+        }
+        // Read a second cell only when the represented bits actually cross its boundary.
+        use masm::Instruction as I;
+        self.emit(I::Dup1, span);
+        self.emit_push(((32 - bits) / 8) as u32, span);
+        self.emit(I::U32Gt, span);
+        let crossed = self.build_masm_block(span, |emitter| {
+            emitter.load_word(None, span);
+            emitter.const_mask_u32((1u32 << bits) - 1, span);
+        });
+        self.current_block.push(masm::Op::If {
+            span,
+            then_blk: crossed,
+            else_blk: masm::Block::new(span, crate::lower::raw::load_small(bits, span)),
+        });
     }
 
     /// Load a sub-word value which is fully contained in the current 32-bit element.
@@ -697,7 +715,14 @@ impl OpEmitter<'_> {
                 if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&value_ty) {
                     if value_ty.size_in_bits() < 32 {
                         // [addr, value] -> [prev, addr, value]
-                        self.emit_all([masm::Instruction::Dup0, masm::Instruction::MemLoad], span);
+                        self.emit_all(
+                            [
+                                masm::Instruction::Dup0,
+                                masm::Instruction::MemLoad,
+                                masm::Instruction::U32Cast,
+                            ],
+                            span,
+                        );
                         self.const_mask_u32(!((1u32 << value_ty.size_in_bits()) - 1), span);
                         self.emit_all(
                             [
@@ -724,7 +749,7 @@ impl OpEmitter<'_> {
 
     /// Store through an already normalized `[element_addr, byte_offset, value..]` pair.
     /// Shared by ordinary stores and contiguous typed fills; does not update typed operands.
-    fn store_native(&mut self, value_ty: &Type, span: SourceSpan) {
+    pub(crate) fn store_native(&mut self, value_ty: &Type, span: SourceSpan) {
         match value_ty {
             Type::I128 | Type::U128 => self.store_quad_word(None, span),
             Type::I64 | Type::U64 => self.store_double_word_int(None, span),
@@ -1442,6 +1467,7 @@ impl OpEmitter<'_> {
         // For immediate pointers, we always load from the element-aligned address
         // The offset determines which byte(s) within that element we're modifying
         self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
+        self.emit(masm::Instruction::U32Cast, span);
 
         // Calculate bit offset from byte offset
         let bit_offset = imm.offset * 8;
@@ -2008,7 +2034,7 @@ mod tests {
                 Some(&expected),
             );
         }
-        // Partial-cell integer writes require a u32 byte view; full-cell Felt needs alignment.
+        // Partial writes use the low32 byte view even if an earlier owner stored a full Felt.
         check_fill(
             Type::U16,
             Immediate::U16(0xabcd),
@@ -2016,8 +2042,9 @@ mod tests {
             base,
             1,
             &[(base, 1u64 << 40)],
-            None,
+            Some(&[(base, 0xabcd)]),
         );
+        // Full-cell Felt stores still require natural alignment.
         check_fill(
             Type::Felt,
             Immediate::Felt(Felt::ONE),
@@ -2235,7 +2262,16 @@ mod tests {
                             Some(&[(u32::MAX, expected[0].1)]),
                         );
                     } else {
-                        check_packed_store(ty.clone(), value, ptr, immediate, &neighbor, None);
+                        let previous = ((high as u32 as u64) << 32) | initial[0].1;
+                        let updated = (previous & !positioned_mask) | ((value as u64) << shift);
+                        check_packed_store(
+                            ty.clone(),
+                            value,
+                            ptr,
+                            immediate,
+                            &neighbor,
+                            Some(&[(16, updated & 0xffff_ffff), (17, updated >> 32)]),
+                        );
                         check_packed_store(
                             ty.clone(),
                             value,
@@ -2245,15 +2281,78 @@ mod tests {
                             None,
                         );
                     }
+                    let previous = (initial[1].1 << 32) | high as u32 as u64;
+                    let updated = (previous & !positioned_mask) | ((value as u64) << shift);
                     check_packed_store(
                         ty.clone(),
                         value,
                         ptr,
                         immediate,
                         &[(16, high), (17, initial[1].1)],
-                        None,
+                        Some(&[(16, updated & 0xffff_ffff), (17, updated >> 32)]),
                     );
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn byte_pointer_store_initializes_reused_frame() {
+        let span = SourceSpan::UNKNOWN;
+        let mut stack = OperandStack::new(Rc::new(Context::default()));
+        let mut invoked = BTreeSet::new();
+        let mut body = Vec::new();
+        {
+            let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+            emitter.literal(0xaau8, span);
+            emitter.emit_push(0u8, span);
+            emitter.emit(masm::Instruction::Locaddr(0u16.into()), span);
+            emitter.store_small(&Type::U8, None, span);
+        }
+        let body = masm::Block::new(span, body).to_pretty_string();
+        execute_memory_program(
+            &format!(
+                "@locals(4) proc dirty push.1099799081796 loc_store.0 end @locals(4) proc \
+                 initialize loc_load.0 push.1099799081796 assert_eq {body} loc_load.0 \
+                 push.287454122 assert_eq end begin exec.dirty exec.initialize end"
+            ),
+            true,
+        );
+    }
+
+    #[test]
+    fn byte_pointer_immediate_accesses_use_low_bytes_of_full_field_cells() {
+        for (ty, value) in [(Type::U8, 0x44), (Type::U16, 0x4444)] {
+            for offset in 0..4 {
+                let span = SourceSpan::UNKNOWN;
+                let mut stack = OperandStack::new(Rc::new(Context::default()));
+                let mut invoked = BTreeSet::new();
+                let mut body = Vec::new();
+                {
+                    let mut emitter = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+                    emitter.load_imm(256 + offset, ty.clone(), span);
+                    emitter.emit_push(value as u32, span);
+                    emitter.emit(masm::Instruction::AssertEq, span);
+                    emitter.pop();
+                    // Writing the same bytes isolates the partial write's treatment of high bits.
+                    emitter.emit_push(value as u32, span);
+                    emitter.push(ty.clone());
+                    emitter.store_imm(256 + offset, span);
+                }
+                let body = masm::Block::new(span, body).to_pretty_string();
+                let next = if offset as usize + ty.size_in_bytes() > 4 {
+                    0x4444_4444u64
+                } else {
+                    (1u64 << 40) | 0x4444_4444
+                };
+                execute_memory_program(
+                    &format!(
+                        "begin push.1100656952388 mem_store.64 push.1100656952388 mem_store.65 \
+                         {body} mem_load.64 push.1145324612 assert_eq mem_load.65 push.{next} \
+                         assert_eq end"
+                    ),
+                    true,
+                );
             }
         }
     }
