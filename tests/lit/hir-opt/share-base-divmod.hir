@@ -102,9 +102,9 @@ builtin.module private @share_base_divmod {
         builtin.ret %8 : (i32);
     };
 
-    // A wrapping addition may wrap around, an unchecked one promises no overflow but does not check
-    // it, an offset that is not a multiple of the divisor changes the remainder, and an addition with
-    // other uses would stay: none is split off the base.
+    // A wrapping addition may wrap around, an offset that is not a multiple of the divisor changes
+    // the remainder, an addition with other uses would stay, and an unchecked addition promises no
+    // overflow but does not check it: none is split off the base.
     // CHECK: @not_offsets(%[[B:\d+]]: u32)
     // CHECK: %[[W:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<wrapping> }>;
     // CHECK-NEXT: arith.divmod %[[W]]
@@ -272,9 +272,7 @@ builtin.module private @share_base_divmod {
         builtin.ret %7, %12 : (u32, u32);
     };
 
-    // Loads of a `u32` local are the base without a cast, and the shared addition is placed before
-    // the first operation of the group, here the addition of the second division, using the base
-    // loaded before it.
+    // Loads of a `u32` local are the base without a cast, and reloads of the local join the group.
     // CHECK-LABEL: @interleaved(
     // CHECK: %[[L:\d+]] = hir.load_local
     // CHECK-NEXT: %[[S:\d+]] = arith.add %[[L]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
@@ -424,8 +422,7 @@ builtin.module private @share_base_divmod {
     };
 
     // At most two groups are open at any operation: the third base, whose accesses overlap those of
-    // the first two,
-    // keeps its own divisions.
+    // the first two, keeps its own divisions.
     // CHECK: @open_groups_are_bounded(%[[A:\d+]]: u32, %[[B:\d+]]: u32, %[[C:\d+]]: u32)
     // CHECK: %[[SA:\d+]] = arith.add %[[A]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
     // CHECK-NEXT: %{{\d+}}, %[[QA:\d+]] = arith.divmod %[[SA]], %{{\d+}};
@@ -671,6 +668,21 @@ builtin.module private @share_base_divmod {
         %5 = arith.add %0, %4 <{ overflow = #builtin.overflow<checked> }>;
         %6, %7 = arith.divmod %5, %1;
         builtin.ret %3 : (u32);
+    };
+
+    // A division whose remainder alone is used, as when the loaded value of an access is dropped,
+    // still joins the group.
+    // CHECK: @remainder_only(%[[B:\d+]]: u32)
+    // CHECK: %[[S:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: %[[R:\d+]], %[[Q:\d+]] = arith.divmod %[[S]], %{{\d+}};
+    // CHECK-NEXT: %[[Q0:\d+]] = arith.sub %[[Q]], %{{\d+}} <{ overflow = #builtin.overflow<unchecked> }>;
+    // CHECK-NEXT: builtin.ret %[[Q0]], %[[R]] : (u32, u32);
+    builtin.function public extern("C") @remainder_only(%0: u32) -> (u32, u32) {
+        %1 = arith.constant 4 : u32;
+        %2, %3 = arith.divmod %0, %1;
+        %4 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+        %5, %6 = arith.divmod %4, %1;
+        builtin.ret %3, %5 : (u32, u32);
     };
 
     // A callee for the call boundary cases.

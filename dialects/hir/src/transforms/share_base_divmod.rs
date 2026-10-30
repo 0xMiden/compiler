@@ -6,7 +6,7 @@ use midenc_dialect_arith::{Add, ArithOpBuilder, Divmod};
 use midenc_hir::{
     BlockRef, Builder, CallOpInterface, ConstantIntRange, EntityMut, Forward, FxHashMap, Immediate,
     Op, OperationName, OperationRef, RawWalk, Report, Rewriter, Spanned, Symbol, TraceTarget, Type,
-    ValueRef,
+    Value, ValueRef,
     dialects::builtin::{
         Function,
         attributes::{LocalVariable, Overflow},
@@ -24,8 +24,8 @@ use crate::{Bitcast, ExecFpi, LoadLocal, LocalAddress, StoreLocal};
 
 /// Shares one `u32` `arith.divmod` among the divisions of one base plus constant offsets in a block.
 ///
-/// A group is formed, within a block, by the divisions by the same constant divisor `d` of the same
-/// base `b`, either directly (`arith.divmod(b, d)`) or plus a constant offset `K` that is a multiple
+/// A group is formed, within a block, by the divisions with a used result by the same constant
+/// divisor `d` of the same base `b`, either directly (`arith.divmod(b, d)`) or plus a constant offset `K` that is a multiple
 /// of `d` (`arith.divmod(arith.add(b, K) <checked>, d)`, the addition being in the same block and
 /// having no other use). A group of at least two divisions is rewritten to divide `b + Kmax` once,
 /// where `Kmax` is the largest offset of the group, at the first operation of the group. Every
@@ -141,9 +141,6 @@ impl Group {
     }
 
     /// The first operation of the group in block order, and the candidate it belongs to.
-    ///
-    /// The shared operations go there, so that no overflow check runs later than the addition it
-    /// replaces, and no operation between them runs before the check.
     fn first_op(&self) -> (OperationRef, &Candidate) {
         // A candidate's addition precedes its division in the same block (see `match_candidate`),
         // and may precede the divisions of the earlier candidates too.
@@ -403,7 +400,7 @@ fn base_key(
 
 /// Matches a `u32` `arith.divmod` by a non-zero constant, returning its divisor and the candidate.
 ///
-/// The division must have a used result. The dividend is split into a base and an offset when it
+/// The division must have a result used other than by debug information. The dividend is split into a base and an offset when it
 /// is a checked addition of a non-zero constant that is a multiple of the divisor, defined in the
 /// same block and used only by the division.
 fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
@@ -416,8 +413,9 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
     }
     let divisor = constant_u32(divmod.rhs().as_value_ref()).filter(|divisor| *divisor != 0)?;
     // A dead division would bring its checked addition, which the canonicalizer deletes otherwise,
-    // into the shared one.
-    if !operation.is_used() {
+    // into the shared one. Uses by debug information do not count; divisions used only by dead
+    // operations are left to the canonicalizer that runs before this pass.
+    if !operation.results().iter().any(|result| result.borrow().has_real_uses()) {
         return None;
     }
 
@@ -490,6 +488,7 @@ fn rewrite_group(
     let span = source.borrow().span();
     let (remainder, quotient) = {
         let mut rewriter = rewriter.with_inline_call_chain(source);
+        // The overflow check then runs no later than any addition it replaces.
         rewriter.set_insertion_point_before(first_op);
         let dividend = if max_offset == 0 {
             base

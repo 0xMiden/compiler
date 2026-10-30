@@ -629,8 +629,8 @@ fn local_set_splits_a_load_used_after_it() {
     assert_eq!(result, 3 + 7);
 }
 
-/// Verifies that two accesses at offset 0 through reloads of one local share one conversion, with
-/// no addition, and read the expected cell.
+/// Verifies that two accesses at offset 0 through reloads of one local share one conversion with no
+/// overflow check, and write and read back the expected cell.
 #[test]
 fn zero_offset_accesses_through_a_local_share_one_conversion() {
     let mut test = compile_wat(
@@ -643,6 +643,8 @@ fn zero_offset_accesses_through_a_local_share_one_conversion() {
     let masm = test.masm_src();
     let entry = masm_procedure(&masm, "entrypoint");
     assert_eq!(entry.matches("u32divmod").count(), 1, "{entry}");
+    let u32asserts = entry.split_whitespace().filter(|token| *token == "u32assert").count();
+    assert_eq!(u32asserts, 0, "{entry}");
     let result = eval_wat(&mut test, &[MEMORY_ADDR, 0x1234_5678], |read| {
         assert_eq!(read(MEMORY_ADDR), Some(0x1234_5678), "memory at {MEMORY_ADDR:#x}");
     });
