@@ -157,7 +157,7 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   cycle check sees direct `exec` edges only (`calls::recursion_indirect`,
   `frames::rec_mutual`).
 
-## Middle end: canonicalizer, CSE, SCCP, Local2Reg
+## Middle end: canonicalizer, CSE, SCCP, Local2Reg, share-base-divmod
 
 - Fixed pipeline at every level, on a function pass manager
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
@@ -170,6 +170,11 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   knobs (`Aggressive` simplification, `ControlFlowSink`, DCE, per-pass flags)
   and the advice-taint and postdominance analyses need a source change or
   `-Zlint`.
+- ShareBaseDivmod (after the lift): within a block, element-aligned accesses
+  through one base (one SSA value, its bitcasts, or reloads of one local with
+  no store between) share one checked `add.Kmax` + `u32divmod.4`; other
+  offsets subtract from the quotient. A group ends at a call, FPI or region
+  op; at most two groups overlap.
 - CSE and SCCP see only pre-lift bodies, which hold zero region ops
   (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no store
   between (the strongest Copy-constraint lever), and heap loads only 1 byte
