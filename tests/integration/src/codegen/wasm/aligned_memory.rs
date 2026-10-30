@@ -266,7 +266,8 @@ const U32_OVERFLOW_FAILURE: &str = "operation expected u32 values";
 /// The failure message of an element-aligned access through a misaligned address.
 const ALIGNMENT_FAILURE: &str = "pointer address does not meet minimum alignment for the type";
 
-/// Compiles the Wasm module `wat`, which exports `entrypoint`, through the full pipeline.
+/// Sets up the compilation of the Wasm module `wat`, which exports `entrypoint`, through the full
+/// pipeline.
 fn compile_wat(wat: &str) -> CompilerTest {
     let wasm = wat::parse_str(wat).unwrap();
     CompilerTest::from_wasm(
@@ -276,7 +277,7 @@ fn compile_wat(wat: &str) -> CompilerTest {
     )
 }
 
-/// The arguments of the entrypoint of a module compiled by [compile_wat].
+/// Converts `args` to the arguments of the entrypoint of a module compiled by [compile_wat].
 fn felt_args(args: &[u32]) -> Vec<Felt> {
     args.iter().copied().map(Felt::from).collect()
 }
@@ -295,7 +296,8 @@ fn eval_wat(
     .unwrap()
 }
 
-/// Evaluates [SHARED_BASE_ACCESSES] at `addr`, handing `check` a reader of the final memory.
+/// Evaluates `test`, compiled from [SHARED_BASE_ACCESSES], at `addr`, handing `check` a reader of
+/// the final memory.
 fn eval_shared_base_accesses(
     test: &mut CompilerTest,
     addr: u32,
@@ -438,8 +440,9 @@ const LOCAL_SET_IN_BRANCH_ACCESSES: &str = r#"(module
     local.get 0 i32.const 9 i32.store offset=4 align=4
     local.get 1 i32.load offset=4 align=4))"#;
 
-/// Verifies that a `local.set` of the base in a branch between two accesses through a local also
-/// keeps them from sharing a conversion: sharing one would store 9 at `addr0 + 4`.
+/// Verifies that two accesses through a local separated by a branch that sets the local do not
+/// share a conversion (the branch ends the group): sharing one would store 9 at `addr0 + 4`. The
+/// store epoch alone is pinned by [local_set_in_a_branch_splits_a_load_used_after_the_branch].
 #[test]
 fn local_set_in_a_branch_splits_the_accesses_through_a_local() {
     let mut test = compile_wat(LOCAL_SET_IN_BRANCH_ACCESSES);
@@ -624,4 +627,24 @@ fn local_set_splits_a_load_used_after_it() {
     }];
     let (result, _) = eval_wat_cycles(&mut test, initializers, &[addr0, addr1]);
     assert_eq!(result, 3 + 7);
+}
+
+/// Verifies that two accesses at offset 0 through reloads of one local share one conversion, with
+/// no addition, and read the expected cell.
+#[test]
+fn zero_offset_accesses_through_a_local_share_one_conversion() {
+    let mut test = compile_wat(
+        r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32) (result i32)
+    local.get 0 local.get 1 i32.store offset=0 align=4
+    local.get 0 i32.load offset=0 align=4))"#,
+    );
+    let masm = test.masm_src();
+    let entry = masm_procedure(&masm, "entrypoint");
+    assert_eq!(entry.matches("u32divmod").count(), 1, "{entry}");
+    let result = eval_wat(&mut test, &[MEMORY_ADDR, 0x1234_5678], |read| {
+        assert_eq!(read(MEMORY_ADDR), Some(0x1234_5678), "memory at {MEMORY_ADDR:#x}");
+    });
+    assert_eq!(result, 0x1234_5678);
 }
