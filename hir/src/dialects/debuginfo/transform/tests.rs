@@ -1204,3 +1204,58 @@ fn replacement_failure_retains_prior_guard_poison_and_its_own_cause() -> Result<
     assert!(!super::super::capture_invalidation::active(test.context()));
     Ok(())
 }
+
+#[test]
+fn contextualized_phase_failure_survives_pass_cleanup_once() -> Result<(), Report> {
+    use crate::{
+        EntityMut, OperationName,
+        dialects::builtin::Function,
+        pass::{Pass, PassExecutionState},
+    };
+    struct FailWithContext;
+    impl Pass for FailWithContext {
+        type Target = Function;
+
+        fn name(&self) -> &'static str {
+            "contextual-capture-pass"
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Function>,
+            _: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let root = op.as_operation_ref();
+            let context = op.as_operation().context_rc();
+            drop(op);
+            let phase = phase(root)?;
+            let record = collect_debug_ops(&root)[1];
+            let next = record.next().unwrap();
+            let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+            invalidate_debug_captures(record, &mut rewriter)?;
+            next.prev().unwrap().borrow_mut().erase();
+            phase.finish().map(|_| ()).map_err(|error| {
+                error
+                    .wrap_err("while rewriting function foo")
+                    .wrap_err("while lowering module bar")
+            })
+        }
+    }
+    let (test, ..) = capture_fixture(&[1, 2, 3])?;
+    let error = test.apply_boxed_pass(Box::new(FailWithContext), false).unwrap_err();
+    let rendered = render(&error);
+    for expected in [
+        "while rewriting function foo",
+        "while lowering module bar",
+        "pending capture anchor erased",
+        "pass 'contextual-capture-pass'",
+    ] {
+        assert_eq!(rendered.matches(expected).count(), 1, "{rendered}");
+    }
+    assert!(!super::super::capture_invalidation::active(test.context()));
+    Ok(())
+}

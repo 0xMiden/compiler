@@ -1,6 +1,7 @@
 //! Deferred slot clears. Original capture witnesses remain immediate; only supplemental kills
 //! are solved here, from surviving IR, at an explicit rewrite/observer boundary.
 use alloc::{
+    boxed::Box,
     rc::{Rc, Weak},
     string::String,
     sync::Arc,
@@ -44,28 +45,122 @@ impl core::error::Error for CaptureError {
     }
 }
 
-/// A flat aggregate exposes every original diagnostic, including its own related diagnostics.
+/// Context retains its original Report, including the ordinary source chain. Its diagnostic
+/// source projects only the caller's context prefix: registered causes are rendered once as
+/// the aggregate's related diagnostics, with their metadata and provenance intact.
+#[derive(Debug)]
+struct CaptureContext {
+    report: Arc<Report>,
+    index: usize,
+    next: Option<Arc<Self>>,
+}
+impl CaptureContext {
+    fn encloses(&self, context: &Arc<Self>) -> bool {
+        self.report
+            .downcast_ref::<CaptureErrors>()
+            .is_some_and(|errors| errors.contexts.iter().any(|inner| Arc::ptr_eq(inner, context)))
+    }
+}
+impl core::fmt::Display for CaptureContext {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.report.chain().nth(self.index).unwrap(), f)
+    }
+}
+impl core::error::Error for CaptureContext {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        self.report.chain().nth(self.index + 1)
+    }
+}
+impl Diagnostic for CaptureContext {
+    fn diagnostic_source(&self) -> Option<&dyn Diagnostic> {
+        Some(self.next.as_deref().map_or(&ContextBoundary as &dyn Diagnostic, |next| next))
+    }
+}
+
 #[derive(Debug, thiserror::Error, Diagnostic)]
-#[error("capture lifecycle failed with multiple errors")]
-struct CaptureErrors(#[related] Vec<CaptureError>);
+#[error("capture failure reported below")]
+struct ContextBoundary;
+
+/// A flat aggregate exposes original causes and retains caller context independently of cause
+/// identity. Overlapping observations can add context without creating another cause.
+#[derive(Clone, Debug, Default, thiserror::Error)]
+#[error("capture lifecycle failed")]
+struct CaptureErrors {
+    errors: Vec<CaptureError>,
+    contexts: Vec<Arc<CaptureContext>>,
+}
+impl Diagnostic for CaptureErrors {
+    fn related(&self) -> Option<Box<dyn Iterator<Item = &dyn Diagnostic> + '_>> {
+        Some(Box::new(
+            self.contexts
+                .iter()
+                .map(|context| context.as_ref() as &dyn Diagnostic)
+                .chain(self.errors.iter().map(|error| error as &dyn Diagnostic)),
+        ))
+    }
+}
 impl CaptureErrors {
     fn from_report(report: Report) -> Self {
-        match report.downcast::<Self>() {
-            Ok(errors) => errors,
-            Err(report) => match report.downcast::<CaptureError>() {
-                Ok(error) => Self(alloc::vec![error]),
-                Err(report) => Self(alloc::vec![CaptureError {
+        // Consuming downcasts search through and discard wrap_err layers. Clone only our
+        // private registered payload, retaining the complete Report when context surrounds it.
+        let registered = report
+            .downcast_ref::<Self>()
+            .map(|errors| (errors.clone(), errors as &dyn core::error::Error))
+            .or_else(|| {
+                report.downcast_ref::<CaptureError>().map(|error| {
+                    (
+                        Self {
+                            errors: alloc::vec![error.clone()],
+                            contexts: Vec::new(),
+                        },
+                        error as &dyn core::error::Error,
+                    )
+                })
+            });
+        let Some((mut errors, boundary)) = registered else {
+            return Self {
+                errors: alloc::vec![CaptureError {
                     report: Arc::new(report),
-                    passes: Vec::new(),
-                }]),
-            },
+                    passes: Vec::new()
+                }],
+                contexts: Vec::new(),
+            };
+        };
+        let depth =
+            report.chain().take_while(|error| !core::ptr::addr_eq(*error, boundary)).count();
+        if depth > 0 {
+            let report = Arc::new(report);
+            let mut next = None;
+            for index in (0..depth).rev() {
+                next = Some(Arc::new(CaptureContext {
+                    report: report.clone(),
+                    index,
+                    next,
+                }));
+            }
+            errors.contexts.insert(0, next.unwrap());
         }
+        errors
     }
 
     fn extend(&mut self, errors: Self) {
-        for error in errors.0 {
-            if let Some(existing) =
-                self.0.iter_mut().find(|existing| Arc::ptr_eq(&error.report, &existing.report))
+        for context in errors.contexts {
+            if !self.contexts.iter().any(|existing| Arc::ptr_eq(existing, &context)) {
+                // A newly added outer scope precedes its existing inner scopes, even when
+                // it arrives through cleanup after an earlier observation was registered.
+                let index = self
+                    .contexts
+                    .iter()
+                    .position(|inner| context.encloses(inner))
+                    .unwrap_or(self.contexts.len());
+                self.contexts.insert(index, context);
+            }
+        }
+        for error in errors.errors {
+            if let Some(existing) = self
+                .errors
+                .iter_mut()
+                .find(|existing| Arc::ptr_eq(&error.report, &existing.report))
             {
                 for pass in error.passes {
                     if !existing.passes.contains(&pass) {
@@ -73,14 +168,14 @@ impl CaptureErrors {
                     }
                 }
             } else {
-                self.0.push(error);
+                self.errors.push(error);
             }
         }
     }
 
     fn into_report(mut self) -> Report {
-        if self.0.len() == 1 {
-            Report::new(self.0.pop().unwrap())
+        if self.contexts.is_empty() && self.errors.len() == 1 {
+            Report::new(self.errors.pop().unwrap())
         } else {
             Report::new(self)
         }
@@ -97,7 +192,7 @@ pub fn combine_capture_errors(body: Report, cleanup: Report) -> Report {
 
 pub(crate) fn capture_error_in_pass(report: Report, pass: &'static str) -> Report {
     let mut errors = CaptureErrors::from_report(report);
-    for error in &mut errors.0 {
+    for error in &mut errors.errors {
         if !error.passes.contains(&pass) {
             error.passes.push(pass);
         }
@@ -110,7 +205,7 @@ pub(crate) struct CaptureInvalidationState {
     next_id: u64,
     frames: Vec<Frame>,
     pending: FxHashMap<OperationRef, Request>,
-    failures: Vec<CaptureError>,
+    failures: CaptureErrors,
     resolving: bool,
 }
 struct Frame {
@@ -232,9 +327,7 @@ pub(crate) fn poison(context: &Context, message: impl Into<String>) {
 
 fn record(context: &Context, errors: CaptureErrors) {
     let mut state = context.capture_invalidation.borrow_mut();
-    let mut failures = CaptureErrors(core::mem::take(&mut state.failures));
-    failures.extend(errors);
-    state.failures = failures.0;
+    state.failures.extend(errors);
 }
 
 /// Register original reports while reusing identities already registered by an inner boundary.
@@ -246,10 +339,10 @@ pub(super) fn fail(context: &Context, report: Report) -> Report {
 /// Observe registered causes. Construct the Report only after releasing the Context borrow.
 pub(crate) fn check(context: &Context) -> Result<(), Report> {
     let failures = context.capture_invalidation.borrow().failures.clone();
-    if failures.is_empty() {
+    if failures.errors.is_empty() {
         Ok(())
     } else {
-        Err(CaptureErrors(failures).into_report())
+        Err(failures.into_report())
     }
 }
 pub(super) fn active(context: &Context) -> bool {
@@ -826,6 +919,149 @@ pub(super) mod tests {
         assert!(!active(test.context()));
         assert!(capture_invalidation_barrier(&test.context_rc()).is_err());
         Ok(())
+    }
+
+    #[test]
+    fn contextualized_single_and_aggregate_keep_metadata_and_overlap_identity() {
+        let test = Test::new("contextual_composition", &[], &[]);
+        let original = fail(test.context(), structured_report());
+        let contextual = original.wrap_err("inner single context").wrap_err("outer single context");
+        let contextual = combine_capture_errors(contextual, check(test.context()).unwrap_err());
+        let contextual = capture_error_in_pass(contextual, "inner-context-pass");
+        let contextual = fail(test.context(), contextual);
+        assert_structured(&contextual);
+        let context = contextual
+            .related()
+            .unwrap()
+            .find(|diagnostic| diagnostic.to_string() == "outer single context")
+            .expect("outer caller context must remain exposed");
+        let inner = context.source().unwrap();
+        assert_eq!(inner.to_string(), "inner single context");
+        let root = inner.source().unwrap();
+        assert_eq!(root.to_string(), "structured root failure");
+        assert_eq!(root.source().unwrap().to_string(), "structured underlying cause");
+        assert_eq!(context.diagnostic_source().unwrap().to_string(), "inner single context");
+        let rendered = render(&contextual);
+        assert!(rendered.find("outer single context") < rendered.find("inner single context"));
+        assert_eq!(rendered.matches("pass 'inner-context-pass'").count(), 1, "{rendered}");
+        let second = fail(test.context(), Report::msg("independent second failure"));
+        let aggregate = combine_capture_errors(contextual, second).wrap_err("aggregate context");
+        let aggregate = combine_capture_errors(aggregate, check(test.context()).unwrap_err());
+        let aggregate = capture_error_in_pass(aggregate, "outer-context-pass");
+        let aggregate = fail(test.context(), aggregate);
+        let rendered = render(&aggregate);
+        for expected in [
+            "inner single context",
+            "outer single context",
+            "aggregate context",
+            "structured root failure",
+            "independent second failure",
+        ] {
+            assert_eq!(rendered.matches(expected).count(), 1, "{rendered}");
+        }
+        assert_structured(&aggregate);
+        let independent = structured_report();
+        let combined = combine_capture_errors(aggregate.wrap_err("nested context"), independent);
+        let combined = combine_capture_errors(combined, check(test.context()).unwrap_err());
+        let combined = capture_error_in_pass(combined, "outer-context-pass");
+        let rendered = render(&combined);
+        for expected in [
+            "inner single context",
+            "outer single context",
+            "aggregate context",
+            "nested context",
+            "independent second failure",
+        ] {
+            assert_eq!(rendered.matches(expected).count(), 1, "{rendered}");
+        }
+        for expected in [
+            "structured root failure",
+            "capture::structured",
+            "structured recovery advice",
+            "structured source label",
+            "structured related detail",
+            "structured underlying cause",
+        ] {
+            assert_eq!(rendered.matches(expected).count(), 2, "{rendered}");
+        }
+        let nested = rendered.find("nested context").unwrap();
+        let aggregate = rendered.find("aggregate context").unwrap();
+        let outer_single = rendered.find("outer single context").unwrap();
+        let inner_single = rendered.find("inner single context").unwrap();
+        assert!(
+            nested < aggregate && aggregate < outer_single && outer_single < inner_single,
+            "{rendered}"
+        );
+        assert!(rendered.contains("inner-context-pass"), "{rendered}");
+        assert!(rendered.contains("outer-context-pass"), "{rendered}");
+    }
+
+    #[test]
+    fn contextualized_partial_overlap_keeps_each_context_and_cause_once() {
+        let first = Test::new("first_context", &[], &[]);
+        let shared = Test::new("shared_context", &[], &[]);
+        let last = Test::new("last_context", &[], &[]);
+        let a = fail(first.context(), structured_report());
+        let b = fail(shared.context(), Report::msg("shared middle failure"));
+        let c = fail(last.context(), Report::msg("independent last failure"));
+        let left = combine_capture_errors(a, b).wrap_err("left aggregate context");
+        let right = combine_capture_errors(check(shared.context()).unwrap_err(), c)
+            .wrap_err("right aggregate context");
+        let combined = combine_capture_errors(left, right);
+        let combined = combine_capture_errors(
+            combined.wrap_err("outer overlap context"),
+            check(shared.context()).unwrap_err(),
+        );
+        let combined = capture_error_in_pass(combined, "overlap-pass");
+        let rendered = render(&combined);
+        for expected in [
+            "structured root failure",
+            "shared middle failure",
+            "independent last failure",
+            "left aggregate context",
+            "right aggregate context",
+            "outer overlap context",
+        ] {
+            assert_eq!(rendered.matches(expected).count(), 1, "{rendered}");
+        }
+        assert_eq!(rendered.matches("pass 'overlap-pass'").count(), 3, "{rendered}");
+        assert_structured(&combined);
+    }
+
+    #[test]
+    fn contextualized_observation_retains_the_opaque_context_object() {
+        use core::{
+            fmt,
+            sync::atomic::{AtomicBool, Ordering},
+        };
+        struct ContextMessage(Arc<AtomicBool>);
+        impl fmt::Display for ContextMessage {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("retained object context")
+            }
+        }
+        impl Drop for ContextMessage {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+        let test = Test::new("opaque_context", &[], &[]);
+        let dropped = Arc::new(AtomicBool::new(false));
+        let original = fail(test.context(), structured_report());
+        let wrapped = original.wrap_err(ContextMessage(dropped.clone()));
+        let combined = combine_capture_errors(wrapped, check(test.context()).unwrap_err());
+        let combined = capture_error_in_pass(combined, "opaque-context-pass");
+        assert!(
+            !dropped.load(Ordering::Relaxed),
+            "composition dropped the original context object"
+        );
+        assert_structured(&combined);
+        assert_eq!(render(&combined).matches("retained object context").count(), 1);
+        drop(combined);
+        assert!(
+            dropped.load(Ordering::Relaxed),
+            "context object leaked after the report was released"
+        );
     }
 
     #[test]
