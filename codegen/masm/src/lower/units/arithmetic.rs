@@ -91,8 +91,8 @@ pub(crate) enum Kind {
 
 /// The count a bit movement carries as an instruction immediate: `op` is an `arith.shl`,
 /// `arith.shr`, `arith.rotl` or `arith.rotr` whose moved type has a native immediate form and
-/// whose count is an `arith.constant` below the 32-bit limit. Signed and 64-bit right shifts and
-/// 64-bit rotates are helper calls that take the count on the stack, so they never fold.
+/// whose count is an `arith.constant` below the 32-bit limit. Signed right shifts and every
+/// 64-bit movement are helper calls that take the count on the stack, so they never fold.
 ///
 /// The movement and the constant both consult this rule, so selection agrees on which values
 /// are consumed as immediates without a physical lane.
@@ -301,9 +301,7 @@ impl Arithmetic {
         );
         let mut order = (0..inputs.len()).collect::<Vec<_>>();
         let mut immediates = vec![];
-        let count = matches!(kind, Shl | Shr | Rotl | Rotr)
-            .then(|| immediate_movement_count(op))
-            .flatten();
+        let count = immediate_movement_count(op);
         let expected = match kind {
             ConstantPointer | GlobalSymbol | Poison if inputs.is_empty() => {
                 vec![target.clone().unwrap()]
@@ -401,14 +399,7 @@ impl Arithmetic {
                         | Type::U64
                 ) =>
             {
-                // A folded count leaves only the shifted value on the stack.
-                match count {
-                    Some(count) => {
-                        order = vec![0];
-                        immediates.push((1, Felt::from(count)));
-                    }
-                    None => order.reverse(),
-                }
+                order.reverse();
                 vec![ty.clone()]
             }
             Shr if inputs.len() == 2
@@ -418,13 +409,7 @@ impl Arithmetic {
                     Type::U8 | Type::U16 | Type::I32 | Type::U32 | Type::I64 | Type::U64
                 ) =>
             {
-                match count {
-                    Some(count) => {
-                        order = vec![0];
-                        immediates.push((1, Felt::from(count)));
-                    }
-                    None => order.reverse(),
-                }
+                order.reverse();
                 vec![ty.clone()]
             }
             Rotl | Rotr
@@ -432,13 +417,7 @@ impl Arithmetic {
                     && inputs[1] == Type::U32
                     && matches!(ty, Type::I32 | Type::U32 | Type::I64 | Type::U64) =>
             {
-                match count {
-                    Some(count) => {
-                        order = vec![0];
-                        immediates.push((1, Felt::from(count)));
-                    }
-                    None => order.reverse(),
-                }
+                order.reverse();
                 vec![ty.clone()]
             }
             Not if unary && ty == Type::I1 => vec![ty.clone()],
@@ -530,6 +509,12 @@ impl Arithmetic {
                 return Err(invalid("unsupported arithmetic source type, arity or property").into());
             }
         };
+        // A folded count leaves only the moved value on the stack; the count becomes an
+        // immediate of the instruction and a semantic input of the unit.
+        if let Some(count) = count {
+            order = vec![0];
+            immediates.push((1, Felt::from(count)));
+        }
         if outputs != expected {
             return Err(
                 invalid("arithmetic results disagree with exact registered source rule").into()
@@ -659,6 +644,11 @@ impl Arithmetic {
             .into());
         }
         let specs = expected_calls(kind, &ty, overflow, target.as_ref());
+        // An immediate form is a single native instruction; a helper would take the count on
+        // the stack and the folded lane would be missing from its arguments.
+        if !immediates.is_empty() && !specs.is_empty() {
+            return Err(invalid("immediate movement count on a helper-backed type").into());
+        }
         let actual = body
             .iter()
             .filter_map(|op| match op {
@@ -827,6 +817,7 @@ impl Arithmetic {
     pub fn bind(&mut self, inputs: &[Atom], immediates: &[Atom], outputs: &[Atom]) {
         self.proof.aliases =
             LaneAliases::new(self.aliases.iter().map(|&(o, i)| (outputs[o], inputs[i])).collect());
+        debug_assert_eq!(immediates.len(), self.immediates.len(), "one atom per immediate");
         self.proof.immediates = immediates
             .iter()
             .zip(&self.immediates)
