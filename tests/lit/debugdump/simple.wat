@@ -1,6 +1,6 @@
 ;; Test that miden-objtool correctly parses and displays debug info from a .masp file
 ;;
-;; RUN: midenc %s --entrypoint=simple::multiply --debug full -o %t/out.masp
+;; RUN: midenc %s --entrypoint=simple::divide --debug full -o %t/out.masp
 ;; RUN: miden-objtool dump debug-info %t/out.masp | filecheck %s
 
 ;; CHECK: Package Info:
@@ -44,8 +44,9 @@
 
 ;; Check that debug functions are present for the emitted code
 ;; CHECK: .debug_functions contents:
-;; CHECK: FUNCTION: ::intrinsics::i32::overflowing_mul
-;; CHECK: FUNCTION: ::intrinsics::i32::wrapping_mul
+;; CHECK-DAG: FUNCTION: ::intrinsics::i32::checked_div
+;; CHECK-DAG: FUNCTION: ::intrinsics::i32::is_signed
+;; CHECK-DAG: FUNCTION: ::intrinsics::i32::unchecked_neg
 
 ;; CHECK: .debug_loc contents (DebugLoc entries from MAST):
 ;; CHECK: Total DebugVar entries: 0
@@ -57,9 +58,9 @@
     i32.add
   )
 
-  (func $multiply (export "multiply") (param $x i32) (param $y i32) (result i32)
+  (func $divide (export "divide") (param $x i32) (param $y i32) (result i32)
     local.get $x
     local.get $y
-    i32.mul
+    i32.div_s
   )
 )
