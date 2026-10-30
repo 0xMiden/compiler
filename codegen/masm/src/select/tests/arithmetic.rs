@@ -1359,7 +1359,7 @@ fn a_count_shared_with_another_user_is_pushed_for_that_user_only() {
     assert_eq!(selected.segments[0].units[0].publication, OutputPublication::Stack);
 }
 
-/// A count shifted by and added to its shifted value.
+/// A constant used both as a shift count and as an addend of the shifted value.
 const SHARED_COUNT: &str = "builtin.function public extern(\"C\") @f(%a:u32) -> u32 { %c = \
                             arith.constant 3 : u32; %r = arith.shl %a, %c; %s = arith.add %r, %c \
                             <{ overflow = #builtin.overflow<wrapping> }>; builtin.ret %s : (u32); \
@@ -1467,8 +1467,8 @@ fn a_dominating_count_folds_into_a_shift_in_the_else_arm() {
     execute(&f, &SelectEnv::default(), &[0, 5], &[40]);
 }
 
-/// The immediates check reaches the `else` body: a different count on a shift folded there is
-/// rejected.
+/// A different count on a shift folded in the `else` arm is rejected. A scan that skipped the
+/// arm would report the same error, so the descent is pinned by the positive test above.
 #[test]
 fn an_immediate_shift_in_the_else_arm_must_carry_the_registered_count() {
     let f = parse(ELSE_ARM_SHIFT);
@@ -1622,8 +1622,8 @@ fn an_immediate_shift_body_must_not_repeat_the_registered_count() {
     assert_eq!(error.message, "actual body immediates differ from registered evidence");
 }
 
-/// The immediates check reaches nested bodies: a different count on a shift folded inside an
-/// `scf.if` arm is rejected.
+/// A different count on a shift folded inside an `scf.if` arm is rejected. A scan that skipped
+/// the arm would report the same error, so the descent is pinned by the positive tests.
 #[test]
 fn a_nested_immediate_shift_body_must_carry_the_registered_count() {
     let f = parse(
@@ -1745,10 +1745,43 @@ fn a_folded_count_live_across_a_loop_is_not_carried_on_the_stack() {
     execute(&f, &SelectEnv::default(), &[0, 5], &[5]);
 }
 
-/// A folded count gets no lane in any entry layout even when an equal constant of
-/// another type is resident at the loop entry, so it is never pushed for the loop header. The
-/// resident constant is consumed by the loop body and rebuilt for the back edge, so its
-/// `push.3` legitimately appears twice and counting pushes cannot tell the two apart.
+/// Assert that no entry contract of `plan` names `folded` as a lane, a required cell or an
+/// alias.
+fn assert_no_contract_names(plan: &crate::plan::actions::ProcedurePlan, folded: ValueId) {
+    for contract in plan.contracts.values() {
+        assert!(!contract.stack_top_first.iter().any(|atom| atom.value == folded), "{plan}");
+        assert!(
+            !contract.required_spill_slots.iter().any(|(_, atom)| atom.value == folded),
+            "{plan}"
+        );
+        assert!(
+            !contract
+                .aliases
+                .pairs()
+                .iter()
+                .any(|(a, b)| a.value == folded || b.value == folded),
+            "{plan}"
+        );
+    }
+}
+
+/// The value of the only literal-published unit of `plan`.
+fn folded_value(plan: &crate::plan::actions::ProcedurePlan) -> ValueId {
+    let mut literals = plan
+        .selected
+        .segments
+        .iter()
+        .flat_map(|segment| &segment.units)
+        .filter(|unit| unit.publication == OutputPublication::Literal);
+    let literal = literals.next().unwrap();
+    assert!(literals.next().is_none(), "{plan}");
+    literal.outputs[0].value
+}
+
+/// A folded count gets no lane in any entry layout even when an equal constant of another type
+/// is resident at the loop entry, so it is never pushed for the loop header. The resident
+/// constant is consumed by the loop body and rebuilt for the back edge, so its `push.3`
+/// legitimately appears twice and counting pushes cannot tell the two apart.
 #[test]
 fn a_folded_count_is_not_pushed_beside_an_equal_resident_constant() {
     let f = parse(
@@ -1767,18 +1800,11 @@ fn a_folded_count_is_not_pushed_beside_an_equal_resident_constant() {
     let constants = &plan.selected.segments[0].units;
     assert_eq!(constants[0].publication, OutputPublication::Literal, "the folded count");
     assert_eq!(constants[1].publication, OutputPublication::Stack, "the multiplier");
-    let folded = constants[0].outputs[0].value;
     assert!(
         plan.decisions.entries.values().any(|entry| entry.origin == "loop-demand"),
         "{plan}"
     );
-    for contract in plan.contracts.values() {
-        assert!(!contract.stack_top_first.iter().any(|atom| atom.value == folded), "{plan}");
-        assert!(
-            !contract.required_spill_slots.iter().any(|(_, atom)| atom.value == folded),
-            "{plan}"
-        );
-    }
+    assert_no_contract_names(&plan, constants[0].outputs[0].value);
     execute(&f, &SelectEnv::default(), &[2, 1, 1], &[64]);
     execute(&f, &SelectEnv::default(), &[0, 5, 1], &[5]);
 }
@@ -1808,40 +1834,52 @@ fn a_literal_yielded_on_one_arm_and_folded_on_the_other() {
 
 /// A count folded after a three-way join is never pushed: no entry contract, inherited ones
 /// included, names it, even beside an equal operand constant of the default arm, which is the
-/// only `push.3`.
+/// only `push.3`. Both definition orders are covered, since contract aliases pair a later live
+/// value with an earlier one.
 #[test]
 fn a_three_way_join_never_pushes_a_folded_count() {
-    let f = parse(
-        "builtin.function public extern(\"C\") @f(%s: u32, %a: u32) -> u32 { %c = arith.constant \
-         3 : u32; %k = arith.constant 3 : u32; %r = scf.index_switch %s case 0 { %t0 = arith.mul \
-         %a, %a <{ overflow = #builtin.overflow<wrapping> }>; scf.yield %t0 : (u32); } case 1 { \
-         %t1 = arith.add %a, %a <{ overflow = #builtin.overflow<wrapping> }>; scf.yield %t1 : \
-         (u32); } default { %z = arith.add %a, %k <{ overflow = #builtin.overflow<wrapping> }>; \
-         scf.yield %z : (u32); } : u32; %y = arith.shl %r, %c; builtin.ret %y : (u32); };",
-    );
+    let count = "%c = arith.constant 3 : u32;";
+    let operand = "%k = arith.constant 3 : u32;";
+    for (first, second) in [(count, operand), (operand, count)] {
+        let f = parse(&format!(
+            "builtin.function public extern(\"C\") @f(%s: u32, %a: u32) -> u32 {{ {first} \
+             {second} %r = scf.index_switch %s case 0 {{ %t0 = arith.mul %a, %a <{{ overflow = \
+             #builtin.overflow<wrapping> }}>; scf.yield %t0 : (u32); }} case 1 {{ %t1 = arith.add \
+             %a, %a <{{ overflow = #builtin.overflow<wrapping> }}>; scf.yield %t1 : (u32); }} \
+             default {{ %z = arith.add %a, %k <{{ overflow = #builtin.overflow<wrapping> }}>; \
+             scf.yield %z : (u32); }} : u32; %y = arith.shl %r, %c; builtin.ret %y : (u32); }};"
+        ));
+        let procedure = selected_procedure(&f, &SelectEnv::default());
+        assert_eq!(instruction_lines(&procedure, "push.3"), 1, "{first}: {procedure}");
+        assert_eq!(instruction_lines(&procedure, "u32shl.3"), 1, "{first}: {procedure}");
+        let (plan, ..) = ready(&f, &SelectEnv::default());
+        assert_no_contract_names(&plan, folded_value(&plan));
+        for (s, expected) in [(0, 200), (1, 80), (2, 64)] {
+            execute(&f, &SelectEnv::default(), &[s, 5], &[expected]);
+        }
+    }
+}
+
+/// A count folded after a join is named by no entry contract, as a lane, a required cell or an
+/// alias, even when an equal constant sits in a cell on every predecessor because the foreign
+/// call before the join takes it as a stored input. The foreign call is compiled but not run.
+#[test]
+fn a_folded_count_is_not_named_beside_an_equal_stored_constant() {
+    let outputs = (0..16).map(|i| format!("%o{i}")).collect::<alloc::vec::Vec<_>>().join(", ");
+    let f = parse(&format!(
+        "builtin.function public extern(\"C\") @f(%s: u32, %a: u32, %f1: felt, %f2: felt, %f3: \
+         felt, %f4: felt, %f5: felt) -> u32 {{ %c = arith.constant 3 : u32; %k0 = arith.constant \
+         3 : u32; %k = hir.bitcast %k0 <{{ ty = #builtin.type<felt> }}>; {outputs} = hir.exec_fpi \
+         [%k, %f1, %f2, %f3, %f4, %f5](%f1); %z = arith.constant 0 : u32; %p = arith.eq %s, %z; \
+         %r = scf.if %p then {{ %t = arith.add %a, %a <{{ overflow = #builtin.overflow<wrapping> \
+         }}>; scf.yield %t : (u32); }} else {{ %u = arith.mul %a, %a <{{ overflow = \
+         #builtin.overflow<wrapping> }}>; scf.yield %u : (u32); }} : (i1) -> u32; %w = arith.shl \
+         %r, %c; builtin.ret %w : (u32); }};"
+    ));
     let procedure = selected_procedure(&f, &SelectEnv::default());
-    assert_eq!(instruction_lines(&procedure, "push.3"), 1, "{procedure}");
     assert_eq!(instruction_lines(&procedure, "u32shl.3"), 1, "{procedure}");
     let (plan, ..) = ready(&f, &SelectEnv::default());
-    let folded = plan
-        .selected
-        .segments
-        .iter()
-        .flat_map(|segment| &segment.units)
-        .find(|unit| unit.publication == OutputPublication::Literal)
-        .unwrap()
-        .outputs[0]
-        .value;
-    for contract in plan.contracts.values() {
-        assert!(!contract.stack_top_first.iter().any(|atom| atom.value == folded), "{plan}");
-        assert!(
-            !contract.required_spill_slots.iter().any(|(_, atom)| atom.value == folded),
-            "{plan}"
-        );
-    }
-    for (s, expected) in [(0, 200), (1, 80), (2, 64)] {
-        execute(&f, &SelectEnv::default(), &[s, 5], &[expected]);
-    }
+    assert_no_contract_names(&plan, folded_value(&plan));
 }
 
 /// A constant that is moved by a folded count keeps its stack publication: only the count is
@@ -1864,42 +1902,100 @@ const MOVED_CONSTANT: &str = "builtin.function public extern(\"C\") @f() -> u32 
                               arith.constant 7 : u32; %c = arith.constant 2 : u32; %r = arith.shl \
                               %v, %c; builtin.ret %r : (u32); };";
 
-/// The selection check rejects a literal publication of a value another unit takes on the
-/// stack.
-#[test]
-fn a_literal_publication_demanded_on_the_stack_is_rejected() {
-    use crate::verify::{DefinitionEvidence, GeneratedDefinition, VerificationError};
-    /// Evidence selected from HIR and then altered, registered as a generated definition so
-    /// the checker validates the altered program instead of rejecting it as a disagreement
-    /// with its source.
-    struct Altered(DefinitionEvidence);
-    impl GeneratedDefinition for Altered {
-        fn id(&self) -> GeneratedDefinitionId {
-            GeneratedDefinitionId(1005)
-        }
+/// Evidence selected from HIR and then altered, registered as a generated definition so the
+/// checker validates the altered program instead of rejecting it as a disagreement with its
+/// source.
+struct Altered(crate::verify::DefinitionEvidence);
 
-        fn instantiate(
-            &self,
-            _: &[miden_core::Felt],
-        ) -> Result<DefinitionEvidence, VerificationError> {
-            Ok(self.0.clone())
-        }
+impl crate::verify::GeneratedDefinition for Altered {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(1005)
     }
-    let f = parse(MOVED_CONSTANT);
+
+    fn instantiate(
+        &self,
+        _: &[miden_core::Felt],
+    ) -> Result<crate::verify::DefinitionEvidence, crate::verify::VerificationError> {
+        Ok(self.0.clone())
+    }
+}
+
+/// The selection-check rejection of the evidence selected for `f` once `alter` has changed it.
+fn altered_selection_error(
+    f: &Parsed,
+    alter: impl FnOnce(&mut crate::verify::DefinitionEvidence),
+) -> crate::verify::VerificationError {
     let function = f.borrow();
     let mut evidence = crate::select::evidence(&function, &SelectEnv::default()).unwrap().source;
     evidence.program.origin = ProcedureOrigin::Generated {
         definition: GeneratedDefinitionId(1005),
         parameters: vec![],
     };
-    let moved = &mut evidence.program.segments[0].units[0];
-    assert_eq!(moved.publication, OutputPublication::Stack);
-    moved.publication = OutputPublication::Literal;
+    alter(&mut evidence);
     let source = Altered(evidence);
     let error =
         check_selection(source.0.program.clone(), &SourceContext::Generated(&source)).unwrap_err();
     assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+    error
+}
+
+/// Republish the first unit of the first segment, a constant published on the stack, as a
+/// literal.
+fn publish_first_constant_as_literal(evidence: &mut crate::verify::DefinitionEvidence) {
+    let constant = &mut evidence.program.segments[0].units[0];
+    assert_eq!(constant.publication, OutputPublication::Stack);
+    constant.publication = OutputPublication::Literal;
+}
+
+/// The selection check rejects a literal publication of a value another unit takes on the
+/// stack.
+#[test]
+fn a_literal_publication_demanded_on_the_stack_is_rejected() {
+    let error = altered_selection_error(&parse(MOVED_CONSTANT), publish_first_constant_as_literal);
     assert_eq!(error.message, "literal publication demanded as a physical input");
+}
+
+/// The selection check rejects a literal publication of a value an `scf.if` branches on.
+#[test]
+fn a_literal_publication_used_as_a_predicate_is_rejected() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%a: u32) -> u32 { %p = arith.constant 1 : i1; \
+         %x = scf.if %p then { scf.yield %a : (u32); } else { %b = arith.add %a, %a <{ overflow = \
+         #builtin.overflow<wrapping> }>; scf.yield %b : (u32); } : (i1) -> u32; builtin.ret %x : \
+         (u32); };",
+    );
+    let error = altered_selection_error(&f, publish_first_constant_as_literal);
+    assert_eq!(error.message, "literal publication used as a control predicate");
+}
+
+/// The selection check rejects a literal publication of a value another value aliases.
+#[test]
+fn a_literal_publication_used_as_an_alias_source_is_rejected() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f() -> felt { %k = arith.constant 3 : u32; %f = \
+         hir.bitcast %k <{ ty = #builtin.type<felt> }>; builtin.ret %f : (felt); };",
+    );
+    let error = altered_selection_error(&f, publish_first_constant_as_literal);
+    assert_eq!(error.message, "literal publication used as an alias source");
+}
+
+/// The selection check rejects a unit that names a literal-published count among its semantic
+/// inputs without registering it as an immediate.
+#[test]
+fn a_literal_publication_named_without_an_immediate_is_rejected() {
+    let f = shift_by_constant("shl", "u32", 3);
+    let error = altered_selection_error(&f, |evidence| {
+        assert_eq!(evidence.program.segments[0].units[0].publication, OutputPublication::Literal);
+        let mut cleared = 0;
+        for unit in evidence.units.values_mut() {
+            if !unit.immediates.is_empty() {
+                unit.immediates.clear();
+                cleared += 1;
+            }
+        }
+        assert_eq!(cleared, 1);
+    });
+    assert_eq!(error.message, "literal publication named without an immediate");
 }
 
 /// A count folded inside a loop and added after it keeps its stack publication: it is pushed
@@ -1998,11 +2094,22 @@ fn immediate_movements_at_the_count_and_width_boundaries() {
         ("shr", "u32", 31, 0xffff_ffff, 1),
         ("rotl", "u32", 31, 1, 0x8000_0000),
         ("rotr", "u32", 31, 1, 2),
+        ("rotl", "i32", 31, 1, 0x8000_0000),
+        ("rotr", "i32", 31, 1, 2),
         // The narrow mask drops every bit the movement carries past the width.
         ("shl", "u8", 31, 1, 0),
+        ("shl", "u16", 31, 0xffff, 0),
+        ("shl", "i8", 31, 0xff, 0),
+        ("shl", "i16", 31, 0xffff, 0),
         ("shl", "u8", 8, 0xff, 0),
         ("shl", "u16", 16, 0xffff, 0),
+        // A logical right shift by the width or more empties a narrow lane.
+        ("shr", "u8", 8, 0xff, 0),
+        ("shr", "u16", 16, 0xffff, 0),
         ("shl", "u32", 0, 0xa000_0001, 0xa000_0001),
+        ("shl", "i32", 0, 0xa000_0001, 0xa000_0001),
+        ("shl", "u8", 0, 0xff, 0xff),
+        ("shr", "u16", 0, 0x1234, 0x1234),
         ("rotl", "u32", 0, 0xa000_0001, 0xa000_0001),
         ("rotr", "u32", 0, 0xa000_0001, 0xa000_0001),
     ] {

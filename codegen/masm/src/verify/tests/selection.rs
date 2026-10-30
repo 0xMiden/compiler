@@ -1009,7 +1009,8 @@ fn semantic_alias_contract_rejects_physical_effects_and_incomplete_mappings() {
     assert!(check_selection(candidate, &SourceContext::Generated(&Identity)).is_err());
 }
 
-/// Ways a literal-published count consumed as an immediate can be misdeclared.
+/// Ways a count consumed as an immediate can be misdeclared by its definition, its consumer or
+/// an edge, whether the count is published as a literal or on the stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ImmediateDefect {
     /// The sound declaration.
@@ -1025,6 +1026,9 @@ enum ImmediateDefect {
     /// The count is published on the stack, and its consumer takes it both as an immediate and
     /// as a stack lane.
     StackPublishedCountAlsoLane,
+    /// The count is published on the stack, and its consumer takes it both as an immediate and
+    /// as a stored input.
+    StackPublishedCountAlsoStored,
     /// The literal publication defines a value without a literal reconstruction; the consumer
     /// names no immediate.
     LiteralWithoutLiteralValue,
@@ -1074,13 +1078,14 @@ impl GeneratedDefinition for ImmediateCount {
         let consumer = &mut evidence.program.segments[0].units[0];
         consumer.id = SelectedStepId(1);
         consumer.source = SourceStepId(1);
-        if self.0 != NotSemanticInput {
+        // A consumer registering the parameter as its immediate names only the parameter.
+        if !matches!(self.0, NotSemanticInput | NotLiteral) {
             consumer.semantic_inputs.push(ValueId(2));
         }
         if matches!(self.0, AlsoStackInput | StackPublishedCountAlsoLane) {
             consumer.stack_inputs.push(count);
         }
-        if self.0 == AlsoStoredInput {
+        if matches!(self.0, AlsoStoredInput | StackPublishedCountAlsoStored) {
             consumer.stored_inputs.push(StoredInput {
                 id: StoredInputId(0),
                 value: StoredValue::Atom(count),
@@ -1098,19 +1103,20 @@ impl GeneratedDefinition for ImmediateCount {
         literal.stack_inputs = vec![];
         literal.stored_inputs = vec![];
         literal.outputs = vec![count];
-        literal.publication = if self.0 == StackPublishedCountAlsoLane {
-            OutputPublication::Stack
-        } else {
-            OutputPublication::Literal
-        };
+        literal.publication =
+            if matches!(self.0, StackPublishedCountAlsoLane | StackPublishedCountAlsoStored) {
+                OutputPublication::Stack
+            } else {
+                OutputPublication::Literal
+            };
         literal.effects.may_trap = self.0 == LiteralHasEffects;
         evidence.program.segments[0].units.insert(0, literal);
         if self.0 == BoundAcrossEdge {
             evidence.program.edges[0].bindings[0].source = ValueId(2);
         }
         if self.0 == BoundIntoParameter {
-            // The edge check rejects the forward binding before data flow would look at what
-            // the return edge of the second segment can see.
+            // The fixture is otherwise valid: data flow accepts it, so the edge rule is the only
+            // check that rejects the forward binding.
             evidence.program.values.insert(
                 ValueId(3),
                 SelectedValue {
@@ -1224,6 +1230,10 @@ fn immediate_inputs_are_lane_free_literals_named_by_their_consumer() {
         (AlsoStackInput, "literal publication demanded as a physical input"),
         (AlsoStoredInput, "literal publication demanded as a physical input"),
         (StackPublishedCountAlsoLane, "immediate input is not a lane-free semantic input"),
+        (
+            StackPublishedCountAlsoStored,
+            "immediate input is not a lane-free semantic input",
+        ),
         (LiteralWithoutLiteralValue, "literal publication lacks a literal value"),
         (BoundIntoParameter, "literal publication bound across an edge"),
         (NotSemanticInput, "immediate input is not a lane-free semantic input"),
