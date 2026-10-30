@@ -479,7 +479,21 @@ pub(super) fn choose(
     }
     if candidates.is_empty() {
         let ordinary = &analysis.next_use.entry[&segment];
-        let mut ranked: Vec<_> = live.iter().copied().collect();
+        // A literal value that some predecessor holds nowhere on its stack stays
+        // reconstructible: giving it a lane would make that edge push a copy the segment can
+        // rebuild on demand. A parameter merely bound from a literal keeps its lane.
+        let mut ranked = vec![];
+        for value in live.iter().copied() {
+            let mut backed = true;
+            if matches!(program.values[&value].reconstruction, Some(Reconstruction::Literal(_))) {
+                for entry in incoming {
+                    backed &= complete_value_depth(entry, value, program, context)?.is_some();
+                }
+            }
+            if backed {
+                ranked.push(value);
+            }
+        }
         if let Some(demand) = loop_demand {
             let cyclic = &demand.next_use.entry[&segment];
             let first = &translated[0];

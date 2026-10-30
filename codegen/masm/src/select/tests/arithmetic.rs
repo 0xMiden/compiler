@@ -1465,3 +1465,22 @@ fn an_immediate_shift_body_must_carry_the_registered_count() {
     let error = verify::verify(&plan, &frame, body).unwrap_err();
     assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
 }
+
+/// A folded count defined before a loop is never pushed for the loop header: the header
+/// layout leaves a literal without a copy to reconstruction, and the shift inside folds it.
+#[test]
+fn a_folded_count_live_across_a_loop_is_not_carried_on_the_stack() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%n: u32, %a: u32) -> u32 { %c = arith.constant \
+         3 : u32; %i, %r = scf.while %n, %a before { ^before(%i0: u32, %x: u32): %z = \
+         arith.constant 0 : u32; %go = arith.neq %i0, %z; scf.condition %go, %i0, %x : (i1, u32, \
+         u32); } after { ^after(%j: u32, %y: u32): %one = arith.constant 1 : u32; %j2 = arith.sub \
+         %j, %one <{ overflow = #builtin.overflow<wrapping> }>; %y2 = arith.shl %y, %c; scf.yield \
+         %j2, %y2 : (u32, u32); } : (u32, u32) -> (u32, u32); builtin.ret %r : (u32); };",
+    );
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert!(procedure.contains("u32shl.3"), "{procedure}");
+    assert!(!procedure.contains("push.3"), "{procedure}");
+    execute(&f, &SelectEnv::default(), &[4, 1], &[4096]);
+    execute(&f, &SelectEnv::default(), &[0, 5], &[5]);
+}
