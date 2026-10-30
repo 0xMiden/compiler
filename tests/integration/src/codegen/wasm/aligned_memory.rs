@@ -344,7 +344,8 @@ fn element_accesses_through_one_base_share_one_conversion() {
     // The `u32assert` of the shared addition is the overflow check: `u32divmod` does not
     // constrain its dividend to 32 bits in a proof, so without it a prover could pick an element
     // address of 2^30 or more. It must stay exactly one, not "at least one".
-    assert_eq!(entry.matches("u32assert").count(), 1, "{entry}");
+    let u32asserts = entry.split_whitespace().filter(|token| *token == "u32assert").count();
+    assert_eq!(u32asserts, 1, "{entry}");
     assert_eq!(entry.matches(ALIGNMENT_FAILURE).count(), 1, "{entry}");
 
     let result = eval_shared_base_accesses(&mut test, MEMORY_ADDR, |read| {
@@ -375,6 +376,10 @@ fn shared_conversion_reaches_the_last_byte_addressable_element() {
 /// Verifies that the shared conversion traps on the overflow of the base plus the largest offset
 /// when only that offset overflows: at base `0xFFFF_FFF8` offsets 0 and 4 stay below 2^32, but
 /// offset 8 does not.
+///
+/// The executor's `u32divmod` rejects the overflowed dividend with the same message, so this test
+/// passes without the overflow check too; the check itself is pinned by the `u32assert` count in
+/// [element_accesses_through_one_base_share_one_conversion].
 #[test]
 fn shared_conversion_traps_when_base_plus_offset_overflows() {
     let err = shared_base_accesses_failure(0xffff_fff8);
@@ -471,16 +476,21 @@ fn element_accesses_through_a_constant_base() {
     assert_eq!(result, SHARED_BASE_VALUES[2]);
 }
 
-/// Evaluates the entrypoint of `test` with `args`, returning its result and the cycles it took.
-fn eval_wat_cycles(test: &mut CompilerTest, args: &[u32]) -> (u32, usize) {
+/// Evaluates the entrypoint of `test` with `args` on memory set up by `initializers`, returning
+/// its result and the cycles it took.
+fn eval_wat_cycles<'a>(
+    test: &mut CompilerTest,
+    initializers: impl IntoIterator<Item = Initializer<'a>>,
+    args: &[u32],
+) -> (u32, usize) {
     let package = test.compile_package();
     let cycles = std::cell::Cell::new(0);
-    let result =
-        eval_package::<u32, _, _>(package, None, &felt_args(args), &test.session, |trace| {
-            cycles.set(trace.current_clock().as_usize());
-            Ok(())
-        })
-        .unwrap();
+    let args = felt_args(args);
+    let result = eval_package::<u32, _, _>(package, initializers, &args, &test.session, |trace| {
+        cycles.set(trace.current_clock().as_usize());
+        Ok(())
+    })
+    .unwrap();
     (result, cycles.get())
 }
 
@@ -506,9 +516,21 @@ fn interleaved_bases_share_a_bounded_number_of_conversions() {
     local.get 5 i32.load offset=4 align=4 i32.add))"#,
     );
     let args = core::array::from_fn::<u32, 6, _>(|index| MEMORY_ADDR + 64 * index as u32);
-    let (result, cycles) = eval_wat_cycles(&mut test, &args);
-    assert_eq!(result, 0);
-    midenc_expect_test::expect!["451"].assert_eq(&cycles.to_string());
+    // Base `i` holds `2i + 1` at offset 0 and `2i + 2` at offset 4, so the sum is 78.
+    let bytes = core::array::from_fn::<[u8; 8], 6, _>(|index| {
+        let index = index as u32;
+        let mut bytes = [0; 8];
+        bytes[..4].copy_from_slice(&(2 * index + 1).to_le_bytes());
+        bytes[4..].copy_from_slice(&(2 * index + 2).to_le_bytes());
+        bytes
+    });
+    let initializers = args.iter().zip(&bytes).map(|(&addr, bytes)| Initializer::MemoryBytes {
+        addr,
+        bytes: bytes.as_slice(),
+    });
+    let (result, cycles) = eval_wat_cycles(&mut test, initializers, &args);
+    assert_eq!(result, 78);
+    midenc_expect_test::expect!["1361"].assert_eq(&cycles.to_string());
 }
 
 /// Verifies that two accesses through one base separated by calls whose results stay live do not
@@ -530,7 +552,7 @@ fn calls_between_accesses_end_the_shared_conversion() {
     let masm = test.masm_src();
     let entry = masm_procedure(&masm, "entrypoint");
     assert_eq!(entry.matches("u32divmod").count(), 2, "{entry}");
-    let (result, cycles) = eval_wat_cycles(&mut test, &[MEMORY_ADDR]);
+    let (result, cycles) = eval_wat_cycles(&mut test, None, &[MEMORY_ADDR]);
     assert_eq!(result, 32);
     midenc_expect_test::expect!["695"].assert_eq(&cycles.to_string());
 }
