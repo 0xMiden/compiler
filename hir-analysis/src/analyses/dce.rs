@@ -8,8 +8,8 @@ use core::{
 use midenc_hir::{
     AsValueRange, AttributeRef, Block, BlockRef, CallOpInterface, CallableOpInterface,
     EntityWithId, Forward, Operation, OperationRef, ProgramPoint, RegionBranchOpInterface,
-    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionSuccessorIter, Report, SmallVec,
-    SourceSpan, Spanned, SymbolMap, ValueRef,
+    RegionBranchPoint, RegionBranchTerminatorOpInterface, RegionRef, RegionSuccessorIter,
+    RegionSuccessorKind, Report, SmallVec, SourceSpan, Spanned, SymbolMap, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     pass::AnalysisManager,
     traits::{BranchOpInterface, ReturnLike},
@@ -781,11 +781,24 @@ impl DeadCodeAnalysis {
 
         log::trace!(target: self.debug_name(), "processing entry successor regions");
         for successor in branch.get_entry_successor_regions(&operands) {
-            // The successor can be either an entry block or the parent operation.
-            let point = if let Some(succ) = successor.successor() {
-                ProgramPoint::at_start_of(succ.borrow().entry_block_ref().unwrap())
-            } else {
-                ProgramPoint::after(branch.as_operation())
+            // The successor can be an entry block, the parent operation, or an ancestor the op
+            // exits to.
+            let point = match successor.kind() {
+                RegionSuccessorKind::Entering(succ) => {
+                    ProgramPoint::at_start_of(succ.borrow().entry_block_ref().unwrap())
+                }
+                RegionSuccessorKind::Returning => ProgramPoint::after(branch.as_operation()),
+                // An *entry* successor describes where control goes when `branch` is first
+                // executed, and an early exit is produced by a terminator nested inside a region,
+                // so no op in the tree returns this arm today. It is anchored at the target
+                // rather than at `branch` regardless, because anchoring an exit at the op it
+                // passes through is the silent failure this whole variant exists to prevent.
+                RegionSuccessorKind::Exiting { target, to } => match to {
+                    RegionBranchPoint::Parent => ProgramPoint::after(target),
+                    RegionBranchPoint::Child(header) => ProgramPoint::at_start_of(
+                        header.borrow().entry_block_ref().expect("empty continue target region"),
+                    ),
+                },
             };
             // Mark the entry block as executable.
             let mut state = solver.get_or_create_mut::<Executable, _>(point);
@@ -829,21 +842,40 @@ impl DeadCodeAnalysis {
         // Mark successor region entry blocks as executable and add this op to the list of
         // predecessors.
         for successor in successors {
-            let (mut predecessors, point) = if let Some(region) = successor.successor() {
+            // Resolve the edge against the op that OWNS it. For an ordinary region terminator
+            // that op is `branch`, the immediate parent. For an early exit it is the ancestor the
+            // exit addresses, and using `branch` there would record the predecessor against an op
+            // control does not stop at — a missing edge that every dense and sparse analysis
+            // built on this state would then inherit, without any of them crashing.
+            let mark_entry_live = |solver: &mut DataFlowSolver, region: RegionRef| {
                 let entry = region.borrow().entry_block_ref().unwrap();
                 let point = ProgramPoint::at_start_of(entry);
                 let mut state = solver.get_or_create_mut::<Executable, _>(point);
                 let change_result = state.change(|exec| exec.mark_live());
                 log::debug!(
-                    target: self.debug_name(), "marking region successor {} entry {point} as live: {change_result}",
-                    successor.branch_point()
+                    target: self.debug_name(),
+                    "marking region successor entry {point} as live: {change_result}"
                 );
-                (solver.get_or_create_mut::<PredecessorState, _>(point), point)
-            } else {
-                // Add this terminator as a predecessor to the parent op.
-                let point = ProgramPoint::after(branch.as_operation());
-                (solver.get_or_create_mut::<PredecessorState, _>(point), point)
+                point
             };
+            let point = match successor.kind() {
+                RegionSuccessorKind::Entering(region) => mark_entry_live(solver, region),
+                // Control returns to the immediate parent, after it.
+                RegionSuccessorKind::Returning => ProgramPoint::after(branch.as_operation()),
+                // A `break`: control resumes after the TARGET, past every intermediate op.
+                RegionSuccessorKind::Exiting {
+                    target,
+                    to: RegionBranchPoint::Parent,
+                } => ProgramPoint::after(target),
+                // A `continue`: control resumes at the target's header, whose entry block must be
+                // marked executable exactly as an entering edge marks it — the header is reached
+                // from here, and nothing else records that.
+                RegionSuccessorKind::Exiting {
+                    to: RegionBranchPoint::Child(header),
+                    ..
+                } => mark_entry_live(solver, header),
+            };
+            let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
             let change_result = predecessors.change(|ps| {
                 ps.join_with_inputs(op.as_operation_ref(), successor.successor_inputs().iter())
             });

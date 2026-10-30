@@ -3349,3 +3349,218 @@ builtin.component private @"hir_ns:test@1.0.0" {{
         assemble_library(&context, &lowered, "hir_ns:test@1.0.0");
     }
 }
+
+#[test]
+fn source_convention_executable_entrypoint_lowers() {
+    let context = context_with_entrypoint_and_test_harness("hir_ns::test::entry");
+    let text = COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START
+        .replace("extern(\"component-model\")", "extern(\"sigma\")");
+    let op = parse(&context, &text);
+    let component = op.try_downcast_op::<builtin::Component>().unwrap();
+    component
+        .borrow()
+        .to_masm_component(AnalysisManager::new(op, None), super::EmissionNamespace::Source)
+        .expect("a frontend-defined same-context entrypoint must lower");
+}
+
+#[test]
+fn source_convention_survives_masm_and_manifest() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(
+        &context,
+        r#"
+        builtin.world {
+            builtin.component private @hir_ns::@test {
+                builtin.function public extern("sigma") @entry(%x: felt) -> felt {
+                    builtin.ret %x : (felt);
+                };
+            };
+        };
+    "#,
+    );
+    let lowered = lower_world(world).expect("a frontend-defined convention must lower");
+    let text = lowered
+        .modules
+        .iter()
+        .map(|module| module.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("@callconv(\"sigma\")"), "{text}");
+    let package = assemble_library(&context, &lowered, "hir_ns::test");
+    let export = package
+        .manifest
+        .exports()
+        .find_map(|export| match export {
+            miden_mast_package::PackageExport::Procedure(procedure)
+                if procedure.path.as_ref().as_str().ends_with("entry") =>
+            {
+                Some(procedure)
+            }
+            _ => None,
+        })
+        .expect("entry export");
+    assert_eq!(
+        export.signature.as_ref().unwrap().calling_convention(),
+        CallConv::Extern("sigma".into())
+    );
+}
+
+#[test]
+fn supporting_byte_address_maker_widens_component_memory_selection() {
+    let context = Rc::new(Context::default());
+    let root = parse(
+        &context,
+        r#"
+        builtin.world {
+            builtin.component private @test {
+                builtin.module private @m {
+                    builtin.function private extern("C") @load(%p: ptr<u32, byte>) -> u32 {
+                        %r = hir.load %p; builtin.ret %r : (u32);
+                    };
+                };
+            };
+            builtin.module private @support {
+                builtin.function private extern("C") @address() -> ptr<u32, byte> {
+                    %r = hir.local_byte_address <{ local = #builtin.local_variable<0, u32> }>;
+                    builtin.ret %r : (ptr<u32, byte>);
+                };
+            };
+        };
+    "#,
+    );
+    let mut address = None;
+    root.borrow().prewalk_all(|op| {
+        if let Some(function) = op.downcast_ref::<builtin::Function>()
+            && function.name().as_str() == "address"
+        {
+            address = Some(function.as_function_ref());
+        }
+    });
+    address.unwrap().borrow_mut().alloc_local(midenc_hir::Type::U32);
+    let lowered = lower_world(root.try_downcast_op::<builtin::World>().unwrap()).unwrap();
+    let assembly = lowered.modules.iter().map(|module| module.to_string()).collect::<String>();
+    assert!(assembly.contains("u32split"), "{assembly}");
+}
+
+#[test]
+fn inline_assembly_component_uses_the_actual_session_callable_snapshot() {
+    let session = Rc::new(crate::linked_callables::tests::session(&[(
+        "::linked_math",
+        "pub proc add_one(x: felt) -> felt\n push.1 add\nend",
+    )]));
+    let context = Rc::new(Context::new(session.clone()));
+    let root = midenc_hir::parse::parse_any(
+        midenc_hir::parse::ParserConfig::new(context.clone()),
+        Uri::new("inline-component.hir"),
+        r#"builtin.world { builtin.module public @inline_app {
+            builtin.function public extern("C") @main(%x: felt) -> felt {
+                %r = hir.inline_asm "exec.::linked_math::add_one" (%x) : extern("C") (felt) -> felt;
+                builtin.ret %r : (felt);
+            };
+        }; };"#,
+    )
+    .unwrap();
+    let world = root.try_downcast_op::<builtin::World>().unwrap();
+    let component = world
+        .borrow()
+        .to_masm_component(AnalysisManager::new(root, None), EmissionNamespace::Source)
+        .unwrap();
+    let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone());
+    crate::linked_callables::SessionLinkInputs::load(&session, core::iter::empty::<&str>())
+        .unwrap()
+        .apply(&mut assembler)
+        .unwrap();
+    assembler
+        .compile_and_statically_link_all(
+            component
+                .modules
+                .iter()
+                .map(|module| alloc::boxed::Box::new((**module).clone())),
+        )
+        .unwrap();
+    let program = assembler
+        .assemble_program(
+            "inline-component",
+            "begin push.41 exec.::inline_app::main push.42 assert_eq end",
+        )
+        .unwrap()
+        .try_into_program()
+        .unwrap();
+    let processor = miden_processor::FastProcessor::new(miden_processor::StackInputs::default());
+    processor
+        .execute_sync(&program, &mut crate::plan::tests::lowering_units::host())
+        .unwrap();
+}
+
+#[test]
+fn hidden_source_memory_writes_preserve_wide_pointers_in_the_vm() {
+    const SEED: &str = "push.4294967296 mem_store.100 push.42 mem_store.1073741824";
+    for inline in [false, true] {
+        let seed = format!("pub proc seed()\n {SEED}\nend");
+        let session =
+            Rc::new(crate::linked_callables::tests::session(&[("::external_memory", &seed)]));
+        let context = Rc::new(Context::new(session.clone()));
+        let write = if inline {
+            format!(r#"hir.inline_asm "{SEED}" () : extern("C") () -> ();"#)
+        } else {
+            r#"hir.exec ::@external_memory::@seed() : extern("C") () -> ();"#.into()
+        };
+        let source = format!(
+            r#"builtin.world {{
+            builtin.module public @external_memory {{
+                builtin.function public extern("C") @seed() {{}};
+            }};
+            builtin.component private @application {{ builtin.module public @memory_app {{
+                builtin.function private extern("C") @use_slot(%slot: ptr<ptr<u32, byte>, element>) -> u32 {{
+                    {write}
+                    %pointer = hir.load %slot;
+                    %value = hir.load %pointer;
+                    builtin.ret %value : (u32);
+                }};
+                builtin.function public extern("component-model") @main(%slot: ptr<ptr<u32, byte>, element>) -> u32 {{
+                    %value = hir.exec @use_slot(%slot) : extern("C") (ptr<ptr<u32, byte>, element>) -> u32;
+                    builtin.ret %value : (u32);
+                }};
+            }}; }};
+        }};"#
+        );
+        let root = parse(&context, &source);
+        assert_eq!(
+            super::super::unit::UnitFacts::derive(&root.borrow(), &[]).byte_addressing,
+            crate::emit::addressing::ByteAddressing::Wide
+        );
+        let component = root
+            .try_downcast_op::<builtin::World>()
+            .unwrap()
+            .borrow()
+            .to_masm_component(AnalysisManager::new(root, None), EmissionNamespace::Source)
+            .unwrap();
+        let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone());
+        crate::linked_callables::SessionLinkInputs::load(&session, core::iter::empty::<&str>())
+            .unwrap()
+            .apply(&mut assembler)
+            .unwrap();
+        assembler
+            .compile_and_statically_link_all(
+                component
+                    .modules
+                    .iter()
+                    .map(|module| alloc::boxed::Box::new((**module).clone())),
+            )
+            .unwrap();
+        let program = assembler
+            .assemble_program(
+                "hidden-memory",
+                "begin push.100 call.::application::memory_app::main push.42 assert_eq end",
+            )
+            .unwrap()
+            .try_into_program()
+            .unwrap();
+        let core = midenc_session::LinkLibrary::core().load(&session.options).unwrap();
+        let mut host = crate::plan::tests::lowering_units::host();
+        host.load_library(miden_processor::HostLibrary::from(core)).unwrap();
+        miden_processor::FastProcessor::new(miden_processor::StackInputs::default())
+            .execute_sync(&program, &mut host)
+            .unwrap();
+    }
+}

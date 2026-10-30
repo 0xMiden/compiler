@@ -20,8 +20,12 @@ use crate::{lower::units::HirUnit, plan::*, verify::DefinitionEvidence};
 pub(crate) struct SelectEnv<'a> {
     /// Linked symbol and function-table layouts needed by source rules which address them.
     pub link_info: Option<&'a crate::linker::LinkInfo>,
+    /// Immutable actual linked callable facts, shared with source reconstruction.
+    pub linked_callables: Option<&'a crate::linked_callables::LinkedCallables>,
     /// Closed final emission identities, fixed before source reconstruction.
     pub owners: Option<&'a crate::lower::EmissionOwners>,
+    /// Address domain derived from the entire compilation unit before selection.
+    pub byte_addressing: crate::emit::addressing::ByteAddressing,
 }
 
 /// The finite vocabulary returned by [`crate::HirSelection`] implementations.
@@ -36,6 +40,8 @@ pub(crate) enum SelectionRule {
     Constant(Immediate),
     /// Preserve raw lanes through a source-checked representation change.
     Alias,
+    /// A parsed, closed instruction body whose real effects are replayed.
+    InlineAsm,
     /// Expose the lanes of one value as independently named results.
     Split,
     /// Name a whole value assembled from compatible source lanes.
@@ -56,6 +62,10 @@ pub(crate) enum SelectionRule {
     DirectCall,
     /// Check a linked function-table slot before same-context dispatch.
     ExecIndirect,
+    /// Dispatch through an SSA source-memory root pointer in the current context.
+    DynExecPointer,
+    /// Dispatch through an SSA source-memory root pointer in a fresh context.
+    DynCallPointer,
     /// Protocol executor with semantic stored prefix and payload operands.
     Fpi,
     /// Source-owned reference to a validated callable digest.

@@ -258,11 +258,12 @@ impl Pipeline {
         // supplying observers of its own.
         let emitter = Rc::new(RefCell::new(EmitObserver::new(session.clone(), prepared.frontend)));
         observers.push(emitter.clone() as Rc<RefCell<dyn Observer>>);
-        let state = Rc::new(RequestState::new(goal, observers).with_pre_assembly(pre_assembly));
+        let state = RequestState::new(goal, observers).with_pre_assembly(pre_assembly);
 
         let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone())
             .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors());
-        prepare_assembler(&mut assembler, &prepared.package, &session)?;
+        let inputs = prepare_assembler(&mut assembler, &prepared.package, &session)?;
+        let state = Rc::new(state.with_link_inputs(inputs));
 
         // The request-scoped providers, in the order they are applied: later wins for the
         // extension it claims. Both serve the *selected* target's root extension, so a seeded

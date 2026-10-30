@@ -25,6 +25,7 @@ use crate::{
     linker::{LinkInfo, Linker},
     lower::lowering::{qualified_invocation_target, symbol_module_path, world_root_module},
     masm,
+    plan::CallingConvention,
 };
 
 /// Namespace selection made before executable source is selected.
@@ -308,11 +309,22 @@ impl EmissionOwners {
 }
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
-pub trait ToMasmComponent {
+pub trait ToMasmComponent: Op {
+    /// Standalone lowering authorizes only explicit session links and compiler intrinsics.
     fn to_masm_component(
         &self,
         analysis_manager: AnalysisManager,
         namespace: EmissionNamespace<'_>,
+    ) -> Result<MasmComponent, Report> {
+        let linked = crate::linked_callables::for_operation(self.as_operation())?;
+        self.to_masm_component_with_callables(analysis_manager, namespace, linked.as_ref())
+    }
+
+    fn to_masm_component_with_callables(
+        &self,
+        analysis_manager: AnalysisManager,
+        namespace: EmissionNamespace<'_>,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<MasmComponent, Report>;
 }
 
@@ -364,10 +376,11 @@ pub trait ToMasmComponent {
 /// file parses to, the world `midenc_hir::parse` anchors any other top-level operation at, the
 /// world the Wasm frontend builds, and the one `frontend/masm`'s disassembler builds.
 impl ToMasmComponent for builtin::World {
-    fn to_masm_component(
+    fn to_masm_component_with_callables(
         &self,
         analysis_manager: AnalysisManager,
         namespace: EmissionNamespace<'_>,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<MasmComponent, Report> {
         let mut components = Vec::new();
         let mut siblings = Vec::new();
@@ -379,7 +392,7 @@ impl ToMasmComponent for builtin::World {
         }
 
         match components.len() {
-            0 => world_body_to_masm_component(self, analysis_manager, namespace),
+            0 => world_body_to_masm_component(self, analysis_manager, namespace, linked_callables),
             1 => {
                 let (supporting, owns_memory) = classify_siblings(&siblings);
                 // The analysis manager is rooted at the world, and `AnalysisManager::nest`
@@ -391,6 +404,7 @@ impl ToMasmComponent for builtin::World {
                     analysis_manager,
                     &supporting,
                     namespace,
+                    linked_callables,
                 )?;
                 // Reported after lowering succeeded, so that a build which failed for an
                 // unrelated reason is not also told about a limitation it never reached.
@@ -681,6 +695,7 @@ fn world_body_to_masm_component(
     world: &builtin::World,
     analysis_manager: AnalysisManager,
     namespace: EmissionNamespace<'_>,
+    linked_callables: Option<&crate::linked_callables::LinkedCallables>,
 ) -> Result<MasmComponent, Report> {
     // Get the current compiler context
     let context = world.as_operation().context_rc();
@@ -722,6 +737,7 @@ fn world_body_to_masm_component(
         false,
         &link_info,
     )?;
+    let facts = super::unit::UnitFacts::derive(world.as_operation(), &[]);
     let entrypoint = entrypoint.map(|target| owners.target(target)).transpose()?;
 
     // If we have global variables, data segments, function tables, or a core Wasm start, we will
@@ -772,9 +788,11 @@ fn world_body_to_masm_component(
         modules,
     };
     let builder = MasmComponentBuilder {
+        linked_callables,
         analysis_manager,
         component: &mut masm_component,
         owners: &owners,
+        facts,
         link_info: &link_info,
         source_manager: context.session().source_manager.clone(),
         init_body: Default::default(),
@@ -791,12 +809,13 @@ fn world_body_to_masm_component(
 
 /// 1:1 conversion from HIR component to MASM component
 impl ToMasmComponent for builtin::Component {
-    fn to_masm_component(
+    fn to_masm_component_with_callables(
         &self,
         analysis_manager: AnalysisManager,
         namespace: EmissionNamespace<'_>,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<MasmComponent, Report> {
-        component_to_masm_component(self, analysis_manager, &[], namespace)
+        component_to_masm_component(self, analysis_manager, &[], namespace, linked_callables)
     }
 }
 
@@ -816,6 +835,7 @@ fn component_to_masm_component(
     analysis_manager: AnalysisManager,
     supporting: &[builtin::ModuleRef],
     namespace: EmissionNamespace<'_>,
+    linked_callables: Option<&crate::linked_callables::LinkedCallables>,
 ) -> Result<MasmComponent, Report> {
     // Get the current compiler context
     let context = component.as_operation().context_rc();
@@ -892,6 +912,7 @@ fn component_to_masm_component(
         true,
         &link_info,
     )?;
+    let facts = super::unit::UnitFacts::derive(component.as_operation(), supporting);
     let entrypoint = entrypoint.map(|target| owners.target(target)).transpose()?;
 
     // If we have global variables, data segments, function tables, or a core Wasm start, we will
@@ -944,9 +965,11 @@ fn component_to_masm_component(
         modules,
     };
     let builder = MasmComponentBuilder {
+        linked_callables,
         analysis_manager,
         component: &mut masm_component,
         owners: &owners,
+        facts,
         link_info: &link_info,
         source_manager: context.session().source_manager.clone(),
         init_body: Default::default(),
@@ -1036,10 +1059,8 @@ fn resolve_entrypoint_arity(
     })?;
     let function = function.borrow();
     let signature = function.signature();
-    if !matches!(
-        signature.cc,
-        midenc_hir::CallConv::C | midenc_hir::CallConv::Fast | midenc_hir::CallConv::Wasm
-    ) || crate::lower::units::calls::is_kernel(&*function)
+    if CallingConvention::from_source(&signature.cc) != CallingConvention::SameContext
+        || crate::lower::units::calls::is_kernel(&*function)
     {
         return Err(Report::msg(
             "executable entrypoint requires a same-context calling convention",
@@ -1060,6 +1081,8 @@ fn resolve_entrypoint_arity(
 
 struct MasmComponentBuilder<'a> {
     owners: &'a EmissionOwners,
+    linked_callables: Option<&'a crate::linked_callables::LinkedCallables>,
+    facts: super::unit::UnitFacts,
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
@@ -1187,7 +1210,9 @@ impl MasmComponentBuilder<'_> {
                 };
                 let env = crate::select::SelectEnv {
                     link_info: Some(self.link_info),
+                    linked_callables: self.linked_callables,
                     owners: Some(self.owners),
+                    byte_addressing: self.facts.byte_addressing,
                 };
                 let source = crate::select::generated::GeneratedInitializer {
                     stages: vec![crate::select::generated::Initialization::Table(fragment)],
@@ -1226,7 +1251,9 @@ impl MasmComponentBuilder<'_> {
             }
             let env = crate::select::SelectEnv {
                 link_info: Some(self.link_info),
+                linked_callables: self.linked_callables,
                 owners: Some(self.owners),
+                byte_addressing: self.facts.byte_addressing,
             };
             let source = crate::select::generated::GeneratedInitializer {
                 stages: core::mem::take(&mut self.init_body),
@@ -1267,7 +1294,9 @@ impl MasmComponentBuilder<'_> {
         let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
+            linked_callables: self.linked_callables,
             owners: self.owners,
+            facts: self.facts,
             module: masm_module,
             analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
@@ -1313,7 +1342,9 @@ impl MasmComponentBuilder<'_> {
         let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
             .expect("expected unique reference");
         let builder = MasmModuleBuilder {
+            linked_callables: self.linked_callables,
             owners: self.owners,
+            facts: self.facts,
             module: masm_module,
             analysis_manager: self.analysis_manager.clone(),
             link_info: self.link_info,
@@ -1405,6 +1436,8 @@ impl MasmComponentBuilder<'_> {
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
             self.owners,
+            self.facts,
+            self.linked_callables,
         )?;
 
         let module =
@@ -1601,6 +1634,8 @@ fn lower_function_alias(
 
 struct MasmModuleBuilder<'a> {
     owners: &'a EmissionOwners,
+    linked_callables: Option<&'a crate::linked_callables::LinkedCallables>,
+    facts: super::unit::UnitFacts,
     module: &'a mut masm::Module,
     /// Shared world/component analysis root, covering cross-module alias targets.
     analysis_manager: AnalysisManager,
@@ -1674,6 +1709,8 @@ impl MasmModuleBuilder<'_> {
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
             self.owners,
+            self.facts,
+            self.linked_callables,
         )?;
 
         self.module
@@ -1748,10 +1785,14 @@ impl MasmFunctionBuilder {
         _analysis_manager: AnalysisManager,
         link_info: &LinkInfo,
         owners: &EmissionOwners,
+        facts: super::unit::UnitFacts,
+        linked_callables: Option<&crate::linked_callables::LinkedCallables>,
     ) -> Result<masm::Procedure, Report> {
         let env = crate::select::SelectEnv {
             link_info: Some(link_info),
+            linked_callables,
             owners: Some(owners),
+            byte_addressing: facts.byte_addressing,
         };
         let mut procedure = if function.signature().cc.is_wasm_canonical_abi()
             && link_info.requires_init()
@@ -1968,6 +2009,7 @@ mod owner_map_tests {
         let env = crate::select::SelectEnv {
             link_info: Some(&link),
             owners: Some(&owners),
+            ..Default::default()
         };
         assert!(crate::select::evidence(&caller.unwrap().borrow(), &env).is_err());
     }

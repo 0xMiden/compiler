@@ -3,7 +3,7 @@ use alloc::{format, rc::Rc, string::String, vec::Vec};
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     diagnostics::Severity,
-    dialects::builtin::attributes::U32ArrayAttr,
+    dialects::builtin::attributes::{U32ArrayAttr, U32Attr},
     effects::*,
     parse::ParserExt,
     patterns::RewritePatternSet,
@@ -25,11 +25,27 @@ use crate::ScfDialect;
 /// * [midenc_hir::dialects::builtin::Ret] to return from the enclosing function directly
 /// * `midenc_dialect_ub::Unreachable` to abort execution
 /// * [Yield] to return from the enclosing [If]
-#[derive(OpPrinter, OpParser)]
+///
+/// The op itself touches no memory and no advice resource — selecting a region is not a read or a
+/// write — so it declares no effects OF ITS OWN. What it does to either is whatever the taken
+/// region does, which is what [`HasRecursiveMemoryEffects`] and [`HasRecursiveAdviceEffects`] say;
+/// the declarations are complementary, and all of them are needed. An empty declaration without a
+/// marker would claim the whole `scf.if` is effect-free on that channel no matter what its regions
+/// hold — and the two markers are registered separately, so declaring one says nothing about the
+/// other.
+#[derive(OpPrinter, OpParser, EffectOpInterface)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
 #[operation(
     dialect = ScfDialect,
-    traits(SingleBlock, NoRegionArguments, HasRecursiveMemoryEffects),
-    implements(RegionBranchOpInterface, OpPrinter)
+    traits(
+        SingleBlock,
+        NoRegionArguments,
+        HasRecursiveMemoryEffects,
+        HasRecursiveAdviceEffects,
+        PropagateControlFlowBreak
+    ),
+    implements(RegionBranchOpInterface, MemoryEffectOpInterface, AdviceEffectOpInterface, OpPrinter)
 )]
 pub struct If {
     #[operand]
@@ -43,18 +59,21 @@ pub struct If {
 }
 
 impl If {
-    pub fn then_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
-        let terminator = self.then_body().entry().terminator().unwrap();
-        terminator
-            .try_downcast_op::<Yield>()
-            .expect("invalid hir.if then terminator: expected yield")
+    /// The [Yield] terminating the `then` region, if it is terminated by one.
+    ///
+    /// Returns `None` when the branch is terminated by something else — an `scf.break`, an
+    /// `scf.continue`, a `builtin.ret` or a `ub.unreachable`. **This is fallible on purpose**: a
+    /// break-terminated branch is legal IR, and this accessor used to `expect` a yield, so every
+    /// caller that assumed "the branch yields" is now a caller that has to say what it does when
+    /// the branch leaves the `scf.if` entirely instead.
+    pub fn then_yield(&self) -> Option<UnsafeIntrusiveEntityRef<Yield>> {
+        self.then_body().entry().terminator()?.try_downcast_op::<Yield>().ok()
     }
 
-    pub fn else_yield(&self) -> UnsafeIntrusiveEntityRef<Yield> {
-        let terminator = self.else_body().entry().terminator().unwrap();
-        terminator
-            .try_downcast_op::<Yield>()
-            .expect("invalid hir.if else terminator: expected yield")
+    /// The [Yield] terminating the `else` region, if it is terminated by one. See
+    /// [Self::then_yield].
+    pub fn else_yield(&self) -> Option<UnsafeIntrusiveEntityRef<Yield>> {
+        self.else_body().entry().terminator()?.try_downcast_op::<Yield>().ok()
     }
 }
 
@@ -160,15 +179,29 @@ impl RegionBranchOpInterface for If {
 /// whose operands must be of the same arity and type as the "before" region's argument list. In
 /// this way, the "after" body can feed back input to the "before" body to determine whether to
 /// continue the loop.
-#[derive(OpPrinter, OpParser)]
+///
+/// No effects of its own; its memory and advice effects are its regions', per
+/// [`HasRecursiveMemoryEffects`] and [`HasRecursiveAdviceEffects`].
+/// See [`If`] for why both declarations are required.
+#[derive(OpPrinter, OpParser, EffectOpInterface)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
 #[operation(
     dialect = ScfDialect,
-    traits(SingleBlock, HasRecursiveMemoryEffects),
+    traits(
+        SingleBlock,
+        HasRecursiveMemoryEffects,
+        HasRecursiveAdviceEffects,
+        PropagateControlFlowBreak
+    ),
     implements(
         RegionBranchOpInterface,
+        HasBreakingControlFlowOpInterface,
         LoopLikeOpInterface,
+        MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
         OperandRangeRequirementOpInterface,
-        OpPrinter,
+        OpPrinter
     )
 )]
 pub struct While {
@@ -190,24 +223,21 @@ impl OperandRangeRequirementOpInterface for While {
 }
 
 impl While {
-    pub fn condition_op(&self) -> UnsafeIntrusiveEntityRef<Condition> {
-        let term = self
-            .before()
-            .entry()
-            .terminator()
-            .expect("expected before region to have a terminator");
-        term.try_downcast_op::<Condition>()
-            .expect("expected before region to terminate with hir.condition")
+    /// The [Condition] terminating the `before` region, if it is terminated by one.
+    ///
+    /// Returns `None` when the header is terminated by an `scf.break` instead — which is legal,
+    /// and equivalent to `scf.condition(false, args)`.
+    pub fn condition_op(&self) -> Option<UnsafeIntrusiveEntityRef<Condition>> {
+        self.before().entry().terminator()?.try_downcast_op::<Condition>().ok()
     }
 
-    pub fn yield_op(&self) -> UnsafeIntrusiveEntityRef<Yield> {
-        let term = self
-            .after()
-            .entry()
-            .terminator()
-            .expect("expected after region to have a terminator");
-        term.try_downcast_op::<Yield>()
-            .expect("expected after region to terminate with hir.yield")
+    /// The [Yield] terminating the `after` region, if it is terminated by one.
+    ///
+    /// Returns `None` when the body's entry block ends in an `scf.break` or `scf.continue`: such
+    /// a body has no yielded values, and its operands are the *target's* results or iter_args,
+    /// not this loop's next iteration.
+    pub fn yield_op(&self) -> Option<UnsafeIntrusiveEntityRef<Yield>> {
+        self.after().entry().terminator()?.try_downcast_op::<Yield>().ok()
     }
 }
 
@@ -244,25 +274,68 @@ impl LoopLikeOpInterface for While {
     }
 
     fn get_yielded_values_mut(&mut self) -> Option<EntityProjectionMut<'_, OpOperandRangeMut<'_>>> {
-        let mut yield_op = self
-            .after()
-            .entry()
-            .terminator()
-            .expect("invalid `while`: expected loop body to be terminated");
+        // A body whose entry block ends in `scf.break`/`scf.continue` has NO yielded values: the
+        // exit's operands are the target's results or iter_args, and projecting them here would
+        // hand a caller an operand group that means something else entirely.
+        let mut yield_op = self.yield_op()?.as_operation_ref();
 
         // The values which are yielded to each iteration
         Some(EntityMut::project(yield_op.borrow_mut(), |op| op.operands_mut().group_mut(0)))
     }
 }
 
+impl While {
+    /// Returns true if some op nested in this loop addresses it with an early exit of `kind`
+    /// (or of any kind, when `kind` is `None`).
+    ///
+    /// The walk is over the loop's own regions, and resolution is the shared `resolve_exit`, so a
+    /// `break [2]` in a nested loop is correctly *not* counted here: it addresses the outer loop,
+    /// and the outer loop is the one whose successors change.
+    fn has_nested_exit(&self, kind: Option<RegionExitKind>) -> bool {
+        let me = self.as_operation().as_operation_ref();
+        let region_has_exit = |region: &Region| {
+            region
+                .prewalk(|op: &Operation| {
+                    if let Some(exit) = op.as_trait::<dyn RegionExitTerminatorOpInterface>()
+                        && kind.is_none_or(|kind| kind == exit.get_exit_kind())
+                        && exit.get_exit_target() == Some(me)
+                    {
+                        return WalkResult::<()>::Break(());
+                    }
+                    WalkResult::Continue(())
+                })
+                .was_interrupted()
+        };
+        region_has_exit(&self.before()) || region_has_exit(&self.after())
+    }
+}
+
+impl HasBreakingControlFlowOpInterface for While {
+    #[inline]
+    fn has_nested_predecessors(&self) -> bool {
+        self.has_nested_exit(None)
+    }
+
+    #[inline]
+    fn get_continue_target_region(&self) -> Option<RegionRef> {
+        // A continue re-enters the header, which for `scf.while` is the `before` region — the
+        // same region `scf.yield` feeds on the ordinary back edge.
+        Some(self.before().as_region_ref())
+    }
+}
+
 /// The structural rules of [While]:
 ///
 /// * The entry block of the `before` region terminates with [Condition], and the entry block of
-///   the `after` region terminates with [Yield].
-/// * The init operands, the `before` block arguments and the [Yield] operands agree in number and,
-///   position by position, in type.
-/// * The operands forwarded by [Condition], the `after` block arguments and the results agree in
-///   number and, position by position, in type.
+///   the `after` region terminates with [Yield] — or either with an exit that leaves the region:
+///   a return-like terminator that is neither of the two ([Break] or [Continue], addressing this
+///   loop or an enclosing one, or a function return). Such an exit's operands belong to what it
+///   addresses, so they are not compared with this loop's lists. `ub.unreachable` is not an exit: the loop
+///   asks a region's terminator for the operands of its edge, which an unreachable cannot answer.
+/// * The init operands and the `before` block arguments agree in number and, position by
+///   position, in type, and so do the [Yield] operands, when the body yields.
+/// * The operands forwarded by [Condition], when the header has one, the `after` block arguments
+///   and the results agree in number and, position by position, in type.
 impl Verify<dyn LoopLikeOpInterface> for While {
     fn verify(&self, context: &Context) -> Result<(), Report> {
         let op = self.as_operation();
@@ -286,26 +359,32 @@ impl Verify<dyn LoopLikeOpInterface> for While {
             .ok_or_else(|| invalid("the after region has no block".into()))?;
         let after_block = after_block.borrow();
 
+        // An exit leaves the region: return-like, and not the terminator of the other region.
+        let is_exit = |op: &Operation| {
+            op.implements::<dyn ReturnLike>() && !op.is::<Condition>() && !op.is::<Yield>()
+        };
         let before_term = before_block
             .terminator()
             .ok_or_else(|| invalid("the before block has no terminator".into()))?;
         let before_term = before_term.borrow();
-        let condition = before_term.downcast_ref::<Condition>().ok_or_else(|| {
-            invalid(format!(
-                "the before block must end in scf.condition, but it ends in {}",
+        let condition = before_term.downcast_ref::<Condition>();
+        if condition.is_none() && !is_exit(&before_term) {
+            return Err(invalid(format!(
+                "the before block must end in scf.condition or in an exit, but it ends in {}",
                 before_term.name()
-            ))
-        })?;
+            )));
+        }
         let after_term = after_block
             .terminator()
             .ok_or_else(|| invalid("the after block has no terminator".into()))?;
         let after_term = after_term.borrow();
-        let yield_op = after_term.downcast_ref::<Yield>().ok_or_else(|| {
-            invalid(format!(
-                "the after block must end in scf.yield, but it ends in {}",
+        let yield_op = after_term.downcast_ref::<Yield>();
+        if yield_op.is_none() && !is_exit(&after_term) {
+            return Err(invalid(format!(
+                "the after block must end in scf.yield or in an exit, but it ends in {}",
                 after_term.name()
-            ))
-        })?;
+            )));
+        }
 
         let operand_types =
             |range: OpOperandRange<'_>| range.iter().map(|o| o.borrow().ty()).collect::<Vec<_>>();
@@ -314,20 +393,26 @@ impl Verify<dyn LoopLikeOpInterface> for While {
         };
         let inits = ("init operand", operand_types(self.inits()));
         let before_args = ("before block argument", argument_types(&before_block));
-        let yielded = ("scf.yield operand", operand_types(yield_op.yielded()));
-        let forwarded = ("scf.condition forwarded operand", operand_types(condition.forwarded()));
+        let yielded =
+            yield_op.map(|yield_op| ("scf.yield operand", operand_types(yield_op.yielded())));
+        let forwarded = condition.map(|condition| {
+            ("scf.condition forwarded operand", operand_types(condition.forwarded()))
+        });
         let after_args = ("after block argument", argument_types(&after_block));
         let results = (
             "result",
             self.results().all().iter().map(|r| r.borrow().ty().clone()).collect::<Vec<_>>(),
         );
 
-        for ((lhs_name, lhs), (rhs_name, rhs)) in [
-            (&inits, &before_args),
-            (&yielded, &inits),
-            (&forwarded, &after_args),
-            (&results, &forwarded),
-        ] {
+        let mut pairs = Vec::from([(&inits, &before_args)]);
+        if let Some(yielded) = &yielded {
+            pairs.push((yielded, &inits));
+        }
+        if let Some(forwarded) = &forwarded {
+            pairs.push((forwarded, &after_args));
+            pairs.push((&results, forwarded));
+        }
+        for ((lhs_name, lhs), (rhs_name, rhs)) in pairs {
             if lhs.len() != rhs.len() {
                 return Err(invalid(format!(
                     "{} {lhs_name}(s), but {} {rhs_name}(s)",
@@ -372,12 +457,31 @@ impl RegionBranchOpInterface for While {
                 assert!(region == before_region || region == after_region);
 
                 // When branching from `before`, the only successor is `after` or the While itself,
-                // otherwise, when branching from `after` the only successor is `before`.
+                // otherwise, when branching from `after` the only successor is `before` — UNLESS
+                // the body contains a break addressing this loop, in which case the body also
+                // exits the loop directly, without passing through `scf.condition`.
+                //
+                // **This is the edge the early-exit design exists to add, and omitting it is the
+                // silent failure.** Nothing crashes without it; every analysis simply believes
+                // the only way out of the loop is the condition's false edge, and concludes that
+                // code reachable only via the break is dead.
+                //
+                // The question asked here is narrower than `has_nested_predecessors`: a
+                // `continue` is also a nested predecessor, but it re-enters `before`, an edge
+                // this arm already reports. Only a `break` adds an exit.
                 if region == after_region {
-                    RegionSuccessorIter::new(
-                        self.as_operation(),
-                        [RegionSuccessorInfo::Entering(before_region)],
-                    )
+                    let mut infos: SmallVec<[_; 2]> =
+                        smallvec![RegionSuccessorInfo::Entering(before_region)];
+                    if self.has_nested_exit(Some(RegionExitKind::Break)) {
+                        infos.push(RegionSuccessorInfo::Returning(
+                            self.results()
+                                .all()
+                                .iter()
+                                .map(|r| r.borrow().as_value_ref())
+                                .collect(),
+                        ));
+                    }
+                    RegionSuccessorIter::new(self.as_operation(), infos)
                 } else {
                     RegionSuccessorIter::new(
                         self.as_operation(),
@@ -442,10 +546,22 @@ impl RegionBranchOpInterface for While {
 ///   scf.yield %3 : i32
 /// }
 /// ```
+///
+/// No effects of its own; its memory and advice effects are its regions', per
+/// [`HasRecursiveMemoryEffects`] and [`HasRecursiveAdviceEffects`].
+/// See [`If`] for why both declarations are required.
+#[derive(EffectOpInterface)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
 #[operation(
     dialect = ScfDialect,
-    traits(SingleBlock, HasRecursiveMemoryEffects),
-    implements(RegionBranchOpInterface, OpPrinter)
+    traits(
+        SingleBlock,
+        HasRecursiveMemoryEffects,
+        HasRecursiveAdviceEffects,
+        PropagateControlFlowBreak
+    ),
+    implements(RegionBranchOpInterface, MemoryEffectOpInterface, AdviceEffectOpInterface, OpPrinter)
 )]
 pub struct IndexSwitch {
     #[operand]
@@ -684,14 +800,17 @@ impl Canonicalizable for IndexSwitch {
 /// and the implementation of various interfaces by this op will panic if that assumption is
 /// violated.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike),
     implements(
         RegionBranchTerminatorOpInterface,
         MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
         OperandRangeRequirementOpInterface,
-        OpPrinter,
+        OpPrinter
     )
 )]
 pub struct Condition {
@@ -781,12 +900,15 @@ impl RegionBranchTerminatorOpInterface for Condition {
 /// of the `before` region. When used in conjunction with [If], both the `if_true` and `if_false`
 /// regions must yield the same arity and types.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
 #[operation(
     dialect = ScfDialect,
     traits(Terminator, ReturnLike, Pure, AlwaysSpeculatable),
     implements(
         RegionBranchTerminatorOpInterface,
         MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
         OperandRangeRequirementOpInterface,
         ConditionallySpeculatable,
         OpPrinter,
@@ -847,14 +969,882 @@ impl ConditionallySpeculatable for Yield {
     }
 }
 
+/// Resolve the operation an early exit in `op` addresses, walking outward and counting receivers.
+///
+/// This is the whole of the `levels` mechanism, and it is deliberately one function shared by the
+/// verifier, the successor-region computation and the interpreter: three answers to "which op does
+/// this exit leave?" that disagreed would be worse than one that is wrong. It is also the
+/// implementation of [RegionExitTerminatorOpInterface::resolve_exit] for both exit ops, which is
+/// what lets `hir` verify rules 2-7 over the ANSWER without knowing that `levels` exists.
+///
+/// # RULE 1 (`levels >= 1`) IS DETECTED HERE AND NOWHERE ELSE — THE HOIST'S HONEST BOUNDARY
+///
+/// Every other rule of [RegionExitTerminatorOpInterface]'s contract is verified in `hir`, for
+/// every implementor. Rule 1 cannot be: *"the name is well-formed"* is a property of THIS
+/// encoding — a token operand or a label would be malformed in some other way — and the interface
+/// has no vocabulary for it. What the interface can do is require the malformedness to be
+/// **reported**, which is what [ExitDefectKind::Malformed] below is; what it cannot do is detect
+/// one. So a resolver that silently treated `levels = 0` as "not found" would produce the wrong
+/// diagnostic and nothing would catch it. The rule stays here, and it stays stated.
+fn resolve_levels(op: &Operation, levels: u32, kind: RegionExitKind) -> ExitResolution {
+    // Rule 1. The wording is this encoding's own, and `hir` renders it verbatim.
+    if levels == 0 {
+        return ExitResolution::Unresolved(ExitDefect {
+            kind: ExitDefectKind::Malformed,
+            detail: alloc::format!(
+                "`levels` is 1-based and counts enclosing loops, so it must be at least 1, but \
+                 this {kind} names level 0"
+            ),
+        });
+    }
+
+    let not_found = |found: u32| {
+        ExitResolution::Unresolved(ExitDefect {
+            kind: ExitDefectKind::NotFound,
+            detail: alloc::format!(
+                "this {kind} names enclosing loop {levels}, but only {found} enclosing loop(s) \
+                 were found before the enclosing function body was reached"
+            ),
+        })
+    };
+
+    let mut remaining = levels;
+    let mut from_region = match op.parent_region() {
+        Some(region) => region,
+        None => return not_found(0),
+    };
+    loop {
+        let Some(parent_ref) = from_region.borrow().parent() else {
+            return not_found(levels - remaining);
+        };
+        let parent = parent_ref.borrow();
+
+        // A break may not escape a function: the enclosing callable body is the outer bound of
+        // the search, and it is checked BEFORE the receiver test so that a callable which is also
+        // somehow loop-like cannot be addressed from outside its own body.
+        if parent.implements::<dyn CallableOpInterface>() {
+            return not_found(levels - remaining);
+        }
+
+        if parent.implements::<dyn HasBreakingControlFlowOpInterface>() {
+            remaining -= 1;
+            if remaining == 0 {
+                return ExitResolution::Resolved(ResolvedExit {
+                    target: parent_ref,
+                    from_region,
+                    // VACUOUS UNDER `levels`, AND `None` IS THE HONEST ANSWER. The search above
+                    // stops at the first `CallableOpInterface` ancestor BEFORE testing for a
+                    // receiver, so a resolved target is inside this exit's own callable by
+                    // construction — there is no fact here the verifier does not already have,
+                    // and paying an O(depth) walk on every `get_exit_target()` call to restate a
+                    // structural one would be a cost with no check behind it. See
+                    // [ResolvedExit::callable] for when the field stops being vacuous.
+                    callable: None,
+                });
+            }
+        }
+
+        // Every op the exit passes THROUGH must have opted in to forwarding it. This is the
+        // safety property: an op that has not declared transparency makes the IR *invalid* rather
+        // than silently mis-analyzed, and it is what makes the set of ops an early exit can cross
+        // a closed, declared set rather than whatever happens to be nested at the time.
+        if !parent.implements::<dyn PropagateControlFlowBreak>() {
+            return ExitResolution::Unresolved(ExitDefect {
+                detail: alloc::format!(
+                    "this {kind} would have to cross '{}', which has not declared that it \
+                     forwards breaking control flow",
+                    parent.name()
+                ),
+                kind: ExitDefectKind::Opaque {
+                    crossing: parent_ref,
+                },
+            });
+        }
+
+        let Some(next) = parent.parent_region() else {
+            return not_found(levels - remaining);
+        };
+        from_region = next;
+    }
+}
+
+/// The target of an exit in `op`, or `None` if it does not resolve — the successor computations'
+/// half of [resolve_levels].
+fn exit_target(op: &Operation, levels: u32, kind: RegionExitKind) -> Option<OperationRef> {
+    match resolve_levels(op, levels, kind) {
+        ExitResolution::Resolved(resolved) => Some(resolved.target),
+        ExitResolution::Unresolved(_) => None,
+    }
+}
+
+/// [Break] transfers control out of the `levels`-th enclosing loop, past every intermediate op.
+///
+/// `levels` is 1-based and counts enclosing ops which receive breaking control flow (i.e.
+/// [While]): `levels = 1` names the innermost enclosing loop, `levels = 2` the one outside it.
+///
+/// The operands become the target loop's **results**, so their types must equal the target's
+/// result types.
+///
+/// # A [Break] IN A LOOP'S `before` REGION — WHAT EACH CONSUMER ACTUALLY DOES
+///
+/// The three consumers do not agree, and the disagreement is stated here rather than left for
+/// someone to discover at the end of a pipeline:
+///
+/// * **The verifier ACCEPTS it.** It is equivalent to `scf.condition(false, args)`, and rule 6 —
+///   which rejects a [Continue] in its own target's header — deliberately does not extend to a
+///   break. `v6_rejects_continue_in_the_targets_header`'s accept side is the witness.
+/// * **The interpreter RUNS it, correctly**, unwinding to the named ancestor exactly as it does
+///   for a break in the body.
+/// * **MASM codegen REFUSES it, loudly.** `LowerEarlyExits` rewrites the condition region itself
+///   — that is where it installs the header guard — so an exit already living there would have to
+///   be spliced into the very code being generated for it. No frontend produces the shape, so the
+///   pass reports rather than attempting it (`an_exit_inside_a_loop_condition_is_fenced`).
+///
+/// So the shape is legal to *write* and legal to *interpret*, and it does not survive to MASM.
+/// It costs nothing to allow at the IR level, which is why the verifier still allows it.
+///
+/// Effect-free: unwinding to an enclosing op and carrying values is neither a read nor a write.
+/// Where it may appear is a matter of its terminator-ness — see the nested-terminator clause in
+/// `Operation::would_be_trivially_dead_even_if_terminator`, without which this declaration
+/// deletes the `scf.if` that carries the exit, and the exit with it.
+#[derive(EffectOpInterface)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
+#[operation(
+    dialect = ScfDialect,
+    traits(Terminator, ReturnLike),
+    implements(
+        RegionBranchTerminatorOpInterface,
+        RegionExitTerminatorOpInterface,
+        MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
+        OpPrinter
+    )
+)]
+pub struct Break {
+    #[attr]
+    levels: U32Attr,
+    #[operands]
+    args: AnyType,
+}
+
+/// [Continue] transfers control to the `levels`-th enclosing loop's header, past every
+/// intermediate op.
+///
+/// `levels` is 1-based and counts enclosing loops, exactly as [Break]'s does.
+///
+/// The operands become the target loop's **next iter_args**, so their types must equal the
+/// `before` region's entry-block argument types — i.e. exactly what [Yield] carries in the
+/// `after` region.
+///
+/// Effect-free, for the same reason [`Break`] is.
+#[derive(EffectOpInterface)]
+#[effects(MemoryEffect())]
+#[effects(AdviceEffect())]
+#[operation(
+    dialect = ScfDialect,
+    traits(Terminator, ReturnLike),
+    implements(
+        RegionBranchTerminatorOpInterface,
+        RegionExitTerminatorOpInterface,
+        MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
+        OpPrinter
+    )
+)]
+pub struct Continue {
+    #[attr]
+    levels: U32Attr,
+    #[operands]
+    args: AnyType,
+}
+
+/// Print `scf.break`/`scf.continue` as `<op> <levels> <operands> : (<types>)`.
+///
+/// The level count is printed POSITIONALLY rather than in the attribute dictionary, because a
+/// `U32Attr` cannot be written in `.hir` text at all: an attribute dictionary parses its values
+/// with `Type::Unknown` (`Parser::parse_attribute_dict`), for which an integer literal falls
+/// through to "invalid attribute value". `scf.index_switch`'s `case <n>` has the same shape for
+/// the same reason.
+fn print_exit(op: &Operation, levels: u32, printer: &mut AsmPrinter<'_>) {
+    use alloc::borrow::Cow;
+
+    use formatter::*;
+
+    printer.print_space();
+    *printer += display(levels);
+
+    let operands = op.operands().all();
+    let types = operands
+        .iter()
+        .map(|o| Cow::Owned(o.borrow().as_value_ref().borrow().ty().clone()))
+        .collect::<SmallVec<[_; 2]>>();
+    if !operands.is_empty() {
+        printer.print_space();
+        printer.print_value_uses(ValueRange::<2>::from(operands));
+    }
+    printer.print_space();
+    printer.print_colon_type_list(types);
+}
+
+/// Parse `<levels> [<operands>] : (<types>)` into `state`, the inverse of [print_exit].
+fn parse_exit(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+    let levels = parser.parse_decimal_integer::<u32>()?;
+    state.add_attribute(
+        "levels",
+        parser.context_rc().create_attribute::<U32Attr, _>(levels.into_inner()),
+    );
+
+    let mut operands = SmallVec::default();
+    parser.parse_operand_list(
+        &mut operands,
+        midenc_hir::parse::Delimiter::None,
+        /*allow_result_number=*/ true,
+        None,
+    )?;
+    let mut types = SmallVec::<[Type; 4]>::default();
+    parser.parse_colon_type_list(&mut types)?;
+    for (operand, ty) in operands.into_iter().zip(types) {
+        state.add_operand(parser.resolve_operand(operand, ty)?);
+    }
+
+    Ok(())
+}
+
+impl OpPrinter for Break {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        print_exit(self.as_operation(), *self.get_levels(), printer)
+    }
+}
+
+impl OpParser for Break {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        parse_exit(state, parser)
+    }
+}
+
+impl OpPrinter for Continue {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        print_exit(self.as_operation(), *self.get_levels(), printer)
+    }
+}
+
+impl OpParser for Continue {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        parse_exit(state, parser)
+    }
+}
+
+impl RegionExitTerminatorOpInterface for Break {
+    #[inline]
+    fn resolve_exit(&self) -> ExitResolution {
+        resolve_levels(self.as_operation(), *self.get_levels(), RegionExitKind::Break)
+    }
+
+    #[inline(always)]
+    fn get_exit_kind(&self) -> RegionExitKind {
+        RegionExitKind::Break
+    }
+}
+
+impl RegionExitTerminatorOpInterface for Continue {
+    #[inline]
+    fn resolve_exit(&self) -> ExitResolution {
+        resolve_levels(self.as_operation(), *self.get_levels(), RegionExitKind::Continue)
+    }
+
+    #[inline(always)]
+    fn get_exit_kind(&self) -> RegionExitKind {
+        RegionExitKind::Continue
+    }
+}
+
+impl RegionBranchTerminatorOpInterface for Break {
+    #[inline]
+    fn get_successor_operands(&self, _point: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+        SuccessorOperandRange::forward(self.args())
+    }
+
+    #[inline]
+    fn get_mutable_successor_operands(
+        &mut self,
+        _point: RegionBranchPoint,
+    ) -> SuccessorOperandRangeMut<'_> {
+        SuccessorOperandRangeMut::forward(self.args_mut())
+    }
+
+    fn get_successor_regions(
+        &self,
+        _operands: &[Option<AttributeRef>],
+    ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+        // A break has exactly one successor and it is statically known: control leaves the target
+        // loop, whose results receive this op's operands.
+        let Some(target) =
+            exit_target(self.as_operation(), *self.get_levels(), RegionExitKind::Break)
+        else {
+            // Malformed IR — the verifier rejects an exit that does not resolve, so this is
+            // VERIFIER-GUARDED LATENCY rather than a conservative answer, and it is worth being
+            // precise about which.
+            //
+            // An empty successor set is the BLIND state, not the unknown one: it is exactly the
+            // mutation N-1 uses to prove the framework can tell correct from blind, and an
+            // analysis reading it concludes that what follows the exit is unreachable — a *wrong*
+            // answer, not a safe one. `RegionExitTerminatorOpInterface::get_exit_target`'s own
+            // doc says the same thing from the other side: a `None` there means "unknown control
+            // flow", never "no control flow". The interface has no representation for unknown
+            // successors, so this returns nothing and relies on the verifier having already
+            // rejected the program. A guessed target would be silently wrong in a worse way.
+            return SmallVec::new();
+        };
+        let values = target
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect();
+        smallvec![RegionSuccessorInfo::Exiting {
+            target,
+            to: RegionBranchPoint::Parent,
+            values,
+        }]
+    }
+}
+
+impl RegionBranchTerminatorOpInterface for Continue {
+    #[inline]
+    fn get_successor_operands(&self, _point: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+        SuccessorOperandRange::forward(self.args())
+    }
+
+    #[inline]
+    fn get_mutable_successor_operands(
+        &mut self,
+        _point: RegionBranchPoint,
+    ) -> SuccessorOperandRangeMut<'_> {
+        SuccessorOperandRangeMut::forward(self.args_mut())
+    }
+
+    fn get_successor_regions(
+        &self,
+        _operands: &[Option<AttributeRef>],
+    ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+        let Some(target) =
+            exit_target(self.as_operation(), *self.get_levels(), RegionExitKind::Continue)
+        else {
+            return SmallVec::new();
+        };
+        let target_op = target.borrow();
+        let Some(header) = target_op
+            .as_trait::<dyn HasBreakingControlFlowOpInterface>()
+            .and_then(|receiver| receiver.get_continue_target_region())
+        else {
+            // Same verifier-guarded latency as above: a receiver with no continue target cannot
+            // be addressed by a `scf.continue` in verified IR.
+            return SmallVec::new();
+        };
+        let values = header
+            .borrow()
+            .entry()
+            .arguments()
+            .iter()
+            .map(|arg| arg.borrow().as_value_ref())
+            .collect();
+        smallvec![RegionSuccessorInfo::Exiting {
+            target,
+            to: RegionBranchPoint::Child(header),
+            values,
+        }]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use midenc_expect_test::expect;
     use midenc_hir::{
-        diagnostics::Report, dialects::builtin::Function, testing::parse_function_fixpoint,
+        diagnostics::Report,
+        dialects::{
+            builtin::{Function, attributes::Signature},
+            test::TestDialect,
+        },
+        testing::parse_function_fixpoint,
     };
 
     use super::*;
+
+    #[test]
+    fn nested_break_can_return_a_loop_result() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = r#"
+builtin.function public extern("C") @exit(%flag: i1, %value: u32) -> u32 {
+    %result = scf.while %value before {
+    ^head(%current: u32):
+        scf.condition %flag, %current : (i1, u32);
+    } after {
+    ^body(%next: u32):
+        scf.if %flag then {
+            scf.break 1 %next : (u32);
+        } else {
+            scf.yield : ();
+        } : (i1) -> ();
+        scf.yield %next : (u32);
+    } : (u32) -> u32;
+    builtin.ret %result : (u32);
+};"#;
+        parse_function_fixpoint(&context, "nested_break.hir", source)?;
+        Ok(())
+    }
+
+    /// An op with a region that has **not** declared [PropagateControlFlowBreak].
+    ///
+    /// It exists only for V-3, and it has to exist because the tree has no such op today: the
+    /// region-bearing ops that can nest inside a function body are exactly `scf.if`,
+    /// `scf.index_switch` and `scf.while`, and all three opted in. Rule 3's whole job is to keep
+    /// that true as the tree grows, so its witness has to bring its own non-member — otherwise
+    /// the rule would be "tested" by a set that cannot violate it.
+    #[derive(OpPrinter, OpParser, EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    #[effects(AdviceEffect())]
+    #[operation(
+        dialect = TestDialect,
+        traits(SingleBlock, HasRecursiveMemoryEffects, HasRecursiveAdviceEffects),
+        implements(MemoryEffectOpInterface, AdviceEffectOpInterface, OpPrinter)
+    )]
+    pub struct OpaqueRegion {
+        #[region]
+        body: Region,
+    }
+
+    /// [OpaqueRegion]'s twin, identical in every respect except that it declares
+    /// [PropagateControlFlowBreak].
+    ///
+    /// The pair is what makes V-3 a test of the trait rather than of anything else about the two
+    /// programs: the accept and reject programs differ in exactly one token, and that token names
+    /// an op whose only difference is the marker.
+    #[derive(OpPrinter, OpParser, EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    #[effects(AdviceEffect())]
+    #[operation(
+        dialect = TestDialect,
+        traits(
+            SingleBlock,
+            HasRecursiveMemoryEffects,
+            HasRecursiveAdviceEffects,
+            PropagateControlFlowBreak
+        ),
+        implements(MemoryEffectOpInterface, AdviceEffectOpInterface, OpPrinter)
+    )]
+    pub struct TransparentRegion {
+        #[region]
+        body: Region,
+    }
+
+    /// An exit whose resolver **forgets rule 3**: it counts outward to the first receiver without
+    /// ever asking whether the ops it passed through declared [PropagateControlFlowBreak].
+    ///
+    /// It exists to prove that the blanket verifier in `hir` CHECKS the resolver rather than
+    /// restating it. `scf.break` in the same position reports the crossing itself, as an
+    /// [ExitDefectKind::Opaque] defect, and is rejected through the defect arm (V-3). This op
+    /// reports a confident `Resolved` and is rejected through the RE-DERIVATION arm, with the
+    /// same rule and the same wording — which is the whole claim of variant (B).
+    #[derive(OpPrinter, OpParser, EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    #[effects(AdviceEffect())]
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator, ReturnLike),
+        implements(
+            RegionBranchTerminatorOpInterface,
+            RegionExitTerminatorOpInterface,
+            MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
+            OpPrinter
+        )
+    )]
+    pub struct BlindExit {
+        #[operands]
+        args: AnyType,
+    }
+
+    /// An exit whose resolver **forgets rule 2's receiver test**: it names the nearest enclosing
+    /// region-bearing op, whatever that op is.
+    ///
+    /// Placed directly in a loop body its answer is right, and the verifier accepts it; placed one
+    /// region deeper it names an op that receives no breaking control flow, and the verifier
+    /// rejects it. The pair is what makes this a test of the CHECK rather than of the op.
+    #[derive(OpPrinter, OpParser, EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    #[effects(AdviceEffect())]
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator, ReturnLike),
+        implements(
+            RegionBranchTerminatorOpInterface,
+            RegionExitTerminatorOpInterface,
+            MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
+            OpPrinter
+        )
+    )]
+    pub struct StrayExit {
+        #[operands]
+        args: AnyType,
+    }
+
+    /// An exit whose target and originating region are **right**, and whose `callable` is wrong:
+    /// it names the receiver it found instead of the callable it lives in.
+    ///
+    /// This is the witness for the HIR half of the Q9-6 carry. [BlindExit] in the identical
+    /// program position reports the identical target and `from_region` with `callable: None` and
+    /// is ACCEPTED — so the two resolutions differ in exactly one field, and that field is what
+    /// the verifier is reacting to.
+    #[derive(OpPrinter, OpParser, EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    #[effects(AdviceEffect())]
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator, ReturnLike),
+        implements(
+            RegionBranchTerminatorOpInterface,
+            RegionExitTerminatorOpInterface,
+            MemoryEffectOpInterface,
+        AdviceEffectOpInterface,
+            OpPrinter
+        )
+    )]
+    pub struct DisownedExit {
+        #[operands]
+        args: AnyType,
+    }
+
+    /// The nearest enclosing region and its parent op, or `None` at the top of the IR.
+    fn nearest_enclosing(op: &Operation) -> Option<(RegionRef, OperationRef)> {
+        let region = op.parent_region()?;
+        let parent = region.borrow().parent()?;
+        Some((region, parent))
+    }
+
+    /// The honest walk [BlindExit] and [DisownedExit] share: outward to the first receiver, with
+    /// no transparency test, which is enough for both of their programs.
+    fn nearest_receiver(op: &Operation) -> Option<(RegionRef, OperationRef)> {
+        let mut region = op.parent_region();
+        while let Some(current) = region {
+            let parent_ref = current.borrow().parent()?;
+            if parent_ref.borrow().implements::<dyn HasBreakingControlFlowOpInterface>() {
+                return Some((current, parent_ref));
+            }
+            region = parent_ref.borrow().parent_region();
+        }
+        None
+    }
+
+    #[derive(OpPrinter, OpParser)]
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator, ReturnLike),
+        implements(RegionExitTerminatorOpInterface, RegionBranchTerminatorOpInterface, OpPrinter)
+    )]
+    pub struct WrongOriginExit {
+        #[operands]
+        args: AnyType,
+    }
+
+    /// Implements the Rust trait but omits its dynamic registration, which analyses require.
+    #[derive(OpPrinter, OpParser)]
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator, ReturnLike),
+        implements(RegionExitTerminatorOpInterface, OpPrinter)
+    )]
+    pub struct UnregisteredBranchExit {
+        #[operands]
+        args: AnyType,
+    }
+
+    impl RegionExitTerminatorOpInterface for UnregisteredBranchExit {
+        fn resolve_exit(&self) -> ExitResolution {
+            let (from_region, target) = nearest_receiver(self.as_operation()).unwrap();
+            ExitResolution::Resolved(ResolvedExit {
+                target,
+                from_region,
+                callable: None,
+            })
+        }
+
+        fn get_exit_kind(&self) -> RegionExitKind {
+            RegionExitKind::Break
+        }
+    }
+
+    macro_rules! impl_test_break_successors {
+        ($op:ty) => {
+            impl RegionBranchTerminatorOpInterface for $op {
+                fn get_successor_operands(
+                    &self,
+                    _point: RegionBranchPoint,
+                ) -> SuccessorOperandRange<'_> {
+                    SuccessorOperandRange::forward(self.args())
+                }
+
+                fn get_mutable_successor_operands(
+                    &mut self,
+                    _point: RegionBranchPoint,
+                ) -> SuccessorOperandRangeMut<'_> {
+                    SuccessorOperandRangeMut::forward(self.args_mut())
+                }
+
+                fn get_successor_regions(
+                    &self,
+                    _operands: &[Option<AttributeRef>],
+                ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+                    let target = self.get_exit_target().unwrap();
+                    let values = target
+                        .borrow()
+                        .results()
+                        .iter()
+                        .map(|result| result.borrow().as_value_ref())
+                        .collect();
+                    smallvec![RegionSuccessorInfo::Exiting {
+                        target,
+                        to: RegionBranchPoint::Parent,
+                        values,
+                    }]
+                }
+            }
+        };
+    }
+
+    impl_test_break_successors!(WrongOriginExit);
+    impl_test_break_successors!(UnregisteredBranchExit);
+
+    /// A callable that also registers as an exit receiver, to test boundary-check precedence.
+    #[derive(OpPrinter, OpParser)]
+    #[operation(
+        dialect = TestDialect,
+        traits(SingleBlock),
+        implements(CallableOpInterface, RegionBranchOpInterface, HasBreakingControlFlowOpInterface, OpPrinter)
+    )]
+    pub struct CallableReceiver {
+        #[region]
+        body: Region,
+    }
+
+    impl CallableOpInterface for CallableReceiver {
+        fn get_callable_region(&self) -> Option<RegionRef> {
+            Some(self.body().as_region_ref())
+        }
+
+        fn signature(&self) -> Signature {
+            Signature::new(&self.as_operation().context_rc(), [], [])
+        }
+    }
+
+    impl RegionBranchOpInterface for CallableReceiver {
+        fn get_successor_regions(&self, point: RegionBranchPoint) -> RegionSuccessorIter<'_> {
+            let successor = match point {
+                RegionBranchPoint::Parent => {
+                    RegionSuccessorInfo::Entering(self.body().as_region_ref())
+                }
+                RegionBranchPoint::Child(_) => RegionSuccessorInfo::Returning(SmallVec::new()),
+            };
+            RegionSuccessorIter::new(self.as_operation(), [successor])
+        }
+    }
+
+    impl HasBreakingControlFlowOpInterface for CallableReceiver {
+        fn has_nested_predecessors(&self) -> bool {
+            true
+        }
+
+        fn get_continue_target_region(&self) -> Option<RegionRef> {
+            None
+        }
+    }
+
+    #[test]
+    fn exit_verifier_requires_registered_branch_terminator_interface() {
+        let error = rejection(
+            "unregistered_branch_exit.hir",
+            &RESOLVER_CHECK_PROGRAM.replace("BODY", "test.unregistered_branch_exit %j : (u32);"),
+        );
+        assert!(error.contains("RegionBranchTerminatorOpInterface"), "{error}");
+    }
+
+    #[test]
+    fn exit_verifier_rejects_a_callable_receiver_as_target() {
+        let error = rejection(
+            "callable_receiver_exit.hir",
+            r#"
+builtin.function public extern("C") @f() {
+    test.callable_receiver {
+        test.stray_exit : ();
+    };
+    builtin.ret;
+};"#,
+        );
+        assert!(error.contains("callable boundary"), "{error}");
+    }
+
+    impl RegionExitTerminatorOpInterface for WrongOriginExit {
+        fn resolve_exit(&self) -> ExitResolution {
+            let (_, target) = nearest_receiver(self.as_operation()).unwrap();
+            let from_region = target
+                .borrow()
+                .as_trait::<dyn HasBreakingControlFlowOpInterface>()
+                .unwrap()
+                .get_continue_target_region()
+                .unwrap();
+            ExitResolution::Resolved(ResolvedExit {
+                target,
+                from_region,
+                callable: None,
+            })
+        }
+
+        fn get_exit_kind(&self) -> RegionExitKind {
+            RegionExitKind::Break
+        }
+    }
+
+    #[test]
+    fn exit_verifier_checks_the_resolvers_originating_region() {
+        let error = rejection(
+            "wrong_exit_origin.hir",
+            &RESOLVER_CHECK_PROGRAM.replace("BODY", "test.wrong_origin_exit %j : (u32);"),
+        );
+        assert!(error.contains("originating region"), "{error}");
+    }
+
+    impl RegionExitTerminatorOpInterface for BlindExit {
+        fn resolve_exit(&self) -> ExitResolution {
+            match nearest_receiver(self.as_operation()) {
+                Some((from_region, target)) => ExitResolution::Resolved(ResolvedExit {
+                    target,
+                    from_region,
+                    callable: None,
+                }),
+                None => ExitResolution::Unresolved(ExitDefect {
+                    kind: ExitDefectKind::NotFound,
+                    detail: alloc::string::ToString::to_string("no enclosing receiver"),
+                }),
+            }
+        }
+
+        fn get_exit_kind(&self) -> RegionExitKind {
+            RegionExitKind::Break
+        }
+    }
+
+    impl RegionExitTerminatorOpInterface for DisownedExit {
+        fn resolve_exit(&self) -> ExitResolution {
+            match nearest_receiver(self.as_operation()) {
+                Some((from_region, target)) => ExitResolution::Resolved(ResolvedExit {
+                    target,
+                    from_region,
+                    // THE LIE, and the only one: the receiver is not the callable.
+                    callable: Some(target),
+                }),
+                None => ExitResolution::Unresolved(ExitDefect {
+                    kind: ExitDefectKind::NotFound,
+                    detail: alloc::string::ToString::to_string("no enclosing receiver"),
+                }),
+            }
+        }
+
+        fn get_exit_kind(&self) -> RegionExitKind {
+            RegionExitKind::Break
+        }
+    }
+
+    impl RegionExitTerminatorOpInterface for StrayExit {
+        fn resolve_exit(&self) -> ExitResolution {
+            match nearest_enclosing(self.as_operation()) {
+                Some((from_region, target)) => ExitResolution::Resolved(ResolvedExit {
+                    target,
+                    from_region,
+                    callable: None,
+                }),
+                None => ExitResolution::Unresolved(ExitDefect {
+                    kind: ExitDefectKind::NotFound,
+                    detail: alloc::string::ToString::to_string("no enclosing op"),
+                }),
+            }
+        }
+
+        fn get_exit_kind(&self) -> RegionExitKind {
+            RegionExitKind::Break
+        }
+    }
+
+    impl RegionBranchTerminatorOpInterface for BlindExit {
+        fn get_successor_operands(&self, _point: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+            SuccessorOperandRange::forward(self.args())
+        }
+
+        fn get_mutable_successor_operands(
+            &mut self,
+            _point: RegionBranchPoint,
+        ) -> SuccessorOperandRangeMut<'_> {
+            SuccessorOperandRangeMut::forward(self.args_mut())
+        }
+
+        fn get_successor_regions(
+            &self,
+            _operands: &[Option<AttributeRef>],
+        ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+            SmallVec::new()
+        }
+    }
+
+    impl RegionBranchTerminatorOpInterface for StrayExit {
+        fn get_successor_operands(&self, _point: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+            SuccessorOperandRange::forward(self.args())
+        }
+
+        fn get_mutable_successor_operands(
+            &mut self,
+            _point: RegionBranchPoint,
+        ) -> SuccessorOperandRangeMut<'_> {
+            SuccessorOperandRangeMut::forward(self.args_mut())
+        }
+
+        fn get_successor_regions(
+            &self,
+            _operands: &[Option<AttributeRef>],
+        ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+            SmallVec::new()
+        }
+    }
+
+    impl RegionBranchTerminatorOpInterface for DisownedExit {
+        fn get_successor_operands(&self, _point: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+            SuccessorOperandRange::forward(self.args())
+        }
+
+        fn get_mutable_successor_operands(
+            &mut self,
+            _point: RegionBranchPoint,
+        ) -> SuccessorOperandRangeMut<'_> {
+            SuccessorOperandRangeMut::forward(self.args_mut())
+        }
+
+        fn get_successor_regions(
+            &self,
+            _operands: &[Option<AttributeRef>],
+        ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+            SmallVec::new()
+        }
+    }
+
+    /// Parse `source` and return the error it must be rejected with.
+    #[track_caller]
+    fn rejection(name: &str, source: &str) -> alloc::string::String {
+        let context = Rc::new(Context::default());
+        match parse_function_fixpoint(&context, name, source) {
+            Ok(_) => panic!("expected '{name}' to be rejected, but it was accepted"),
+            Err(err) => alloc::format!("{err}"),
+        }
+    }
 
     /// Find the first operation of type `T` in the entry block of `function`.
     fn find_op<T: OpRegistration>(function: &Function) -> UnsafeIntrusiveEntityRef<T> {
@@ -890,7 +1880,7 @@ builtin.function public extern("C") @forward(%condition: i1, %value: u32) -> u32
         let while_op = find_op::<While>(&function);
         let while_op = while_op.borrow();
         assert_eq!(operation_operand_range_requirement(while_op.as_operation(), 0), None);
-        let condition = while_op.condition_op();
+        let condition = while_op.condition_op().unwrap();
         let condition = condition.borrow();
         assert_eq!(
             operation_operand_range_requirement(condition.as_operation(), 0),
@@ -944,7 +1934,7 @@ builtin.function public extern(\"C\") @count_to(%n: u32) -> u32 {
         assert_eq!(while_op.inits().len(), 1);
         assert_eq!(while_op.num_results(), 1);
         assert_eq!(while_op.before().entry().num_arguments(), 1);
-        let condition = while_op.condition_op();
+        let condition = while_op.condition_op().unwrap();
         let condition = condition.borrow();
         assert_eq!(condition.forwarded().len(), 1);
 
@@ -990,7 +1980,7 @@ builtin.function public extern(\"C\") @spin(%n: u32) -> u32 {
         let while_op = find_op::<While>(&function);
         let while_op = while_op.borrow();
         assert_eq!(while_op.num_results(), 0);
-        let condition = while_op.condition_op();
+        let condition = while_op.condition_op().unwrap();
         let condition = condition.borrow();
         assert_eq!(condition.forwarded().len(), 0);
 
@@ -1126,5 +2116,522 @@ builtin.function public extern(\"C\") @dispatch(%sel: u32, %a: u32, %b: u32) -> 
         assert_eq!(yielded_value(&case_region.borrow()), arg_a);
 
         Ok(())
+    }
+    /// The round-trip fixture for the new ops: a `break` nested in an `scf.if` inside the loop it
+    /// exits, printed and re-parsed to a fixpoint.
+    #[test]
+    fn parse_scf_break_round_trips() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @first_over(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %found = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %stop = arith.gt %j, %n;
+        %k = scf.if %stop then {
+            scf.break 1 %j : (u32);
+        } else {
+            scf.yield %j : (u32);
+        } : (i1) -> (u32);
+        %next = arith.incr %k;
+        scf.yield %next : (u32);
+    } : (u32) -> u32;
+    builtin.ret %found : (u32);
+};";
+        let (function, printed) = parse_function_fixpoint(&context, "scf_break.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @first_over(%0: u32) -> u32 {
+                %1 = arith.constant 0 : u32;
+                %8 = scf.while %1 before {
+                ^block2(%2: u32):
+                    %3 = arith.lt %2, %0;
+                    scf.condition %3, %2 : (i1, u32);
+                } after {
+                ^block3(%4: u32):
+                    %5 = arith.gt %4, %0;
+                    %6 = scf.if %5 then {
+                        scf.break 1 %4 : (u32);
+                    } else {
+                        scf.yield %4 : (u32);
+                    } : (i1) -> (u32);
+                    %7 = arith.incr %6;
+                    scf.yield %7 : (u32);
+                } : (u32) -> (u32);
+                builtin.ret %8 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        // The break resolves through the `scf.if` to the loop, not to the `scf.if`.
+        let function = function.borrow();
+        let while_op = find_op::<While>(&function);
+        let break_op = {
+            let while_op = while_op.borrow();
+            let if_op = while_op
+                .after()
+                .entry()
+                .body()
+                .iter()
+                .find_map(|op| op.as_operation_ref().try_downcast_op::<If>().ok())
+                .expect("expected an scf.if in the loop body");
+            let if_op = if_op.borrow();
+            if_op
+                .then_body()
+                .entry()
+                .terminator()
+                .unwrap()
+                .try_downcast_op::<Break>()
+                .unwrap()
+        };
+        assert_eq!(
+            break_op.borrow().get_exit_target(),
+            Some(while_op.borrow().as_operation().as_operation_ref())
+        );
+        assert_eq!(break_op.borrow().get_exit_kind(), RegionExitKind::Break);
+
+        Ok(())
+    }
+
+    /// `scf.continue` round-trips, and resolves through an intermediate `scf.if` to the loop's
+    /// header rather than to the `scf.if`.
+    #[test]
+    fn parse_scf_continue_round_trips() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @skip_odds(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %total = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %odd = arith.gt %j, %n;
+        %k = scf.if %odd then {
+            %bump = arith.incr %j;
+            scf.continue 1 %bump : (u32);
+        } else {
+            scf.yield %j : (u32);
+        } : (i1) -> (u32);
+        %next = arith.incr %k;
+        scf.yield %next : (u32);
+    } : (u32) -> u32;
+    builtin.ret %total : (u32);
+};";
+        let (function, printed) = parse_function_fixpoint(&context, "scf_continue.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @skip_odds(%0: u32) -> u32 {
+                %1 = arith.constant 0 : u32;
+                %9 = scf.while %1 before {
+                ^block2(%2: u32):
+                    %3 = arith.lt %2, %0;
+                    scf.condition %3, %2 : (i1, u32);
+                } after {
+                ^block3(%4: u32):
+                    %5 = arith.gt %4, %0;
+                    %7 = scf.if %5 then {
+                        %6 = arith.incr %4;
+                        scf.continue 1 %6 : (u32);
+                    } else {
+                        scf.yield %4 : (u32);
+                    } : (i1) -> (u32);
+                    %8 = arith.incr %7;
+                    scf.yield %8 : (u32);
+                } : (u32) -> (u32);
+                builtin.ret %9 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let while_op = find_op::<While>(&function);
+        let while_ref = while_op.borrow().as_operation().as_operation_ref();
+        let continue_op = {
+            let while_op = while_op.borrow();
+            let if_op = while_op
+                .after()
+                .entry()
+                .body()
+                .iter()
+                .find_map(|op| op.as_operation_ref().try_downcast_op::<If>().ok())
+                .expect("expected an scf.if in the loop body");
+            let if_op = if_op.borrow();
+            if_op
+                .then_body()
+                .entry()
+                .terminator()
+                .unwrap()
+                .try_downcast_op::<Continue>()
+                .unwrap()
+        };
+        assert_eq!(continue_op.borrow().get_exit_target(), Some(while_ref));
+        assert_eq!(continue_op.borrow().get_exit_kind(), RegionExitKind::Continue);
+
+        // The successor names the loop's header, and it is an Exiting edge — not a Returning one
+        // to the `scf.if` that lexically contains it.
+        let continue_op = continue_op.borrow();
+        let successors = <Continue as RegionBranchTerminatorOpInterface>::get_successor_regions(
+            &continue_op,
+            &[None],
+        );
+        assert_eq!(successors.len(), 1);
+        match &successors[0] {
+            RegionSuccessorInfo::Exiting { target, to, .. } => {
+                assert_eq!(*target, while_ref);
+                assert_eq!(
+                    *to,
+                    RegionBranchPoint::Child(while_op.borrow().before().as_region_ref())
+                );
+            }
+            other => panic!("expected an Exiting successor, got {other:?}"),
+        }
+
+        Ok(())
+    }
+
+    /// **V-1** — rule 1: `levels` is 1-based, so zero names no loop.
+    #[test]
+    fn v1_rejects_levels_zero() {
+        let err = rejection(
+            "v1.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        scf.break 0 %j : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};",
+        );
+        assert!(err.contains("must be at least 1"), "unexpected diagnostic: {err}");
+        assert!(err.contains("names level 0"), "unexpected diagnostic: {err}");
+    }
+
+    /// **V-2** — rule 2: `levels` must resolve. Two enclosing loops, and the exit names three.
+    #[test]
+    fn v2_rejects_more_levels_than_enclosing_loops() {
+        let err = rejection(
+            "v2.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^outer_head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^outer_body(%j: u32):
+        %inner = scf.while %j before {
+        ^inner_head(%k: u32):
+            %go = arith.lt %k, %n;
+            scf.condition %go, %k : (i1, u32);
+        } after {
+        ^inner_body(%m: u32):
+            scf.break 3 %m : (u32);
+        } : (u32) -> u32;
+        scf.yield %inner : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};",
+        );
+        assert!(err.contains("names enclosing loop 3"), "unexpected diagnostic: {err}");
+        assert!(
+            err.contains("only 2 enclosing loop(s) were found"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// **V-3** — rule 3, the opt-in property, and the witness that proves the set is closed.
+    ///
+    /// The program is the accepted one with a single op swapped: `test.opaque_region` in place of
+    /// `scf.if`. Both hold a region, both sit between the break and its target loop, and the ONLY
+    /// difference is that one declares [PropagateControlFlowBreak] and the other does not. So the
+    /// accept-side control below is not decoration — it is what makes this a test of membership
+    /// rather than of nesting depth.
+    #[test]
+    fn v3_rejects_an_exit_crossing_an_op_that_has_not_opted_in() {
+        const PROGRAM: &str = "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        INTERMEDIATE {
+            scf.break 1 %j : (u32);
+        };
+        scf.yield %j : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};";
+
+        let err = rejection("v3.hir", &PROGRAM.replace("INTERMEDIATE", "test.opaque_region"));
+        assert!(
+            err.contains("would have to cross 'test.opaque_region'"),
+            "unexpected diagnostic: {err}"
+        );
+        assert!(
+            err.contains("has not declared that it forwards breaking control flow"),
+            "unexpected diagnostic: {err}"
+        );
+
+        // THE ACCEPT SIDE: the same program with one token changed — an op identical to the one
+        // above except that it declares the marker.
+        let context = Rc::new(Context::default());
+        parse_function_fixpoint(
+            &context,
+            "v3_accept.hir",
+            &PROGRAM.replace("INTERMEDIATE", "test.transparent_region"),
+        )
+        .expect("an exit crossing an op that declares PropagateControlFlowBreak must be accepted");
+    }
+
+    /// **V-4** — rule 4: a break's operands become the target loop's results.
+    #[test]
+    fn v4_rejects_break_operands_that_do_not_match_the_targets_results() {
+        let err = rejection(
+            "v4.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %flag = arith.gt %j, %n;
+        scf.break 1 %flag : (i1);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};",
+        );
+        assert!(
+            err.contains("this break carries (i1), but the loop it exits produces (u32)"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// **V-5** — rule 5: a continue's operands become the target loop's next iter_args.
+    #[test]
+    fn v5_rejects_continue_operands_that_do_not_match_the_targets_iter_args() {
+        let err = rejection(
+            "v5.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %flag = arith.gt %j, %n;
+        scf.continue 1 %flag : (i1);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};",
+        );
+        assert!(
+            err.contains("this continue carries (i1), but the loop it targets iterates on (u32)"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// **V-6** — rule 6: a continue in its own target's header re-enters the region it is in.
+    ///
+    /// The mirror case is legal and is asserted beside it: a `break` in the `before` region is
+    /// equivalent to `scf.condition(false, args)` and costs nothing to allow.
+    #[test]
+    fn v6_rejects_continue_in_the_targets_header() {
+        let err = rejection(
+            "v6.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        scf.continue 1 %i : (u32);
+    } after {
+    ^body(%j: u32):
+        scf.yield %j : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};",
+        );
+        assert!(
+            err.contains("originates in the header of the loop it targets"),
+            "unexpected diagnostic: {err}"
+        );
+
+        // A break in the header IS legal.
+        let context = Rc::new(Context::default());
+        parse_function_fixpoint(
+            &context,
+            "v6_accept.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        scf.break 1 %i : (u32);
+    } after {
+    ^body(%j: u32):
+        scf.yield %j : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};",
+        )
+        .expect("a break in a loop's header is equivalent to `scf.condition(false, args)`");
+    }
+
+    /// **V-7** — rule 2's outer bound: a break may not escape a function.
+    #[test]
+    fn v7_rejects_a_break_with_no_enclosing_loop() {
+        let err = rejection(
+            "v7.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    scf.break 1 %n : (u32);
+};",
+        );
+        assert!(err.contains("names enclosing loop 1"), "unexpected diagnostic: {err}");
+        assert!(
+            err.contains("only 0 enclosing loop(s) were found before the enclosing function body"),
+            "unexpected diagnostic: {err}"
+        );
+    }
+
+    /// V-3's program with the exit left as a hole, so that the resolver-check witnesses run on the
+    /// SAME shape the rule's own witness runs on, and the only variable is which op sits in the
+    /// hole and how deep.
+    const RESOLVER_CHECK_PROGRAM: &str = "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        %more = arith.lt %i, %n;
+        scf.condition %more, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        BODY
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};";
+
+    /// The reject-side body: the exit one region deeper, inside `wrapper`.
+    fn nested_body(wrapper: &str, exit: &str) -> alloc::string::String {
+        alloc::format!(
+            "{wrapper} {{\n            {exit} %j : (u32);\n        }};\n        scf.yield %j : \
+             (u32);"
+        )
+    }
+
+    /// **V-8** — the blanket CHECKS the resolver on rule 3, and the check is not the resolver's.
+    ///
+    /// [BlindExit] never asks whether it crossed a transparent op, so on the reject side it
+    /// returns a confident `Resolved` naming the loop. The rejection therefore cannot come from
+    /// the implementor, and it does not: it comes from `hir`'s own re-derivation, in the same
+    /// words rule 3 has always used.
+    ///
+    /// **The accept side is what makes this a test of the CHECK.** The same op, one region
+    /// shallower, resolves correctly and is accepted — so the verifier is discriminating between
+    /// two answers rather than refusing the op.
+    #[test]
+    fn v8_the_blanket_rejects_a_resolver_that_skipped_rule_3() {
+        let err = rejection(
+            "v8.hir",
+            &RESOLVER_CHECK_PROGRAM
+                .replace("BODY", &nested_body("test.opaque_region", "test.blind_exit")),
+        );
+        assert!(
+            err.contains("would have to cross 'test.opaque_region'"),
+            "unexpected diagnostic: {err}"
+        );
+        assert!(
+            err.contains("has not declared that it forwards breaking control flow"),
+            "unexpected diagnostic: {err}"
+        );
+
+        // THE ACCEPT SIDE: the same op where its answer happens to be right.
+        let context = Rc::new(Context::default());
+        parse_function_fixpoint(
+            &context,
+            "v8_accept.hir",
+            &RESOLVER_CHECK_PROGRAM.replace("BODY", "test.blind_exit %j : (u32);"),
+        )
+        .expect("an exit whose resolver returns the right answer must be accepted");
+    }
+
+    /// **V-9** — the blanket CHECKS the resolver on rule 2's receiver half.
+    ///
+    /// [StrayExit] names the nearest enclosing region-bearing op. Inside a `test.transparent_region`
+    /// that op forwards breaking control flow but does not RECEIVE it, so rule 3 cannot be what
+    /// fires and rule 2 is. The accept side is the same op one region shallower, where the nearest
+    /// enclosing op really is the loop.
+    #[test]
+    fn v9_the_blanket_rejects_a_resolver_that_named_a_non_receiver() {
+        let err = rejection(
+            "v9.hir",
+            &RESOLVER_CHECK_PROGRAM
+                .replace("BODY", &nested_body("test.transparent_region", "test.stray_exit")),
+        );
+        assert!(
+            err.contains("resolved to 'test.transparent_region'"),
+            "unexpected diagnostic: {err}"
+        );
+        assert!(
+            err.contains("does not receive breaking control flow"),
+            "unexpected diagnostic: {err}"
+        );
+
+        let context = Rc::new(Context::default());
+        parse_function_fixpoint(
+            &context,
+            "v9_accept.hir",
+            &RESOLVER_CHECK_PROGRAM.replace("BODY", "test.stray_exit %j : (u32);"),
+        )
+        .expect("an exit whose resolver returns the right answer must be accepted");
+    }
+
+    /// **V-10** — the Q9-6 carry, on the HIR side: `ResolvedExit::callable` is CHECKED.
+    ///
+    /// [DisownedExit] and [BlindExit] resolve to the same target from the same region in the same
+    /// program; the only difference between their two resolutions is that one names a `callable`
+    /// and it is the wrong one. **That is what makes this a test of the field rather than of the
+    /// op** — and it is why the field is not decoration for the counting encoding that reports
+    /// `None`: an encoding that NAMES its target gets this check for free.
+    #[test]
+    fn v10_the_blanket_rejects_a_resolver_that_claimed_the_wrong_callable() {
+        let err = rejection(
+            "v10.hir",
+            &RESOLVER_CHECK_PROGRAM.replace("BODY", "test.disowned_exit %j : (u32);"),
+        );
+        assert!(
+            err.contains("resolved to a target in 'scf.while'"),
+            "unexpected diagnostic: {err}"
+        );
+        assert!(
+            err.contains("which is not the callable it lives in"),
+            "unexpected diagnostic: {err}"
+        );
+
+        // THE CONTROL, in the same position: same target, same `from_region`, `callable: None`.
+        let context = Rc::new(Context::default());
+        parse_function_fixpoint(
+            &context,
+            "v10_control.hir",
+            &RESOLVER_CHECK_PROGRAM.replace("BODY", "test.blind_exit %j : (u32);"),
+        )
+        .expect("an exit that leaves `callable` unreported must be accepted");
     }
 }

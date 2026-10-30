@@ -178,6 +178,14 @@ impl<T> EffectInstance<T> {
         self.value.as_ref().and_then(|value| value.try_as_ref())
     }
 
+    /// Get the attribute the effect applies to, if any.
+    pub fn attribute(&self) -> Option<AttributeRef> {
+        match self.value.as_ref()? {
+            EffectValue::Attribute(attribute) => Some(*attribute),
+            _ => None,
+        }
+    }
+
     /// Get the symbol reference the effect is applied on, or `None` if there isn't a known symbol
     /// being affected.
     pub fn symbol(&self) -> Option<SymbolRef> {

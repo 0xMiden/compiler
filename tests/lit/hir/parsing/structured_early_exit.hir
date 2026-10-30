@@ -1,0 +1,67 @@
+// RUN: hir-opt %s | filecheck %s
+
+// Round-trip parse/print coverage for the SCF dialect's early exits: `scf.break` and
+// `scf.continue`, both nested inside an `scf.if` inside the loop they address, plus a
+// two-level `break` from an inner loop to an outer one.
+//
+// The level count is printed POSITIONALLY (`scf.break 1 %4 : (u32)`) rather than in an
+// attribute dictionary, because a `U32Attr` cannot be written in `.hir` text: an attribute
+// dictionary parses its values with `Type::Unknown`, for which an integer literal is rejected.
+// `scf.index_switch`'s `case <n>` has the same shape for the same reason.
+//
+// The body below is the canonical printer output, so the reprint must match it exactly.
+builtin.function public extern("C") @early_exits(%0: u32, %1: u32) -> u32 {
+    %2 = arith.constant 0 : u32;
+    %13 = scf.while %2 before {
+    ^block2(%3: u32):
+        %4 = arith.lt %3, %0;
+        scf.condition %4, %3 : (i1, u32);
+    } after {
+    ^block3(%5: u32):
+        %6 = arith.gt %5, %1;
+        %11 = scf.if %6 then {
+            %10 = scf.while %5 before {
+            ^block5(%7: u32):
+                %8 = arith.lt %7, %1;
+                scf.condition %8, %7 : (i1, u32);
+            } after {
+            ^block6(%9: u32):
+                scf.break 2 %9 : (u32);
+            } : (u32) -> (u32);
+            scf.continue 1 %10 : (u32);
+        } else {
+            scf.yield %5 : (u32);
+        } : (i1) -> (u32);
+        %12 = arith.incr %11;
+        scf.yield %12 : (u32);
+    } : (u32) -> (u32);
+    builtin.ret %13 : (u32);
+};
+
+// CHECK: builtin.function public extern("C") @early_exits(%0: u32, %1: u32) -> u32 {
+// CHECK-NEXT:     %2 = arith.constant 0 : u32;
+// CHECK-NEXT:     %13 = scf.while %2 before {
+// CHECK-NEXT:     ^block2(%3: u32):
+// CHECK-NEXT:         %4 = arith.lt %3, %0;
+// CHECK-NEXT:         scf.condition %4, %3 : (i1, u32);
+// CHECK-NEXT:     } after {
+// CHECK-NEXT:     ^block3(%5: u32):
+// CHECK-NEXT:         %6 = arith.gt %5, %1;
+// CHECK-NEXT:         %11 = scf.if %6 then {
+// CHECK-NEXT:             %10 = scf.while %5 before {
+// CHECK-NEXT:             ^block5(%7: u32):
+// CHECK-NEXT:                 %8 = arith.lt %7, %1;
+// CHECK-NEXT:                 scf.condition %8, %7 : (i1, u32);
+// CHECK-NEXT:             } after {
+// CHECK-NEXT:             ^block6(%9: u32):
+// CHECK-NEXT:                 scf.break 2 %9 : (u32);
+// CHECK-NEXT:             } : (u32) -> (u32);
+// CHECK-NEXT:             scf.continue 1 %10 : (u32);
+// CHECK-NEXT:         } else {
+// CHECK-NEXT:             scf.yield %5 : (u32);
+// CHECK-NEXT:         } : (i1) -> (u32);
+// CHECK-NEXT:         %12 = arith.incr %11;
+// CHECK-NEXT:         scf.yield %12 : (u32);
+// CHECK-NEXT:     } : (u32) -> (u32);
+// CHECK-NEXT:     builtin.ret %13 : (u32);
+// CHECK-NEXT: };

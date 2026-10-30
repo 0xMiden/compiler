@@ -112,14 +112,20 @@ impl RewritePattern for RemoveLoopInvariantArgsFromBeforeBlock {
             .iter()
             .map(|arg| arg.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
-        let cond_op = while_op.condition_op();
+        // A header terminated by `scf.break` has no `scf.condition` to rewrite.
+        let Some(cond_op) = while_op.condition_op() else {
+            return Ok(false);
+        };
         let cond_op_args = cond_op
             .borrow()
             .forwarded()
             .into_iter()
             .map(|o| o.borrow().as_value_ref())
             .collect::<SmallVec<[_; 4]>>();
-        let yield_op = while_op.yield_op();
+        // A body whose entry block ends in an early exit has no yielded values to rewrite.
+        let Some(yield_op) = while_op.yield_op() else {
+            return Ok(false);
+        };
         let yield_op_args = yield_op
             .borrow()
             .yielded()

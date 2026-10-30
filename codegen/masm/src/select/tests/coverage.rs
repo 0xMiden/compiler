@@ -52,6 +52,22 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
         ),
         false,
     ));
+    fixtures.push((
+        parse_module_function(
+            r#"builtin.module public @pointer_references {
+        builtin.function public extern("C") @callee(%x: felt) -> felt {
+            builtin.ret %x : (felt);
+        };
+        builtin.function public extern("C") @dispatch(%p: ptr<[felt; 4], element>, %x: felt) -> (felt, [felt; 4]) {
+            %root = hir.procref @callee;
+            %same = hir.dynexec %p(%x) : extern("C") (felt) -> (felt);
+            %fresh = hir.dyncall_local %p(%same) : extern("component-model") (felt) -> (felt);
+            builtin.ret %fresh, %root : (felt, [felt; 4]);
+        };
+    };"#,
+        ),
+        false,
+    ));
     let outputs = (0..16).map(|i| alloc::format!("%o{i}")).collect::<Vec<_>>().join(", ");
     fixtures.push((
         parse(&alloc::format!(
@@ -61,9 +77,19 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
         )),
         false,
     ));
+    fixtures.push((super::inline_asm::fixture("push.1 add"), false));
     fixtures.extend(super::calls::fixtures());
     fixtures.extend(super::arithmetic::fixtures());
     fixtures.extend(super::memory::fixtures());
+    fixtures.push((
+        super::memory::gep_fixture(
+            midenc_hir::AddressSpace::Element,
+            midenc_hir::Type::U32,
+            1,
+            false,
+        ),
+        false,
+    ));
     fixtures.extend(super::intrinsics::fixtures());
     fixtures.push((super::intrinsics::println_fixture(false), false));
     for immediate in [false, true] {
@@ -143,7 +169,7 @@ fn registered_hir_families_have_positive_and_negative_source_coverage() {
             );
         }
     }
-    assert_eq!(registered.len(), 126);
+    assert_eq!(registered.len(), 133);
     assert_eq!(covered, registered);
 }
 
@@ -312,9 +338,23 @@ fn a_region_interface_alone_does_not_authorize_final_selection() {
 }
 
 #[test]
-fn unknown_source_calling_conventions_fail_closed() {
-    let f = parse("builtin.function public extern(\"custom\") @source() { builtin.ret; };");
-    assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+fn source_convention_classification_preserves_context_boundaries() {
+    use crate::plan::CallingConvention::{Context, SameContext};
+
+    for (name, expected) in [
+        ("C", SameContext),
+        ("fast", SameContext),
+        ("wasm", SameContext),
+        ("sigma", SameContext),
+        ("custom", SameContext),
+        ("component-model", Context),
+    ] {
+        let f = parse(&alloc::format!(
+            "builtin.function public extern(\"{name}\") @source() {{ builtin.ret; }};"
+        ));
+        let selected = checked(&f, &SelectEnv::default());
+        assert_eq!(selected.abi.convention(), expected, "{name}");
+    }
 }
 
 #[test]
@@ -519,9 +559,12 @@ fn nested_selection_failure_retains_the_actual_operation_span_and_inline_chain()
 }
 
 #[test]
-fn unsupported_function_convention_retains_function_source_span() {
+fn oversized_context_signature_retains_function_source_span() {
     use midenc_hir::Spanned;
-    let f = parse("builtin.function public extern(\"custom\") @source() { builtin.ret; };");
+    let params = (0..17).map(|i| alloc::format!("%p{i}: felt")).collect::<Vec<_>>().join(", ");
+    let f = parse(&alloc::format!(
+        "builtin.function public extern(\"component-model\") @source({params}) {{ builtin.ret; }};"
+    ));
     let span = f.borrow().span();
     assert!(!span.source_id().is_unknown());
     let report = select_function(&f.borrow(), &SelectEnv::default()).unwrap_err();

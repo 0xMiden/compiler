@@ -45,10 +45,15 @@ impl RewritePattern for WhileRemoveDuplicatedResults {
             return Ok(false);
         };
 
+        // Results come from `scf.condition`'s forwarded operands; without one there is no
+        // result list for this pattern to deduplicate.
+        let Some(condition_op) = while_op.condition_op() else {
+            return Ok(false);
+        };
         // Results that are forwarded the same value are all replaced with the first of them.
         let mut unique = SmallVec::<[ValueRef; 4]>::default();
         let mut results = SmallVec::<[Option<usize>; 4]>::default();
-        for forwarded in while_op.condition_op().borrow().forwarded().iter() {
+        for forwarded in condition_op.borrow().forwarded().iter() {
             let value = forwarded.borrow().as_value_ref();
             let index = unique.iter().position(|v| *v == value).unwrap_or(unique.len());
             if index == unique.len() {

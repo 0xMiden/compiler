@@ -381,12 +381,17 @@ pub fn verify_region_branch_terminator_successor_operand_arities(
         let point = successor.successor();
         let inputs = region_successor_inputs(&successor)?;
         let operands = terminator.get_successor_operands(point);
-        let parent = parent_op_ref.borrow();
-        let region_branch = parent.as_trait::<dyn RegionBranchOpInterface>().ok_or_else(|| {
+        // The op that owns this edge is the addressed ancestor for an early exit, and the
+        // immediate parent otherwise. Type compatibility along the edge is the OWNER's rule: a
+        // break's operands are compared against the target loop's results, so asking the
+        // intermediate `scf.if` would be asking the wrong op.
+        let owner_ref = successor.target().unwrap_or(parent_op_ref);
+        let owner = owner_ref.borrow();
+        let region_branch = owner.as_trait::<dyn RegionBranchOpInterface>().ok_or_else(|| {
             Report::msg(format!(
                 "operation '{op_name}' has parent operation '{}' that does not implement \
                  RegionBranchOpInterface",
-                parent.name()
+                owner.name()
             ))
         })?;
         verify_successor_operands_against_inputs(
@@ -437,6 +442,11 @@ fn region_successor_inputs(
                 .collect())
         }
         RegionSuccessorInfo::Returning(values) => Ok(values.iter().copied().collect()),
+        // An early exit already carries its successor inputs, resolved *at the target*: the
+        // target's results for a break, the target header's block arguments for a continue.
+        // There is nothing to look up here, and looking the region up from the immediate parent
+        // would produce the wrong inputs entirely.
+        RegionSuccessorInfo::Exiting { values, .. } => Ok(values.iter().copied().collect()),
     }
 }
 

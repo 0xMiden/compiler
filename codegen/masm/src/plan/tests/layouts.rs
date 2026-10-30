@@ -16,6 +16,7 @@ fn raw_layout_preserves_limb_order() {
     }
     assert!(ValueLayout::new(Type::Never).is_err());
     assert!(ValueLayout::new(Type::Unknown).is_err());
+    assert!(ValueLayout::new(Type::from(ArrayType::new(Type::U8, 0))).is_err());
     assert!(ValueLayout::new(Type::from(ArrayType::new(Type::Felt, 5))).is_err());
     let layouts = [Type::U128, Type::U128, Type::U128, Type::U128, Type::U128]
         .into_iter()
@@ -348,4 +349,180 @@ fn resolving_scratch_preserves_stored_bindings_and_validates_the_final_assignmen
     assert!(binding.validate(&unit, &frame).is_err());
     unit.scratch[0].size = 5;
     assert!(binding.resolve_scratch(&unit, &frame).is_err());
+}
+
+#[test]
+fn oversized_aggregate_layout_is_rejected_before_raw_decomposition() {
+    // Upstream splitting of a wide member followed by more fields can underflow while
+    // calculating remaining offsets. None of that decomposition is needed for a >4-lane value.
+    let ty = Type::from(midenc_hir::StructType::new([Type::U128, Type::U64, Type::U32]));
+    assert!(ValueLayout::new(ty).unwrap_err().to_string().contains("one to four"));
+}
+
+#[test]
+fn extreme_array_layout_is_rejected_without_size_overflow() {
+    let ty = Type::from(midenc_hir::ArrayType::new(Type::U128, usize::MAX));
+    assert!(ValueLayout::new(ty).unwrap_err().to_string().contains("one to four"));
+}
+
+#[test]
+fn small_aggregate_leading_wide_field_preserves_four_lanes() {
+    let ty = Type::from(midenc_hir::StructType::new([Type::U64, Type::U32, Type::U32]));
+    let byte_limb = Type::from(ArrayType::new(Type::U8, 4));
+    assert_eq!(
+        ValueLayout::new(ty).unwrap().raw_parts(),
+        &[byte_limb.clone(), byte_limb, Type::U32, Type::U32]
+    );
+}
+
+#[test]
+fn small_aggregate_two_wide_fields_preserve_four_lanes() {
+    let ty = Type::from(midenc_hir::StructType::new([Type::U64, Type::U64]));
+    let byte_limb = Type::from(ArrayType::new(Type::U8, 4));
+    assert_eq!(ValueLayout::new(ty).unwrap().raw_parts(), &vec![byte_limb; 4]);
+}
+
+#[test]
+fn aggregate_adapter_preserves_unaffected_raw_types() {
+    use midenc_hir::{PointerType, StructType, TypeRepr};
+    let pointer = Type::from(PointerType::new(Type::U8));
+    for ty in [
+        Type::from(ArrayType::new(Type::U8, 9)),
+        Type::from(ArrayType::new(Type::U16, 5)),
+        Type::from(ArrayType::new(Type::U32, 3)),
+        Type::from(StructType::new([pointer.clone(), Type::U8, Type::I32])),
+        Type::from(StructType::new([Type::U16, Type::U16, Type::U32])),
+        Type::from(StructType::new_with_repr(TypeRepr::packed(1), [pointer, Type::U8, Type::I32])),
+    ] {
+        let expected = ty.clone().to_raw_parts().unwrap();
+        assert_eq!(ValueLayout::new(ty.clone()).unwrap().raw_parts(), expected.as_slice(), "{ty}");
+    }
+}
+
+#[test]
+fn aggregate_adapter_projects_packed_padded_and_nested_fields() {
+    use midenc_hir::{StructType, TypeRepr};
+    let bytes = |count| Type::from(ArrayType::new(Type::U8, count));
+    let packed =
+        |fields: Vec<Type>| Type::from(StructType::new_with_repr(TypeRepr::packed(1), fields));
+    for (ty, expected) in [
+        (
+            packed(vec![Type::U8, Type::U64, Type::U8]),
+            vec![packed(vec![Type::U8, bytes(3)]), bytes(4), packed(vec![Type::U8, Type::U8])],
+        ),
+        (
+            Type::from(StructType::new([Type::U8, Type::U64, Type::U8])),
+            vec![Type::U8, bytes(4), bytes(4), Type::U8],
+        ),
+        (
+            Type::from(StructType::new([Type::U8, Type::U32, Type::U32])),
+            vec![Type::U8, Type::U32, Type::U32],
+        ),
+        (
+            Type::from(StructType::new([
+                Type::U32,
+                Type::from(StructType::new([Type::U64, Type::U32])),
+            ])),
+            vec![Type::U32, bytes(4), bytes(4), Type::U32],
+        ),
+        (
+            Type::from(StructType::new_with_repr(TypeRepr::align(16), [Type::U64, Type::U8])),
+            vec![bytes(4), bytes(4), Type::U8],
+        ),
+        (
+            Type::from(StructType::new([
+                Type::U8,
+                Type::from(StructType::new_with_repr(TypeRepr::align(8), [Type::U32])),
+            ])),
+            vec![Type::U8, bytes(4), Type::U32],
+        ),
+    ] {
+        assert_eq!(ValueLayout::new(ty.clone()).unwrap().raw_parts(), &expected, "{ty}");
+    }
+}
+
+#[test]
+fn aggregate_adapter_array_crossings_keep_all_five_elements_in_order() {
+    use midenc_hir::{StructType, TypeRepr};
+    let packed =
+        |fields: Vec<Type>| Type::from(StructType::new_with_repr(TypeRepr::packed(1), fields));
+    let element = packed(vec![Type::U8, Type::U16]);
+    let ty = Type::from(ArrayType::new(element.clone(), 5));
+    let expected = vec![
+        packed(vec![element.clone(), Type::U8]),
+        packed(vec![Type::U16, packed(vec![Type::U8, Type::U8])]),
+        packed(vec![Type::U8, element.clone()]),
+        element,
+    ];
+    assert_eq!(ValueLayout::new(ty).unwrap().raw_parts(), &expected);
+    let wide_array = Type::from(ArrayType::new(Type::U64, 2));
+    assert_eq!(
+        ValueLayout::new(wide_array).unwrap().raw_parts(),
+        &vec![Type::from(ArrayType::new(Type::U8, 4)); 4]
+    );
+}
+
+#[test]
+fn aggregate_adapter_nested_fragment_fits_its_projected_interval() {
+    use midenc_hir::{StructType, TypeRepr};
+    let packed =
+        |fields: Vec<Type>| Type::from(StructType::new_with_repr(TypeRepr::packed(1), fields));
+    let inner = Type::from(StructType::new([Type::U16, Type::U8, Type::U32]));
+    let ty = packed(vec![Type::U8, inner]);
+    assert_eq!(ty.size_in_bytes(), 9);
+    let layout = ValueLayout::new(ty).unwrap();
+    assert_eq!(
+        layout.raw_parts(),
+        &[
+            packed(vec![Type::U8, packed(vec![Type::U16, Type::U8])]),
+            // Original byte four is inner padding; bytes five through seven begin the u32.
+            packed(vec![Type::U8, Type::from(ArrayType::new(Type::U8, 3))]),
+            Type::U8,
+        ]
+    );
+    assert_eq!(
+        layout.raw_parts().iter().map(Type::size_in_bytes).collect::<Vec<_>>(),
+        [4, 4, 1]
+    );
+}
+
+#[test]
+fn aggregate_adapter_bounded_recursive_corpus_keeps_every_lane_nonempty_and_bounded() {
+    use midenc_hir::{StructType, TypeRepr};
+    let mut generation = vec![Type::U8, Type::U16, Type::U32, Type::U64, Type::U128];
+    let mut checked = 0;
+    for depth in 0..3 {
+        let mut next = Vec::new();
+        for ty in generation {
+            let layout = ValueLayout::new(ty.clone()).unwrap();
+            assert!((1..=4).contains(&layout.lanes()), "{ty:?}");
+            assert!(
+                layout.raw_parts().iter().all(|part| (1..=4).contains(&part.size_in_bytes())),
+                "{ty:?}: {:?}",
+                layout.raw_parts()
+            );
+            checked += 1;
+            if depth == 2 {
+                continue;
+            }
+            for scalar in [Type::U8, Type::U16, Type::U32] {
+                for fields in [[scalar.clone(), ty.clone()], [ty.clone(), scalar]] {
+                    for repr in [TypeRepr::Default, TypeRepr::packed(1), TypeRepr::align(8)] {
+                        let candidate = Type::from(StructType::new_with_repr(repr, fields.clone()));
+                        if candidate.size_in_bytes() <= 16 {
+                            next.push(candidate);
+                        }
+                    }
+                }
+            }
+            for count in [2, 3, 5] {
+                let candidate = Type::from(ArrayType::new(ty.clone(), count));
+                if candidate.size_in_bytes() <= 16 {
+                    next.push(candidate);
+                }
+            }
+        }
+        generation = next;
+    }
+    assert!(checked > 1000, "recursive corpus unexpectedly shrank to {checked} cases");
 }

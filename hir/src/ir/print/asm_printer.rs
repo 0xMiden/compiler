@@ -390,7 +390,8 @@ impl<'a> AsmPrinter<'a> {
                     let mut entries =
                         branch_interface.get_successor_regions(crate::RegionBranchPoint::Parent);
                     has_no_region_arguments
-                        && entries.any(|r| r.successor().is_some_and(|r| r == region_ref))
+                        && entries
+                            .any(|r| r.region_graph_successor().is_some_and(|r| r == region_ref))
                 } else if let Some(callable) = op.as_trait::<dyn crate::CallableOpInterface>() {
                     callable.get_callable_region().is_some_and(|r| r == region_ref)
                 } else if let Some(entry) = region.entry_block_ref() {

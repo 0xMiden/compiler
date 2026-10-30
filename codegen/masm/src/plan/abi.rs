@@ -20,6 +20,21 @@ pub(crate) enum CallingConvention {
     Root,
 }
 
+impl CallingConvention {
+    /// Classify a source ABI's execution context without interpreting its value representation.
+    /// Kernel ownership and whole-program entry boundaries are classified separately.
+    pub fn from_source(convention: &midenc_hir::CallConv) -> Self {
+        use midenc_hir::CallConv;
+
+        match convention {
+            CallConv::ComponentModel => Self::Context,
+            CallConv::C | CallConv::Fast | CallConv::Wasm | CallConv::Extern(_) => {
+                Self::SameContext
+            }
+        }
+    }
+}
+
 /// Concrete invocation family; compatibility is checked against the target convention.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Invocation {

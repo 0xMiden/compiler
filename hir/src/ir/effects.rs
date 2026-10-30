@@ -12,7 +12,20 @@ pub use self::{
 };
 use crate::{DynPartialEq, any::AsAny, eq::PartialEqable};
 
-pub trait Effect: AsAny + fmt::Debug {}
+pub trait Effect: AsAny + fmt::Debug {
+    /// Returns true if `op` declares that its effects of this kind include those of the operations
+    /// nested within its regions.
+    ///
+    /// **THE MARKER AN OP ACTUALLY REGISTERS IS THE CONCRETE ONE.**
+    /// `#[operation(traits(HasRecursiveMemoryEffects))]` puts `dyn HasRecursiveMemoryEffects` in
+    /// the op's trait table. `dyn HasRecursiveEffects<MemoryEffect>` is a different `TypeId` that
+    /// no op registers, even though the blanket impl in [`interface`] makes the bound hold — so
+    /// asking for the generic form answered `false` for every op in the compiler. This hook asks
+    /// for the marker the op really carries.
+    fn is_recursive_on(op: &crate::Operation) -> bool
+    where
+        Self: Sized;
+}
 
 pub trait Resource: AsAny + PartialEqable + DynPartialEq + fmt::Debug {
     fn name(&self) -> &'static str;

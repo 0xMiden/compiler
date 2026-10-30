@@ -79,6 +79,7 @@ macro_rules! assert_valid_stack_index {
     };
 }
 
+pub(crate) mod addressing;
 pub mod advice;
 pub mod binary;
 pub mod crypto;
@@ -110,6 +111,7 @@ use crate::{
 /// The [OpEmitter] carries limited context of its own, and expects to receive arguments
 /// to it's various builder functions to provide necessary context for specific constructs.
 pub struct OpEmitter<'a> {
+    byte_addressing: addressing::ByteAddressing,
     stack: &'a mut OperandStack,
     invoked: &'a mut BTreeSet<masm::Invoke>,
     current_block: &'a mut Vec<masm::Op>,
@@ -165,10 +167,17 @@ impl<'a> OpEmitter<'a> {
         stack: &'a mut OperandStack,
     ) -> Self {
         Self {
+            byte_addressing: addressing::ByteAddressing::Narrow,
             stack,
             invoked,
             current_block: block,
         }
+    }
+
+    /// Select byte-address arithmetic for this unit, including all nested blocks.
+    pub(crate) fn with_byte_addressing(mut self, mode: addressing::ByteAddressing) -> Self {
+        self.byte_addressing = mode;
+        self
     }
 
     #[inline]

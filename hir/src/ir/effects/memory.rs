@@ -67,6 +67,10 @@ impl PartialEq<MemoryEffect> for &MemoryEffect {
     }
 }
 
-impl Effect for MemoryEffect {}
+impl Effect for MemoryEffect {
+    fn is_recursive_on(op: &crate::Operation) -> bool {
+        op.implements::<dyn HasRecursiveMemoryEffects>()
+    }
+}
 
 pub trait MemoryEffectOpInterface = EffectOpInterface<MemoryEffect>;

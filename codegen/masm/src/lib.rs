@@ -20,11 +20,13 @@ extern crate alloc;
 mod allocate;
 mod artifact;
 mod data_segments;
+mod early_exit;
 mod emit;
 mod emitter;
 mod events;
 pub mod intrinsics;
 mod legalization;
+pub mod linked_callables;
 mod linker;
 mod lower;
 mod opt;
@@ -56,6 +58,7 @@ use midenc_hir::{
 pub(crate) use self::lower::HirSelection;
 pub use self::{
     artifact::{MasmComponent, Rodata},
+    early_exit::LowerEarlyExits,
     events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
     legalization::{
         CheckMasmLegality, LegalizeForMasm, masm_legalization_target,
@@ -185,6 +188,10 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::ExecIndirect, dyn HirSelection>();
     info.register_operation_trait::<hir::ExecFpi, dyn HirSelection>();
     info.register_operation_trait::<hir::ProcedureRoot, dyn HirSelection>();
+    info.register_operation_trait::<hir::Procref, dyn HirSelection>();
+    info.register_operation_trait::<hir::DynExec, dyn HirSelection>();
+    info.register_operation_trait::<hir::InlineAsm, dyn HirSelection>();
+    info.register_operation_trait::<hir::DynCallLocal, dyn HirSelection>();
 
     info.register_operation_trait::<hir::Assert, dyn HirSelection>();
     info.register_operation_trait::<hir::Assertz, dyn HirSelection>();
@@ -221,6 +228,9 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::LoadLocal, dyn HirSelection>();
     info.register_operation_trait::<hir::StoreLocal, dyn HirSelection>();
     info.register_operation_trait::<hir::LocalAddress, dyn HirSelection>();
+    info.register_operation_trait::<hir::Alloca, dyn HirSelection>();
+    info.register_operation_trait::<hir::LocalByteAddress, dyn HirSelection>();
+    info.register_operation_trait::<hir::GetElementPtr, dyn HirSelection>();
     info.register_operation_trait::<hir::MemGrow, dyn HirSelection>();
     info.register_operation_trait::<hir::MemSize, dyn HirSelection>();
     info.register_operation_trait::<hir::MemSet, dyn HirSelection>();

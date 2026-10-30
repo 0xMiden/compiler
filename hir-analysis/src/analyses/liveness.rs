@@ -157,7 +157,9 @@ impl LivenessAnalysis {
 
         if let Some(br_op) = op.as_trait::<dyn RegionBranchOpInterface>() {
             for succ in br_op.get_successor_regions(RegionBranchPoint::Parent) {
-                if let Some(region) = succ.into_successor() {
+                // An early exit enters a region of an ANCESTOR, not of `op`, so it is not a
+                // region this op may execute on entry; `region_graph_successor` stops there.
+                if let Some(region) = succ.region_graph_successor() {
                     let entry = region.borrow().entry_block_ref().unwrap();
                     if !self.is_block_executable(entry) {
                         // Ignore dead regions

@@ -195,6 +195,7 @@ pub(crate) enum Kind {
     LoadLocal,
     StoreLocal,
     LocalAddress,
+    LocalByteAddress,
     MemGrow,
     MemSize,
     MemSet,
@@ -256,7 +257,12 @@ impl Memory {
         let proof = if direct {
             UnitEvidence::default()
         } else {
-            memory_contract(Kind::Store, &ty, false)?
+            memory_contract(
+                Kind::Store,
+                &ty,
+                false,
+                crate::emit::addressing::ByteAddressing::Narrow,
+            )?
         };
         check_construction(&body, &proof).map_err(|mut error| {
             error.message = alloc::format!("{}; immediate store body: {body:?}", error.message);
@@ -291,7 +297,11 @@ impl Memory {
     /// Validate a registered operation's type tuple and local ownership, then capture its body.
     /// `kind` must match the operation's registered rule. Unsupported memory representations,
     /// malformed local attributes, and inconsistent helper constructions are errors.
-    pub fn from_source(kind: Kind, op: &midenc_hir::Operation) -> Result<Self, Report> {
+    pub fn from_source(
+        kind: Kind,
+        op: &midenc_hir::Operation,
+        env: &crate::select::SelectEnv<'_>,
+    ) -> Result<Self, Report> {
         use Kind::*;
         use midenc_hir::{Spanned, Type, Value};
 
@@ -304,6 +314,11 @@ impl Memory {
             LoadLocal => Some(op.downcast_ref::<hir::LoadLocal>().unwrap().local()),
             StoreLocal => Some(op.downcast_ref::<hir::StoreLocal>().unwrap().local()),
             LocalAddress => Some(op.downcast_ref::<hir::LocalAddress>().unwrap().local()),
+            LocalByteAddress => Some(if let Some(alloca) = op.downcast_ref::<hir::Alloca>() {
+                alloca.local()
+            } else {
+                op.downcast_ref::<hir::LocalByteAddress>().unwrap().local()
+            }),
             _ => None,
         };
         let (local, local_ty) =
@@ -352,14 +367,18 @@ impl Memory {
                     && outputs.is_empty()
                     && storable(&ty)
             }
-            LoadLocal => inputs.is_empty() && outputs == [ty.clone()] && scalar(&ty),
-            StoreLocal => inputs == [ty.clone()] && outputs.is_empty() && storable(&ty),
-            LocalAddress => {
+            LoadLocal => inputs.is_empty() && outputs == [ty.clone()],
+            StoreLocal => inputs == [ty.clone()] && outputs.is_empty(),
+            LocalAddress | LocalByteAddress => {
                 inputs.is_empty()
                     && outputs
                         == [Type::from(midenc_hir::PointerType::new_with_address_space(
                             ty.clone(),
-                            midenc_hir::AddressSpace::Element,
+                            if kind == LocalAddress {
+                                midenc_hir::AddressSpace::Element
+                            } else {
+                                midenc_hir::AddressSpace::Byte
+                            },
                         ))]
             }
             MemGrow => inputs == [Type::U32] && outputs == [Type::U32],
@@ -392,6 +411,14 @@ impl Memory {
         for t in inputs.iter().chain(&outputs) {
             ValueLayout::new(t.clone())?;
         }
+        if matches!(kind, LoadLocal | StoreLocal) && !scalar(&ty) {
+            return Ok(Self::aggregate_local(
+                &ValueLayout::new(ty)?,
+                local.expect("local access has a validated source local"),
+                kind == StoreLocal,
+                op.span(),
+            ));
+        }
         let mut stack = OperandStack::new(op.context_rc());
         for t in inputs.iter().rev() {
             stack.push(t.clone());
@@ -400,7 +427,8 @@ impl Memory {
         let mut body = vec![];
         let span = op.span();
         {
-            let mut e = OpEmitter::new(&mut invoked, &mut body, &mut stack);
+            let mut e = OpEmitter::new(&mut invoked, &mut body, &mut stack)
+                .with_byte_addressing(env.byte_addressing);
             match kind {
                 Load => e.load(ty.clone(), span),
                 Store => e.store(span),
@@ -413,6 +441,7 @@ impl Memory {
                     e.store(span);
                 }
                 LocalAddress => e.local_address_typed(ty.clone(), 0, span),
+                LocalByteAddress => e.local_byte_address_typed(ty.clone(), 0, span),
                 MemGrow => e.mem_grow(span),
                 MemSize => e.mem_size(span),
                 MemSet => e.memset(span),
@@ -431,7 +460,7 @@ impl Memory {
         }
         let element =
             local.is_some() || matches!(inputs.first(), Some(Type::Ptr(p)) if !p.is_byte_pointer());
-        let proof = memory_contract(kind, &ty, element)?;
+        let proof = memory_contract(kind, &ty, element, env.byte_addressing)?;
         check_construction(&body, &proof)?;
         let mut argument_lanes = vec![];
         if kind == MemGrow {
@@ -465,7 +494,7 @@ impl Memory {
             };
         let effects = LoweringEffects {
             memory: match kind {
-                LocalAddress => SourceMemoryEffects::default(),
+                LocalAddress | LocalByteAddress => SourceMemoryEffects::default(),
                 Store | StoreLocal if element && scalar(&ty) && ty.size_in_bits() == 32 => {
                     SourceMemoryEffects::WRITE
                 }
@@ -473,7 +502,7 @@ impl Memory {
                 | I64Load32S => SourceMemoryEffects::READ,
                 _ => SourceMemoryEffects::READ_WRITE,
             },
-            may_trap: !matches!(kind, LocalAddress),
+            may_trap: !matches!(kind, LocalAddress | LocalByteAddress),
             normal_return: true,
         };
         Ok(Self {
@@ -484,6 +513,79 @@ impl Memory {
             argument_lanes,
             direct_results,
         })
+    }
+
+    /// Aggregate lanes occupy their original four-byte intervals, including interior padding.
+    /// Use one relocatable base address; lane offsets never depend on the final frame layout.
+    fn aggregate_local(
+        layout: &ValueLayout,
+        local: u32,
+        store: bool,
+        span: midenc_hir::SourceSpan,
+    ) -> Self {
+        use masm::Instruction as I;
+
+        let mut body = raw::Builder::new(span);
+        body.emit(I::Locaddr(0u16.into()));
+        let parts = layout.raw_parts();
+        let mut partial_store = false;
+        for step in 0..parts.len() {
+            let lane = if store { step } else { parts.len() - 1 - step };
+            let last = step + 1 == parts.len();
+            if !last {
+                body.emit(I::Dup0);
+                if store {
+                    // [base, base, value, ...] -> [base, value, base, ...]
+                    body.emit_all([I::MovUp2, I::Swap1]);
+                }
+            }
+            if lane != 0 {
+                body.emit(I::AddImm(midenc_hir::Felt::from(lane as u32).into()));
+            }
+            let bits = parts[lane].size_in_bits();
+            if store {
+                if bits < 32 {
+                    partial_store = true;
+                    let mask = (1u32 << bits) - 1;
+                    // Preserve padding in this cell's remaining bytes. Frame contents can be
+                    // full field elements; reduce to their low 32 bits before bitwise operations.
+                    body.emit_all([I::Dup0, I::MemLoad, I::U32Cast]);
+                    body.emit_push(!mask);
+                    body.emit_all([I::U32And, I::MovUp2, I::U32Cast]);
+                    body.emit_push(mask);
+                    body.emit_all([I::U32And, I::U32Or, I::Swap1]);
+                }
+                body.emit(I::MemStore);
+            } else {
+                body.emit(I::MemLoad);
+                if bits < 32 {
+                    body.emit(I::U32Cast);
+                    body.emit_push((1u32 << bits) - 1);
+                    body.emit(I::U32And);
+                }
+                if !last {
+                    body.emit(I::Swap1);
+                }
+            }
+        }
+        Self {
+            body: body.ops,
+            local: Some(local),
+            proof: UnitEvidence::default(),
+            effects: LoweringEffects {
+                memory: if !store {
+                    SourceMemoryEffects::READ
+                } else if partial_store {
+                    SourceMemoryEffects::READ_WRITE
+                } else {
+                    SourceMemoryEffects::WRITE
+                },
+                may_trap: true,
+                normal_return: true,
+            },
+            argument_lanes: vec![],
+            direct_results: None,
+        }
     }
 
     /// Replace source-relative helper argument/result positions with exact selected lane atoms.
@@ -593,12 +695,13 @@ fn memory_contract(
     kind: Kind,
     ty: &midenc_hir::Type,
     element: bool,
+    addressing: crate::emit::addressing::ByteAddressing,
 ) -> Result<UnitEvidence, PlanError> {
     use Kind::*;
     let mut proof = UnitEvidence::default();
     let mut next = 0;
     match kind {
-        LocalAddress => {}
+        LocalAddress | LocalByteAddress => {}
         MemSize | MemGrow => proof.calls.push(call(
             if kind == MemSize {
                 "::intrinsics::mem::memory_size"
@@ -640,7 +743,9 @@ fn memory_contract(
             let size = ty.size_in_bytes();
             if size >= 16 && size.is_multiple_of(16) {
                 proof.calls.push(call(
-                    if kind == MemMove {
+                    if kind == MemMove
+                        || addressing == crate::emit::addressing::ByteAddressing::Wide
+                    {
                         "::intrinsics::mem::memmove_words"
                     } else {
                         "::miden::core::mem::memcopy_words"
@@ -653,7 +758,11 @@ fn memory_contract(
                 let mut path = vec![];
                 if size == 1 {
                     proof.calls.push(call(
-                        "::miden::core::mem::memcopy_elements",
+                        if addressing == crate::emit::addressing::ByteAddressing::Wide {
+                            "::intrinsics::mem::memmove_elements"
+                        } else {
+                            "::miden::core::mem::memcopy_elements"
+                        },
                         3,
                         0,
                         &[CallPath::Then(ControlId(0))],

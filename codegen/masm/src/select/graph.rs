@@ -189,7 +189,7 @@ impl<'a, 'e> Selector<'a, 'e> {
         let convention = if crate::lower::units::calls::is_kernel(function) {
             CallingConvention::Kernel
         } else {
-            calling_convention(&signature.cc)?
+            CallingConvention::from_source(&signature.cc)
         };
         let abi = ProcedureAbi::new(
             convention,
@@ -893,10 +893,12 @@ impl<'a, 'e> Selector<'a, 'e> {
                     self.indirect(&op, current, &mut flow)?
                 }
                 SelectionRule::DirectCall => self.direct(&op, current)?,
+                SelectionRule::DynExecPointer | SelectionRule::DynCallPointer => {
+                    self.pointer_call(&op, current)?
+                }
                 SelectionRule::Fpi => self.fpi(&op, current)?,
                 SelectionRule::ProcedureRoot => {
-                    let reference = op.downcast_ref::<midenc_dialect_hir::ProcedureRoot>().unwrap();
-                    let callee = crate::legalization::validate_procedure_root(reference)?;
+                    let callee = crate::legalization::validate_procedure_root(&op)?;
                     let module = if op.nearest_parent_op::<builtin::GlobalVariable>().is_some() {
                         None
                     } else {
@@ -910,13 +912,19 @@ impl<'a, 'e> Selector<'a, 'e> {
                         target
                     };
                     let outputs = self.results(&op)?;
-                    if outputs.len() != 4
-                        || outputs
-                            .iter()
-                            .any(|value| self.program.values[value].layout.ty() != &Type::Felt)
-                    {
+                    let valid_shape = if op.is::<midenc_dialect_hir::Procref>() {
+                        outputs.len() == 1
+                            && self.program.values[&outputs[0]].layout.ty()
+                                == &midenc_dialect_hir::Procref::word_type()
+                    } else {
+                        outputs.len() == 4
+                            && outputs
+                                .iter()
+                                .all(|value| self.program.values[value].layout.ty() == &Type::Felt)
+                    };
+                    if !valid_shape {
                         return Err(super::invalid(
-                            "procedure root requires exactly four felt results",
+                            "procedure root requires exactly one four-felt digest",
                         ));
                     }
                     self.plain(
@@ -974,9 +982,35 @@ impl<'a, 'e> Selector<'a, 'e> {
                                 },
                             )?;
                         }
+                        SelectionRule::InlineAsm => {
+                            let (definition, proof) =
+                                crate::lower::units::inline_asm::InlineAsm::from_source(
+                                    op.downcast_ref::<crate::hir::InlineAsm>().unwrap(),
+                                    self.env,
+                                )?;
+                            self.add_unit(
+                                current,
+                                source,
+                                UnitSelection {
+                                    inputs: self.atoms(&inputs),
+                                    stored: vec![],
+                                    outputs: self.atoms(&outputs),
+                                    body: HirBody::InlineAsm(definition),
+                                    proof,
+                                    effects: LoweringEffects {
+                                        memory: SourceMemoryEffects::READ_WRITE,
+                                        may_trap: true,
+                                        ..Default::default()
+                                    },
+                                    scratch: vec![],
+                                    scratch_effects: vec![],
+                                },
+                            )?;
+                        }
                         SelectionRule::Memory(kind) => {
-                            let mut definition =
-                                crate::lower::units::memory::Memory::from_source(kind, &op)?;
+                            let mut definition = crate::lower::units::memory::Memory::from_source(
+                                kind, &op, self.env,
+                            )?;
                             let input_atoms = self.atoms(&inputs);
                             let output_atoms = self.atoms(&outputs);
                             definition.bind(&input_atoms, &output_atoms);
@@ -1618,15 +1652,11 @@ impl<'a, 'e> Selector<'a, 'e> {
             .into());
         }
         let signature = resolved.signature();
-        let convention = if calls::is_kernel(&*symbol) {
-            CallingConvention::Kernel
-        } else {
-            calling_convention(&signature.cc)?
-        };
-        let abi = ProcedureAbi::new(
-            convention,
-            lanes(signature.params().iter().map(|p| p.ty.clone()))?,
-            lanes(signature.results().iter().map(|p| p.ty.clone()))?,
+        let abi = calls::signature_abi(
+            &signature.cc,
+            signature.params().iter().map(|p| p.ty.clone()),
+            signature.results().iter().map(|p| p.ty.clone()),
+            calls::is_kernel(&*symbol),
         )?;
         let instruction = if op.is::<midenc_dialect_hir::Exec>() {
             I::Exec(target)
@@ -1720,6 +1750,71 @@ impl<'a, 'e> Selector<'a, 'e> {
                 stored: unit.stored_inputs,
                 outputs: unit.outputs,
                 body: HirBody::Direct(definition),
+                proof,
+                effects: unit.effects,
+                scratch: unit.scratch,
+                scratch_effects: unit.scratch_effects,
+            },
+        )?;
+        Ok(())
+    }
+
+    fn pointer_call(&mut self, op: &Operation, segment: SegmentId) -> Result<(), Report> {
+        let call = op.as_trait::<dyn midenc_hir::CallOpInterface>().unwrap();
+        let signature = call
+            .callee_signature()
+            .ok_or_else(|| super::invalid("pointer call has no signature"))?;
+        let midenc_hir::Callable::Value(pointer) = call.callable_for_callee() else {
+            return Err(super::invalid("pointer call requires an SSA callee"));
+        };
+        if pointer.borrow().ty() != &midenc_dialect_hir::DynExec::root_pointer_type() {
+            return Err(super::invalid(
+                "pointer call requires an element pointer to a four-felt word",
+            ));
+        }
+        require_types(
+            result_types(op),
+            signature.results().iter().map(|p| p.ty.clone()),
+            "pointer call results disagree with signature",
+        )?;
+        require_types(
+            call.arguments().iter().map(|arg| arg.borrow().ty().clone()),
+            signature.params().iter().map(|p| p.ty.clone()),
+            "pointer call arguments disagree with signature",
+        )?;
+        let convention = CallingConvention::from_source(&signature.cc);
+        let invocation = if op.is::<midenc_dialect_hir::DynCallLocal>() {
+            Invocation::DynCall
+        } else {
+            Invocation::DynExec
+        };
+        let abi = ProcedureAbi::new(
+            convention,
+            lanes(signature.params().iter().map(|p| p.ty.clone()))?,
+            lanes(signature.results().iter().map(|p| p.ty.clone()))?,
+        )?;
+        abi.invocation(invocation)?;
+        let address = Atom::new(self.value(pointer)?, 0);
+        let arguments = self.ids(call.arguments().iter().map(|arg| arg.borrow().as_value_ref()))?;
+        let outputs = self.results(op)?;
+        let source = self.sources[&op.as_operation_ref()];
+        let id = SelectedStepId(index(self.definitions.len())?);
+        let (unit, proof) = crate::lower::units::calls::select_pointer(
+            id,
+            source,
+            abi,
+            address,
+            &self.atoms(&arguments),
+            &self.atoms(&outputs),
+        )?;
+        self.add_unit(
+            segment,
+            source,
+            UnitSelection {
+                inputs: unit.stack_inputs,
+                stored: unit.stored_inputs,
+                outputs: unit.outputs,
+                body: HirBody::Indirect(Indirect::DispatchPointer { abi }),
                 proof,
                 effects: unit.effects,
                 scratch: unit.scratch,
@@ -1850,7 +1945,9 @@ impl<'a, 'e> Selector<'a, 'e> {
             )?;
         } else {
             let call = op.downcast_ref::<midenc_dialect_hir::ExecIndirect>().unwrap();
-            if calling_convention(&call.get_signature().cc)? != CallingConvention::SameContext {
+            if CallingConvention::from_source(&call.get_signature().cc)
+                != CallingConvention::SameContext
+            {
                 return Err(super::invalid(
                     "indirect exec target must use same-context convention",
                 ));
@@ -1889,7 +1986,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                 let convention = if crate::lower::units::calls::is_kernel(&*symbol) {
                     CallingConvention::Kernel
                 } else {
-                    calling_convention(&callee.signature().cc)?
+                    CallingConvention::from_source(&callee.signature().cc)
                 };
                 ProcedureAbi::new(convention, 0, 0)?.invocation(Invocation::DynExec)?;
             }
@@ -1965,7 +2062,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                         value: StoredValue::Atom(address),
                     }],
                     outputs: output_atoms,
-                    body: HirBody::Indirect(Indirect::DispatchTable),
+                    body: HirBody::Indirect(Indirect::DispatchPointer { abi }),
                     proof,
                     effects: LoweringEffects::default(),
                     scratch: vec![],
@@ -2062,6 +2159,26 @@ fn validate_alias(op: &Operation, rule: SelectionRule) -> Result<(), Report> {
             Ok(())
         }
         SelectionRule::Alias => {
+            if let Some(asm) = op.downcast_ref::<crate::hir::InlineAsm>() {
+                asm.validate_signature()?;
+                if !asm.get_body().trim().is_empty() {
+                    return Err(super::invalid("nonempty inline assembly cannot select an alias"));
+                }
+                let inputs = lanes(operand_types(op))?;
+                let outputs = lanes(result_types(op))?;
+                if inputs == 0 || inputs != outputs {
+                    return Err(super::invalid(
+                        "empty inline assembly requires equal nonzero lane counts",
+                    ));
+                }
+                return Ok(());
+            }
+            if let Some(gep) = op.downcast_ref::<crate::hir::GetElementPtr>() {
+                if crate::lower::units::arithmetic::gep_offset(gep)? != 0 {
+                    return Err(super::invalid("nonzero GEP cannot select an alias"));
+                }
+                return Ok(());
+            }
             let target = if let Some(cast) = op.downcast_ref::<PtrToInt>() {
                 cast.get_ty()
             } else if let Some(cast) = op.downcast_ref::<IntToPtr>() {
@@ -2156,12 +2273,4 @@ fn literal(value: Immediate) -> Result<Vec<miden_core::Felt>, Report> {
     Ok((0..count)
         .map(|lane| Felt::new_unchecked(((bits >> (lane * 32)) & u32::MAX as u128) as u64))
         .collect())
-}
-
-fn calling_convention(convention: &CallConv) -> Result<CallingConvention, Report> {
-    match convention {
-        CallConv::C | CallConv::Fast | CallConv::Wasm => Ok(CallingConvention::SameContext),
-        CallConv::ComponentModel => Ok(CallingConvention::Context),
-        CallConv::Extern(_) => Err(super::invalid("unregistered source calling convention")),
-    }
 }

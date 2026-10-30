@@ -14,6 +14,7 @@ use std::path::Path;
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, SourceFileProvenance};
 use miden_mast_package::Package as MastPackage;
 use midenc_frontend_wasm::{FrontendOutput, WasmTranslationConfig, WatEmit, wasm_to_wat};
+use midenc_hir::Op;
 use midenc_package_interface::PackageInterface;
 use midenc_session::{
     FileType, InputType, OutputMode, OutputType, Session,
@@ -154,11 +155,27 @@ pub(crate) fn lower_wasm_input(
     namespace: Option<midenc_hir::SymbolPath>,
     context: Rc<midenc_hir::Context>,
     dependencies: &[PackageInterface],
+    linked_inputs: Option<backend::LinkedCodegenInputs<'_>>,
 ) -> CompilerResult<CodegenOutput> {
     let hir = translate_wasm_input(input, namespace, context.clone(), dependencies)?;
     let hir = backend::analyze(hir, context.clone())?;
     backend::apply_rewrites(hir.world.as_operation_ref(), context.clone())?;
-    backend::codegen(hir, context, midenc_codegen_masm::EmissionNamespace::Source)
+    if midenc_codegen_masm::linked_callables::needs_metadata(hir.world.borrow().as_operation())
+        && let Some(inputs) = linked_inputs
+    {
+        let linked = midenc_codegen_masm::linked_callables::LinkedCallables::from_link_inputs(
+            inputs.session,
+            inputs.dependencies,
+        )?;
+        backend::codegen_with_callables(
+            hir,
+            context,
+            midenc_codegen_masm::EmissionNamespace::Source,
+            Some(&linked),
+        )
+    } else {
+        backend::codegen(hir, context, midenc_codegen_masm::EmissionNamespace::Source)
+    }
 }
 
 /// Translate the WebAssembly `input` into HIR built in `context`, without an assembler.
@@ -217,57 +234,22 @@ pub(crate) fn translate_wasm_input(
 pub(super) fn dependency_interfaces(
     cx: &TargetContext<'_>,
 ) -> CompilerResult<Vec<PackageInterface>> {
-    use midenc_session::{
-        miden_package_registry::PackageId,
-        miden_project::{ProjectDependencyNodeProvenance, Version},
-    };
-
-    let assembly = cx.assembly();
-    let graph = assembly.dependency_graph;
-    let registry = assembly.package_registry;
+    let dependencies = super::super::assembly::direct_dependencies(cx.assembly())?;
     let linked = cx.session().package_interfaces()?;
-
     let mut interfaces = Vec::new();
-    for dependency in assembly.package.dependencies() {
-        let name = dependency.name();
-        let package_id: PackageId = name.clone().into();
-        let node = graph.get(&package_id).ok_or_else(|| {
-            Report::msg(format!(
-                "internal error: dependency '{name}' of package '{}' is not in the resolved \
-                 dependency graph, so the bindings for it cannot be resolved",
-                assembly.package.name()
-            ))
-        })?;
-        let version = match &node.provenance {
-            ProjectDependencyNodeProvenance::Registry { selected, .. }
-            | ProjectDependencyNodeProvenance::Preassembled { selected, .. } => selected.clone(),
-            ProjectDependencyNodeProvenance::Source(_) => registry
-                .get_by_semver(&package_id, &node.version)
-                .and_then(|record| record.digest().copied())
-                .map(|digest| Version::new(node.version.clone(), digest))
-                .ok_or_else(|| {
-                    Report::msg(format!(
-                        "internal error: dependency '{name}' {} of package '{}' was resolved but \
-                         is not registered as an assembled package, so the bindings for it cannot \
-                         be resolved",
-                        node.version,
-                        assembly.package.name()
-                    ))
-                })?,
-        };
-        if linked.iter().any(|interface| {
-            interface.name == package_id && version.digest.is_some_and(|d| interface.digest == d)
-        }) {
-            continue;
+    // Preserve manifest declaration order for Wasm stub lookup independently of link order.
+    for declaration in cx.assembly().package.dependencies() {
+        if let Some(input) = dependencies
+            .iter()
+            .find(|input| (input.package.name.as_ref() as &str) == declaration.name().as_ref())
+        {
+            let interface = PackageInterface::from_package(&input.package);
+            if !linked.iter().any(|existing| {
+                existing.name == interface.name && existing.digest == interface.digest
+            }) {
+                interfaces.push(interface);
+            }
         }
-        let package = registry.load_package(&package_id, &version).wrap_err_with(|| {
-            format!(
-                "failed to load dependency '{name}' {version} of package '{}' to resolve the \
-                 bindings against it",
-                assembly.package.name()
-            )
-        })?;
-        interfaces.push(PackageInterface::from_package(&package));
     }
     Ok(interfaces)
 }

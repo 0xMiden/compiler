@@ -141,8 +141,8 @@ pub(crate) enum Indirect {
     StageRoot { object: ScratchId },
     /// Invoke a previously staged root with context padding and result cleanup.
     DispatchRoot { object: ScratchId, results: u32 },
-    /// Load the previously checked table address from stored input zero and execute it.
-    DispatchTable,
+    /// Load the source-selected root address from stored input zero and invoke its ABI.
+    DispatchPointer { abi: ProcedureAbi },
 }
 
 impl Indirect {
@@ -186,17 +186,79 @@ impl Indirect {
                     u8::try_from(*results).map_err(|_| invalid("context results exceed window"))?,
                 )?);
             }
-            Self::DispatchTable => {
+            Self::DispatchPointer { abi } => {
+                let instruction = pointer_instruction(*abi)?;
+                let context = matches!(instruction, masm::Instruction::DynCall);
+                if context {
+                    b.extend(raw::pad_inputs(unit.stack_inputs.len(), b.span));
+                }
                 let slot = bindings
                     .stored_inputs
                     .get(&StoredInputId(0))
-                    .ok_or_else(|| invalid("missing checked table address"))?;
+                    .ok_or_else(|| invalid("missing root pointer binding"))?;
                 b.emit(masm::Instruction::LocLoad(frame.resolve(FrameRef::Spill(*slot))?.into()));
-                b.invoke(masm::Instruction::DynExec);
+                b.invoke(instruction);
+                if context {
+                    b.emit_all(context_result_cleanup(
+                        u8::try_from(abi.results())
+                            .map_err(|_| invalid("context results exceed window"))?,
+                    )?);
+                }
             }
         }
         Ok(annotate_raw(&b.ops, unit.id))
     }
+}
+
+/// Select the source-memory pointer form with one stored selector outside its argument window.
+/// Allocation must save this atom before preparing arguments, even when the pointer stays live.
+pub(crate) fn select_pointer(
+    id: SelectedStepId,
+    source: SourceStepId,
+    abi: ProcedureAbi,
+    address: Atom,
+    arguments: &[Atom],
+    outputs: &[Atom],
+) -> Result<(SelectedLowering, UnitEvidence), PlanError> {
+    let instruction = pointer_instruction(abi)?;
+    if arguments.len() != abi.arguments() as usize
+        || outputs.len() != abi.results() as usize
+        || arguments.len() > 16
+    {
+        return Err(invalid("pointer dispatch operands disagree with signature"));
+    }
+    let mut unit = selected(
+        LoweringKind(id.0),
+        id,
+        source,
+        arguments,
+        &[StoredInput {
+            id: StoredInputId(0),
+            value: StoredValue::Atom(address),
+        }],
+        outputs,
+    );
+    unit.effects.memory = SourceMemoryEffects::READ;
+    unit.effects.may_trap = true;
+    let proof = call_evidence(
+        &instruction,
+        abi,
+        arguments,
+        outputs,
+        Some(crate::verify::SelectorEvidence::SourcePointer { address }),
+    );
+    Ok((unit, proof))
+}
+
+/// Dynamic dispatch follows the callee ABI's execution context.
+fn pointer_instruction(abi: ProcedureAbi) -> Result<masm::Instruction, PlanError> {
+    let (invocation, instruction) = if abi.convention() == CallingConvention::Context {
+        (Invocation::DynCall, masm::Instruction::DynCall)
+    } else {
+        (Invocation::DynExec, masm::Instruction::DynExec)
+    };
+    abi.invocation(invocation)?;
+    Ok(instruction)
 }
 
 /// A resolved direct invocation. Context calls share the window construction used by dynamic calls.
@@ -267,25 +329,58 @@ pub(crate) fn resolve_direct(
     env: &crate::select::SelectEnv<'_>,
 ) -> Result<(midenc_hir::ResolvedSymbolCallee, masm::InvocationTarget), Report> {
     let resolved = super::super::lowering::resolve_invocation_callee(call)?;
+    let target = named_target(resolved.named_symbol(), call.as_operation(), env)?;
+    Ok((resolved, target))
+}
+
+/// Preserve the accessible source name and the compilation unit's final emission owner.
+pub(crate) fn named_target(
+    symbol: midenc_hir::SymbolRef,
+    op: &midenc_hir::Operation,
+    env: &crate::select::SelectEnv<'_>,
+) -> Result<masm::InvocationTarget, Report> {
     let target = super::super::lowering::invocation_target_from_symbol(
-        resolved.named_symbol(),
-        if call
-            .as_operation()
+        symbol,
+        if op
             .nearest_parent_op::<midenc_hir::dialects::builtin::GlobalVariable>()
             .is_some()
         {
             None
         } else {
-            call.as_operation().nearest_symbol_table()
+            op.nearest_symbol_table()
         },
-        call.as_operation().span(),
+        op.span(),
     );
-    let target = if let Some(owners) = env.owners {
-        owners.target(target)?
+    if let Some(owners) = env.owners {
+        owners.target(target)
     } else {
-        target
-    };
-    Ok((resolved, target))
+        Ok(target)
+    }
+}
+
+/// Shared concrete MASM ABI construction; semantic Wasm carrier lowering is irrelevant here.
+pub(crate) fn signature_abi(
+    cc: &midenc_hir::CallConv,
+    parameters: impl IntoIterator<Item = midenc_hir::Type>,
+    results: impl IntoIterator<Item = midenc_hir::Type>,
+    kernel: bool,
+) -> Result<ProcedureAbi, Report> {
+    fn lanes(types: impl IntoIterator<Item = midenc_hir::Type>) -> Result<u32, Report> {
+        types.into_iter().try_fold(0u32, |count, ty| {
+            count
+                .checked_add(ValueLayout::new(ty)?.lanes() as u32)
+                .ok_or_else(|| crate::select::invalid("ABI lane count overflows"))
+        })
+    }
+    Ok(ProcedureAbi::new(
+        if kernel {
+            CallingConvention::Kernel
+        } else {
+            CallingConvention::from_source(cc)
+        },
+        lanes(parameters)?,
+        lanes(results)?,
+    )?)
 }
 
 /// Kernel exports belong to the exact root kernel module, independently of source convention.
@@ -300,7 +395,7 @@ pub(crate) fn is_truncate(symbol: &dyn midenc_hir::Symbol) -> bool {
         == raw::target("::miden::core::sys::truncate_stack")
 }
 
-/// Build the single exact contract shared by direct and staged context constructions.
+/// Build the exact argument and result contract shared by all registered call forms.
 fn call_evidence(
     instruction: &masm::Instruction,
     abi: ProcedureAbi,

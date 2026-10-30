@@ -593,3 +593,272 @@ fn source_dyncall_preserves_debugger_frames_with_full_argument_window() {
     )
     .unwrap();
 }
+
+#[test]
+fn source_convention_table_call_and_procedure_verify() {
+    let text = include_str!("fixtures/indirect-table.hir").replace("\"C\"", "\"sigma\"");
+    let f = parse_module_function(&text);
+    let info = linked(&f);
+    let env = SelectEnv {
+        link_info: Some(&info),
+        ..Default::default()
+    };
+    let selected = checked(&f, &env);
+    assert_eq!(selected.abi.convention(), crate::plan::CallingConvention::SameContext);
+    let (plan, frame, body) = ready(&f, &env);
+    verify::verify(&plan, &frame, body).unwrap();
+}
+
+#[test]
+fn procref_and_procedure_root_select_the_same_digest() {
+    for operation in [
+        "%root = hir.procref @callee; %r0,%r1,%r2,%r3 = hir.unpack_word %root;",
+        "%r0,%r1,%r2,%r3 = hir.procedure_root @callee;",
+    ] {
+        let f = parse_module_function(&alloc::format!(
+            r#"builtin.module public @m {{
+            builtin.function private extern("C") @callee() {{ builtin.ret; }};
+            builtin.function public extern("C") @dispatch() -> (felt, felt, felt, felt) {{
+                {operation} builtin.ret %r0,%r1,%r2,%r3 : (felt, felt, felt, felt);
+            }};
+        }};"#
+        ));
+        let selected = checked(&f, &SelectEnv::default());
+        let root = &selected.segments[0].units[0];
+        assert_eq!(root.outputs.len(), 4);
+        assert_eq!(
+            selected.values[&root.outputs[0].value].layout.lanes(),
+            if operation.contains("procref") { 4 } else { 1 }
+        );
+        let procedure =
+            selected_procedure(&f, &SelectEnv::default()).replace("::m::callee", "callee");
+        execute_code(&alloc::format!(
+            "proc callee nop end {procedure} begin exec.selected procref.callee assert_eqw end"
+        ))
+        .unwrap();
+    }
+}
+
+fn pointer_dispatch(context: bool, width: usize) -> Parsed {
+    let arguments = (0..width).map(|i| alloc::format!(", %a{i}: felt")).collect::<String>();
+    let uses = (0..width).map(|i| alloc::format!("%a{i}")).collect::<Vec<_>>().join(",");
+    let types = vec!["felt"; width].join(",");
+    let operation = if context { "dyncall_local" } else { "dynexec" };
+    let convention = if context { "component-model" } else { "C" };
+    parse(&alloc::format!(
+        r#"builtin.function public extern("C") @dispatch(%p: ptr<[felt; 4], element>{arguments}) -> (felt, ptr<[felt; 4], element>) {{
+        %r = hir.{operation} %p({uses}) : extern("{convention}") ({types}) -> (felt);
+        builtin.ret %r, %p : (felt, ptr<[felt; 4], element>);
+    }};"#
+    ))
+}
+
+#[test]
+fn pointer_dispatch_stores_one_selector_before_sixteen_arguments_and_keeps_it_live() {
+    for context in [false, true] {
+        let f = pointer_dispatch(context, 16);
+        let selected = checked(&f, &SelectEnv::default());
+        let dispatch = &selected.segments[0].units[0];
+        assert_eq!(dispatch.stack_inputs.len(), 16);
+        assert_eq!(dispatch.stored_inputs.len(), 1);
+        assert_eq!(dispatch.effects.memory, SourceMemoryEffects::READ);
+        assert!(dispatch.effects.may_trap);
+        assert!(dispatch.scratch.is_empty());
+        assert!(
+            crate::allocate::analysis::analyze(&selected).after[&dispatch.id].contains(ValueId(0))
+        );
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        assert_eq!(plan.lowering_bindings[&dispatch.id].stored_inputs.len(), 1);
+        let procedure = verify::verify(&plan, &frame, body)
+            .unwrap()
+            .into_masm(crate::masm::ProcedureName::new("dispatch").unwrap())
+            .unwrap()
+            .to_pretty_string();
+        let suffix = (901..925).collect::<Vec<_>>();
+        let checksum = (1..=16).fold(0, |checksum, argument| 2 * checksum + argument);
+        let mut expected = vec![checksum, 400];
+        expected.extend(&suffix);
+        execute_code(&alloc::format!(
+            "proc callee {} end {procedure} begin procref.callee mem_storew_le.400 dropw {} {} \
+             push.400 exec.dispatch {} end",
+            vec!["push.2 mul add"; 15].join(" "),
+            crate::plan::tests::lowering_units::push_top(&suffix),
+            crate::plan::tests::lowering_units::push_top(&(1..=16).collect::<Vec<_>>()),
+            crate::plan::tests::lowering_units::assert_top(&expected),
+        ))
+        .unwrap();
+    }
+}
+
+#[test]
+fn pointer_dispatch_context_padding_cleanup_and_invocation_mismatch() {
+    let f = pointer_dispatch(true, 1);
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    let procedure = verify::verify(&plan, &frame, body.clone())
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("dispatch").unwrap())
+        .unwrap()
+        .to_pretty_string();
+    execute_code(&alloc::format!(
+        "proc callee push.1 add end {procedure} begin procref.callee mem_storew_le.400 dropw \
+         push.903 push.902 push.901 push.41 push.400 exec.dispatch push.42 assert_eq push.400 \
+         assert_eq push.901 assert_eq push.902 assert_eq push.903 assert_eq end"
+    ))
+    .unwrap();
+    let mut wrong = body;
+    for op in wrong.ops_mut() {
+        if let AnnotatedOp::Instruction { instruction, .. } = op
+            && *instruction == crate::masm::Instruction::DynCall
+        {
+            *instruction = crate::masm::Instruction::DynExec;
+        }
+    }
+    assert!(verify::verify(&plan, &frame, wrong).is_err());
+}
+
+#[test]
+fn pointer_dispatch_source_reselection_and_physical_mutations_are_rejected() {
+    let f = pointer_dispatch(false, 1);
+    let function = f.borrow();
+    let env = SelectEnv::default();
+    let selected = select_function(&function, &env).unwrap();
+    for mutation in 0..4 {
+        let mut bad = selected.clone();
+        let unit = &mut bad.segments[0].units[0];
+        match mutation {
+            0 => unit.stored_inputs[0].value = StoredValue::Atom(Atom::new(ValueId(1), 0)),
+            1 => unit.stored_inputs.clear(),
+            2 => unit.effects.memory = SourceMemoryEffects::default(),
+            _ => unit.outputs.clear(),
+        }
+        assert!(
+            check_selection(
+                bad,
+                &SourceContext::Hir {
+                    function: &function,
+                    env: &env
+                }
+            )
+            .is_err()
+        );
+    }
+    drop(function);
+    let (plan, frame, body) = ready(&f, &env);
+    let unit = &plan.selected.segments[0].units[0];
+    let slot = plan.lowering_bindings[&unit.id].stored_inputs[&StoredInputId(0)];
+    let offset = frame.resolve(FrameRef::Spill(slot)).unwrap();
+    let mut wrong_slot = body.clone();
+    let load = wrong_slot.ops_mut().iter_mut().find(|op| matches!(op,
+        AnnotatedOp::Instruction { instruction: I::LocLoad(index), unit: id } if *id == unit.id && *index == offset
+    )).unwrap();
+    if let AnnotatedOp::Instruction { instruction, .. } = load {
+        *instruction = I::LocLoad((offset + 1).into());
+    }
+    assert!(verify::verify(&plan, &frame, wrong_slot).is_err());
+    let mut early = body;
+    let end = early
+        .ops_mut()
+        .iter()
+        .position(|op| matches!(op, AnnotatedOp::Boundary(Boundary::UnitEnd(id)) if *id == unit.id))
+        .unwrap();
+    let end = early.ops_mut().remove(end);
+    let invocation = early
+        .ops_mut()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                AnnotatedOp::Instruction {
+                    instruction: I::DynExec,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    early.ops_mut().insert(invocation, end);
+    assert!(verify::verify(&plan, &frame, early).is_err());
+}
+
+#[test]
+fn procref_uses_procedure_root_visibility_alias_and_intent_rules() {
+    for operation in ["procref", "procedure_root"] {
+        let result = if operation == "procref" {
+            "%root"
+        } else {
+            "%r0,%r1,%r2,%r3"
+        };
+        for (visibility, accessible) in [("private", false), ("internal", true), ("public", true)] {
+            let f = parse_module_function(&alloc::format!(
+                r#"builtin.module public @m {{
+                builtin.module public @nested {{
+                    builtin.function {visibility} extern("C") @callee() {{ builtin.ret; }};
+                }};
+                builtin.function public extern("C") @dispatch() {{ {result} = hir.{operation} @nested::@callee; builtin.ret; }};
+            }};"#
+            ));
+            assert_eq!(select_function(&f.borrow(), &SelectEnv::default()).is_ok(), accessible);
+        }
+        let f = parse_module_function(&alloc::format!(
+            r#"builtin.module public @m {{
+            builtin.function internal extern("C") @callee() {{ builtin.ret; }};
+            builtin.function_alias internal @first -> @callee;
+            builtin.function_alias public @second -> @first;
+            builtin.function public extern("C") @dispatch() {{ {result} = hir.{operation} @second; builtin.ret; }};
+        }};"#
+        ));
+        let procedure = selected_procedure(&f, &SelectEnv::default());
+        assert!(procedure.contains("::m::second"), "{procedure}");
+        let mut reference = f
+            .borrow()
+            .entry_block()
+            .borrow()
+            .body()
+            .iter()
+            .next()
+            .unwrap()
+            .as_operation_ref();
+        reference.borrow_mut().set_attribute(
+            crate::hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR,
+            f.context.create_attribute::<builtin::attributes::UnitAttr, _>(()),
+        );
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    }
+}
+
+#[test]
+fn procref_word_stored_in_source_local_dispatches_through_its_pointer() {
+    let mut f = parse_module_function(
+        r#"builtin.module public @m {
+        builtin.function private extern("C") @callee(%x: felt) -> felt { builtin.ret %x : (felt); };
+        builtin.function public extern("C") @dispatch(%x: felt) -> felt {
+            %root = hir.procref @callee;
+            %p = hir.local_address <{ local = #builtin.local_variable<0, [felt; 4]> }>;
+            %r0,%r1,%r2,%r3 = hir.unpack_word %root;
+            %p0 = hir.gep %p <{ indices = #builtin.array_u32<0> }>;
+            %p1 = hir.gep %p <{ indices = #builtin.array_u32<1> }>;
+            %p2 = hir.gep %p <{ indices = #builtin.array_u32<2> }>;
+            %p3 = hir.gep %p <{ indices = #builtin.array_u32<3> }>;
+            hir.store %p0, %r0 : (ptr<felt, element>, felt);
+            hir.store %p1, %r1 : (ptr<felt, element>, felt);
+            hir.store %p2, %r2 : (ptr<felt, element>, felt);
+            hir.store %p3, %r3 : (ptr<felt, element>, felt);
+            %r = hir.dynexec %p(%x) : extern("C") (felt) -> (felt);
+            builtin.ret %r : (felt);
+        };
+    };"#,
+    );
+    f.function.borrow_mut().alloc_local(crate::hir::Procref::word_type());
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert_eq!(frame.source().extent, 4);
+    let procedure = verify::verify(&plan, &frame, body)
+        .unwrap()
+        .into_masm(crate::masm::ProcedureName::new("dispatch").unwrap())
+        .unwrap()
+        .to_pretty_string()
+        .replace("::m::callee", "callee");
+    execute_code(&alloc::format!(
+        "proc callee push.1 add end {procedure} begin push.901 push.41 exec.dispatch push.42 \
+         assert_eq push.901 assert_eq end"
+    ))
+    .unwrap();
+}

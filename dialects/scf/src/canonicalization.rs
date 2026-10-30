@@ -4,6 +4,7 @@ mod fold_constant_index_switch;
 mod fold_redundant_yields;
 mod if_remove_unused_results;
 mod index_switch_remove_unused_results;
+mod nested_exit;
 mod remove_loop_invariant_args_from_before_block;
 //mod remove_loop_invariant_value_yielded;
 mod while_condition_truth;

@@ -1235,6 +1235,24 @@ impl Operation {
         !self.is_used() && self.would_be_trivially_dead()
     }
 
+    /// Whether any nested operation terminates control flow.
+    pub fn carries_a_nested_exit(&self) -> bool {
+        for region in self.regions() {
+            let walk = region.prewalk(|op| {
+                if op.implements::<dyn crate::traits::Terminator>() {
+                    WalkResult::Break(())
+                } else {
+                    WalkResult::Continue(())
+                }
+            });
+            if walk.was_interrupted() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Returns true if this operation would be dead if unused, and has no side effects that would
     /// prevent erasing it. This is equivalent to checking `is_trivially_dead` if `self` is unused.
     ///
@@ -1252,6 +1270,10 @@ impl Operation {
     /// dead without always being conservative about terminators.
     pub fn would_be_trivially_dead_even_if_terminator(&self) -> bool {
         use crate::effects::RecursiveEffectIterator;
+
+        if self.carries_a_nested_exit() {
+            return false;
+        }
 
         let this_op = self.as_operation_ref();
         let effects = RecursiveEffectIterator::<MemoryEffect>::new(this_op);
@@ -1576,6 +1598,19 @@ impl Operation {
     }
 
     /// Returns true if this operation is a proper ancestor of `other`
+    /// Find the region of `ancestor` containing this operation.
+    pub fn region_in_ancestor(&self, ancestor: &OperationRef) -> Option<RegionRef> {
+        let mut region = self.parent_region();
+        while let Some(current) = region {
+            let parent = current.borrow().parent()?;
+            if OperationRef::ptr_eq(&parent, ancestor) {
+                return Some(current);
+            }
+            region = parent.borrow().parent_region();
+        }
+        None
+    }
+
     pub fn is_proper_ancestor_of(&self, other: &Self) -> bool {
         Self::is_a_proper_ancestor_of_b(self, other)
     }

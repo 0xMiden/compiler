@@ -407,14 +407,14 @@ fn mem_cpy_byte_length_overflow_traps() {
     );
 }
 
-/// Checks that a copy whose source or destination range extends past the end of the address
-/// space traps with the matching range assertion.
+/// Public native byte pointers cover the VM's 34-bit byte address space. Check that a source
+/// or destination range extending past its end traps with the matching range assertion.
 #[test]
 fn mem_cpy_out_of_range_traps() {
     assert_copy_traps(
         CopyOp::MemCpy,
         Type::U8,
-        u32::MAX - 7,
+        (1u64 << 34) - 8,
         FIXED_BASE,
         16,
         "memcpy source range is out of bounds",
@@ -423,7 +423,7 @@ fn mem_cpy_out_of_range_traps() {
         CopyOp::MemCpy,
         Type::U8,
         FIXED_BASE,
-        u32::MAX - 7,
+        (1u64 << 34) - 8,
         16,
         "memcpy destination range is out of bounds",
     );
@@ -435,7 +435,7 @@ fn mem_cpy_out_of_range_traps() {
 fn mem_cpy_word_copy_unaligned_traps() {
     const MESSAGE: &str = "expected a 16-byte-aligned byte pointer for the word-copy fast path";
     assert_copy_traps(CopyOp::MemCpy, Type::U128, FIXED_BASE + 4, FIXED_BASE + 32, 1, MESSAGE);
-    assert_copy_traps(CopyOp::MemCpy, Type::U128, FIXED_BASE, FIXED_BASE + 4, 1, MESSAGE);
+    assert_copy_traps(CopyOp::MemCpy, Type::U128, FIXED_BASE, FIXED_BASE + 36, 1, MESSAGE);
     assert_copy_traps(CopyOp::MemCpy, Type::U128, FIXED_BASE + 4, FIXED_BASE + 32, 0, MESSAGE);
 }
 

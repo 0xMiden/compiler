@@ -1091,7 +1091,8 @@ final_selection! {
     hir::PtrToInt => Alias, hir::IntToPtr => Alias, hir::Bitcast => Alias,
     arith::Split => Split, arith::Join => Join,
     hir::Exec => DirectCall, hir::Call => DirectCall, hir::Syscall => DirectCall,
-    hir::Dyncall => Dyncall, hir::ExecIndirect => ExecIndirect, hir::ExecFpi => Fpi, hir::ProcedureRoot => ProcedureRoot,
+    hir::Dyncall => Dyncall, hir::ExecIndirect => ExecIndirect, hir::ExecFpi => Fpi, hir::ProcedureRoot => ProcedureRoot, hir::Procref => ProcedureRoot,
+    hir::DynExec => DynExecPointer, hir::DynCallLocal => DynCallPointer,
     debuginfo::DebugValue => Debug, debuginfo::DebugDeclare => Debug, debuginfo::DebugKill => Debug,
 }
 
@@ -1200,6 +1201,8 @@ memory_selection! {
     hir::LoadLocal => LoadLocal,
     hir::StoreLocal => StoreLocal,
     hir::LocalAddress => LocalAddress,
+    hir::Alloca => LocalByteAddress,
+    hir::LocalByteAddress => LocalByteAddress,
     hir::MemGrow => MemGrow,
     hir::MemSize => MemSize,
     hir::MemSet => MemSet,
@@ -1248,4 +1251,26 @@ intrinsic_selection! {
     hir::Caller => Caller,
     hir::UnpackWord => UnpackWord,
     hir::Clk => Clk,
+}
+
+impl HirSelection for hir::GetElementPtr {
+    fn selection_rule(&self) -> crate::select::SelectionRule {
+        if self.as_operation().num_operands() == 1
+            && self.get_offset().is_ok_and(|offset| offset == 0)
+        {
+            crate::select::SelectionRule::Alias
+        } else {
+            crate::select::SelectionRule::Arithmetic(super::units::arithmetic::Kind::Gep)
+        }
+    }
+}
+
+impl HirSelection for hir::InlineAsm {
+    fn selection_rule(&self) -> crate::select::SelectionRule {
+        if self.get_body().trim().is_empty() && self.as_operation().num_operands() != 0 {
+            crate::select::SelectionRule::Alias
+        } else {
+            crate::select::SelectionRule::InlineAsm
+        }
+    }
 }

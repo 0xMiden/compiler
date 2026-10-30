@@ -39,6 +39,7 @@ pub type PreAssemblyHook = Rc<RefCell<dyn FnMut(&LoweredTarget) -> CompilerResul
 /// and the single capture slot are fixed for the whole request. This owns them, and every
 /// target context borrows it.
 pub struct RequestState {
+    link_inputs: Option<midenc_codegen_masm::linked_callables::SessionLinkInputs>,
     /// The checkpoint the root target stops at; see [`RequestState::goal`].
     goal: Goal,
     /// The observers to notify at every checkpoint, in the order they were given.
@@ -64,7 +65,22 @@ impl RequestState {
             observers,
             capture: RefCell::new(CaptureSlot::default()),
             pre_assembly: None,
+            link_inputs: None,
         }
+    }
+
+    pub(crate) fn with_link_inputs(
+        mut self,
+        inputs: midenc_codegen_masm::linked_callables::SessionLinkInputs,
+    ) -> Self {
+        self.link_inputs = Some(inputs);
+        self
+    }
+
+    pub(crate) fn link_inputs(
+        &self,
+    ) -> Option<&midenc_codegen_masm::linked_callables::SessionLinkInputs> {
+        self.link_inputs.as_ref()
     }
 
     /// The same, with a [`PreAssemblyHook`] attached.

@@ -28,7 +28,7 @@ ids!(
 );
 
 /// One raw lane of a semantic value, independent of its physical copies or storage.
-/// Lane zero is nearest stack top, following `Type::to_raw_parts()`.
+/// Lane zero is nearest stack top, following the shared `ValueLayout` raw representation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Atom {
     pub value: ValueId,

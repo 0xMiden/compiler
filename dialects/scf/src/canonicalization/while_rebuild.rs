@@ -33,7 +33,9 @@ pub(super) enum IterArg {
 /// must replace at least one result of the original one; when it replaces several, they must all
 /// be forwarded the same value by the `scf.condition`.
 ///
-/// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.while`.
+/// Returns `Ok(false)`, with nothing modified, if `operation` is not an `scf.while`, if an early
+/// exit nested in it addresses it (see `super::nested_exit`), or if its header or body leaves it
+/// instead of ending in its own `scf.condition` or `scf.yield`.
 pub(super) fn rebuild_while(
     rewriter: &mut dyn Rewriter,
     operation: OperationRef,
@@ -45,10 +47,17 @@ pub(super) fn rebuild_while(
         return Ok(false);
     };
 
+    // A nested `scf.break` hands its operands to the loop's results and a nested `scf.continue`
+    // to its iteration arguments; the new loop's lists would leave them carrying the old ones.
+    if super::nested_exit::addressed_by_a_nested_exit(while_op) {
+        return Ok(false);
+    }
+    let (Some(mut cond_op), Some(mut yield_op)) = (while_op.condition_op(), while_op.yield_op())
+    else {
+        return Ok(false);
+    };
     let before_block = while_op.before().entry_block_ref().unwrap();
     let after_block = while_op.after().entry_block_ref().unwrap();
-    let mut cond_op = while_op.condition_op();
-    let mut yield_op = while_op.yield_op();
     let inits = while_op
         .inits()
         .into_iter()

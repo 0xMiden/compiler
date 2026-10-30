@@ -15,8 +15,8 @@ use super::{
     PassInstrumentor, PipelineParentInfo, Statistic,
 };
 use crate::{
-    Context, EntityMut, OpPrintingFlags, OpRegistration, Operation, OperationName, OperationRef,
-    Report,
+    Context, EntityMut, Forward, OpPrintingFlags, OpRegistration, Operation, OperationName,
+    OperationRef, RawWalk, Report, WalkResult,
     pass::{PostPassStatus, Print},
     traits::IsolatedFromAbove,
 };
@@ -245,6 +245,13 @@ impl PassManager {
         self.pm.nest::<T>()
     }
 
+    /// Schedule a pipeline on outermost proper descendants of type `T`.
+    ///
+    /// See [`OpPassManager::nest_recursive`] for traversal and ordering semantics.
+    pub fn nest_recursive<T: OpRegistration>(&mut self) -> NestedOpPassManager<'_> {
+        self.pm.nest_recursive::<T>()
+    }
+
     pub fn nest_pass_manager(&mut self, nested: OpPassManager) -> NestedOpPassManager<'_> {
         self.pm.nest_pass_manager(nested)
     }
@@ -402,6 +409,24 @@ impl OpPassManager {
         self.nest_pass_manager(Self::on::<T>(self.nesting, self.context.clone()))
     }
 
+    /// Schedule a pipeline on outermost proper descendants of type `T`, searching through
+    /// unmatched operations in region, block, and operation order.
+    ///
+    /// The current operation is excluded. A matching operation owns its subtree: only the
+    /// nested pipeline may schedule further passes within it. In contrast, [`Self::nest`]
+    /// considers only immediate children. [`Nesting::Implicit`] does not enable recursion.
+    ///
+    /// Recursive pipelines retain their stage boundaries: each completes its traversal before
+    /// the next pipeline starts. They are not coalesced with adjacent nested pipelines.
+    pub fn nest_recursive<T: OpRegistration>(&mut self) -> NestedOpPassManager<'_> {
+        let mut nested = OpToOpPassAdaptor::new(Self::on::<T>(self.nesting, self.context.clone()));
+        nested.recursive = true;
+        NestedOpPassManager {
+            parent: self,
+            nested: Some(Box::new(nested)),
+        }
+    }
+
     /// Nest a new op-agnostic ("any") pass manager under this pass manager.
     pub fn nest_any(&mut self) -> NestedOpPassManager<'_> {
         self.nest_pass_manager(Self::any(self.nesting, self.context.clone()))
@@ -464,6 +489,8 @@ impl OpPassManager {
                             if adaptor.try_merge_into(&mut prev_adaptor) {
                                 Ok::<_, Report>((passes, Some(prev_adaptor)))
                             } else {
+                                finalize_adaptor(&mut prev_adaptor)?;
+                                passes.push(prev_adaptor as Box<dyn OperationPass>);
                                 let current =
                                     pass.into_any().downcast::<OpToOpPassAdaptor>().unwrap();
                                 Ok((passes, Some(current)))
@@ -492,7 +519,8 @@ impl OpPassManager {
             },
         )?;
 
-        if let Some(prev_adaptor) = prev_adaptor {
+        if let Some(mut prev_adaptor) = prev_adaptor {
+            finalize_adaptor(&mut prev_adaptor)?;
             self.passes.push(prev_adaptor);
         }
 
@@ -756,10 +784,14 @@ impl Drop for NestedOpPassManager<'_> {
 
 pub struct OpToOpPassAdaptor {
     pms: SmallVec<[OpPassManager; 1]>,
+    recursive: bool,
 }
 impl OpToOpPassAdaptor {
     pub fn new(pm: OpPassManager) -> Self {
-        Self { pms: smallvec![pm] }
+        Self {
+            pms: smallvec![pm],
+            recursive: false,
+        }
     }
 
     pub fn name(&self) -> CompactString {
@@ -771,7 +803,12 @@ impl OpToOpPassAdaptor {
                 None => alloc::borrow::Cow::Borrowed(OpPassManager::ANY),
                 Some(name) => alloc::borrow::Cow::Owned(name.to_string()),
             }));
-        write!(&mut name, "Pipeline Collection: [{names}]").unwrap();
+        let kind = if self.recursive {
+            "Recursive Pipeline"
+        } else {
+            "Pipeline Collection"
+        };
+        write!(&mut name, "{kind}: [{names}]").unwrap();
         name
     }
 
@@ -784,6 +821,11 @@ impl OpToOpPassAdaptor {
     /// `any` pipeline that operates on a FunctionOpInterface. In this situation the pipelines have
     /// a conflict (they both want to run on the same operations), so we can't merge.
     pub fn try_merge_into(&mut self, rhs: &mut Self) -> bool {
+        // Coalescing recursive anchors can change which subtrees are visited, and even equal
+        // anchors must retain the ordering of whole-tree stages rather than per-operation passes.
+        if self.recursive || rhs.recursive {
+            return false;
+        }
         // Functor used to detect if the given generic pass manager will have a potential schedule
         // conflict with the given `pms`.
         let has_schedule_conflict_with = |generic_pm: &OpPassManager, pms: &[OpPassManager]| {
@@ -810,7 +852,7 @@ impl OpToOpPassAdaptor {
         }
 
         // Check the rhs adaptor.
-        let rhs_generic = self.pass_managers().iter().find(|pm| pm.is_op_agnostic());
+        let rhs_generic = rhs.pass_managers().iter().find(|pm| pm.is_op_agnostic());
         if rhs_generic.is_some_and(|pm| has_schedule_conflict_with(pm, self.pass_managers())) {
             return false;
         }
@@ -995,9 +1037,13 @@ impl OpToOpPassAdaptor {
 
         // When `verify == true`, we run the verifier (unless the pass failed)
         if result.is_ok() && verify {
-            // If the pass is an adaptor pass, we don't run the verifier recursively because the
-            // nested operations should have already been verified after nested passes had run
-            let run_verifier_recursively = !pass.as_any().is::<OpToOpPassAdaptor>();
+            // Immediate adaptors already verified their children. Recursive adaptors also
+            // traverse unmatched containers whose invariants may depend on changed descendants;
+            // reverify the subtree before allowing the next stage to run.
+            let run_verifier_recursively = pass
+                .as_any()
+                .downcast_ref::<OpToOpPassAdaptor>()
+                .is_none_or(|adaptor| adaptor.recursive);
 
             // Reduce compile time by avoiding running the verifier if the pass didn't change the
             // IR since the last time the verifier was run:
@@ -1039,38 +1085,40 @@ impl OpToOpPassAdaptor {
         state: &mut PassExecutionState,
         verify: bool,
     ) -> Result<(), Report> {
-        let analysis_manager = state.analysis_manager();
+        let analysis_manager = state.analysis_manager().clone();
         let instrumentor = analysis_manager.pass_instrumentor();
         let parent_info = PipelineParentInfo {
             pass: Some(self.name()),
         };
 
-        // Collection region refs so we aren't holding borrows during pass execution
-        let mut next_region = op.borrow().regions().back().as_pointer();
-        while let Some(region) = next_region.take() {
-            next_region = region.next();
-            let mut next_block = region.borrow().body().front().as_pointer();
-            while let Some(block) = next_block.take() {
-                next_block = block.next();
-                let mut next_op = block.borrow().front();
-                while let Some(op) = next_op.take() {
-                    next_op = op.next();
-                    let op_name = op.borrow().name();
-                    if let Some(manager) =
-                        self.pms.iter_mut().find(|pm| pm.can_schedule_on(&op_name))
-                    {
-                        let am = analysis_manager.nest(op);
-                        Self::run_pipeline(
-                            manager,
-                            op,
-                            am,
-                            verify,
-                            instrumentor.clone(),
-                            Some(&parent_info),
-                        )?;
-                    }
-                }
+        let result = op.raw_prewalk::<Forward, _, _>(|nested| {
+            // Scheduling always starts below the manager's anchor.
+            if nested == op {
+                return WalkResult::Continue(());
             }
+            let name = nested.borrow().name();
+            if let Some(manager) = self.pms.iter_mut().find(|pm| pm.can_schedule_on(&name)) {
+                let am = analysis_manager.nest(nested);
+                match Self::run_pipeline(
+                    manager,
+                    nested,
+                    am,
+                    verify,
+                    instrumentor.clone(),
+                    Some(&parent_info),
+                ) {
+                    // A matching pipeline owns its subtree, including further nested scheduling.
+                    Ok(()) => WalkResult::Skip,
+                    Err(err) => WalkResult::Break(err),
+                }
+            } else if self.recursive {
+                WalkResult::Continue(())
+            } else {
+                WalkResult::Skip
+            }
+        });
+        if let WalkResult::Break(err) = result {
+            return Err(err);
         }
         state.set_post_pass_status(PostPassStatus::Unchanged);
         Ok(())
@@ -1090,12 +1138,19 @@ impl Pass for OpToOpPassAdaptor {
     }
 
     fn print_as_textual_pipeline(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        if self.recursive {
+            f.write_str("recursive(")?;
+        }
         let pms = self.pass_managers();
         for (i, pm) in pms.iter().enumerate() {
             if i > 0 {
                 f.write_str(",")?;
             }
             pm.print_as_textual_pipeline(f)?;
+        }
+
+        if self.recursive {
+            f.write_str(")")?;
         }
 
         Ok(())
@@ -1114,6 +1169,10 @@ impl Pass for OpToOpPassAdaptor {
         unreachable!("unexpected call to `Pass::run_on_operation` for OpToOpPassAdaptor")
     }
 }
+
+#[cfg(test)]
+#[path = "manager/tests.rs"]
+mod scheduling_tests;
 
 #[cfg(test)]
 mod tests {

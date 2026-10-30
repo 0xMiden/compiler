@@ -1137,20 +1137,30 @@ fn production_terminal_if_preserves_taken_and_untaken_traps() {
     }
 }
 
-// The current compile_hir_module helper deliberately unwraps backend diagnostics.
-// This checks the existing diagnostic at that boundary without changing the helper API.
 #[test]
-#[should_panic(expected = "logical return would fall through into a normal continuation")]
-fn production_mixed_return_yield_keeps_existing_diagnostic() {
+fn production_mixed_return_yield_preserves_early_return_and_continuation() {
     let source = r#"builtin.module public @terminal_return {
         builtin.function public extern("C") @entrypoint(%index: u32, %value: u32) -> u32 {
-            %unused = scf.index_switch %index
+            %result = scf.index_switch %index
                 case 1 { scf.yield %value : (u32); }
                 default { builtin.ret %value : (u32); } : u32;
-            builtin.ret %value : (u32);
+            %one = arith.constant 1 : u32;
+            %next = arith.add %result, %one <{ overflow = #builtin.overflow<unchecked> }>;
+            builtin.ret %next : (u32);
         };
     };"#;
-    let _ = compile_hir_module("terminal-return", "entrypoint", source, |_| {});
+    let (package, context) = compile_hir_module("terminal-return", "entrypoint", source, |_| {});
+    for (index, expected) in [(0u32, 37u32), (1, 38), (2, 37)] {
+        let actual = eval_package::<u32, _, _>(
+            package.clone(),
+            None,
+            &[Felt::from(index), Felt::from(37u32)],
+            context.session(),
+            |_| Ok(()),
+        )
+        .unwrap();
+        assert_eq!(actual, expected, "index={index}");
+    }
 }
 
 /// Uses the same shim/fixup shape as a standard component linker so canon lower can name the

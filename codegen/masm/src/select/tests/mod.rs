@@ -76,6 +76,7 @@ mod control;
 mod coverage;
 mod generated;
 mod indirect;
+mod inline_asm;
 pub(crate) mod intrinsics;
 mod memory;
 
@@ -173,7 +174,27 @@ fn execute_linked_memory_mutate(
     observe: &str,
     mutate: impl FnOnce(&mut AnnotatedMasmBody),
 ) -> Result<(), midenc_hir::Report> {
-    let (plan, frame, mut body) = ready(f, &SelectEnv::default());
+    execute_linked_memory_env(
+        f,
+        &SelectEnv::default(),
+        inputs,
+        expected,
+        initialize,
+        observe,
+        mutate,
+    )
+}
+
+fn execute_linked_memory_env(
+    f: &Parsed,
+    env: &SelectEnv<'_>,
+    inputs: &[usize],
+    expected: &[usize],
+    initialize: &str,
+    observe: &str,
+    mutate: impl FnOnce(&mut AnnotatedMasmBody),
+) -> Result<(), midenc_hir::Report> {
+    let (plan, frame, mut body) = ready(f, env);
     mutate(&mut body);
     let procedure = verify::verify(&plan, &frame, body)
         .unwrap()
@@ -211,7 +232,7 @@ fn execute_linked_memory_mutate(
     Ok(())
 }
 
-fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
+pub(crate) fn execute_code(code: &str) -> Result<(), midenc_hir::Report> {
     let program = miden_assembly::Assembler::default()
         .assemble_program("selected_hir", code)?
         .try_into_program()?;

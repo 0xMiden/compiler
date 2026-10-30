@@ -49,7 +49,9 @@ impl RewritePattern for FoldRedundantYields {
         let mut region_yields: SmallVec<[_; 4]> = SmallVec::new();
 
         for succ_region in br_op.get_successor_regions(RegionBranchPoint::Parent) {
-            let Some(region_ref) = succ_region.successor() else {
+            // Only regions of `br_op` itself. The pattern rewrites terminators it can see; a
+            // region reached by an early exit belongs to an ancestor and is not this op's to fold.
+            let Some(region_ref) = succ_region.region_graph_successor() else {
                 return Ok(false);
             };
 
@@ -100,7 +102,29 @@ impl RewritePattern for FoldRedundantYields {
 
         let all_results_are_redundant = redundant_yield_vals.len() == op.num_results();
 
-        if all_results_are_redundant && op.is_memory_effect_free() {
+        // **DELETING THE OP DELETES EVERY EXIT INSIDE IT, AND EFFECTS CANNOT SEE THOSE.**
+        //
+        // The guard above established that each region's DIRECT terminator is an `scf.yield`,
+        // which returns to this op and is therefore safe to drop with it. It establishes nothing
+        // about a terminator one region deeper: an `scf.break` inside a nested `scf.if` inside
+        // this one's branch passes it untouched, because the branch holding that `scf.if` is
+        // itself yield-terminated. And `is_memory_effect_free` will not catch it either — control
+        // flow is not a memory effect, so an `scf.break` that honestly declares it touches no
+        // memory leaves the whole subtree looking free of effects.
+        //
+        // So ask [`Operation::carries_a_nested_exit`] of the operations INSIDE the regions rather
+        // than of this op: the vetted `scf.yield`s must not answer for themselves, and anything
+        // below them is unvetted. This is blunt in the same way the predicate is — a nested
+        // `scf.if` that only yields also declines the fold — and blunt in the safe direction: it
+        // only ever refuses a deletion that used to happen.
+        let carries_a_nested_exit = op.regions().iter().any(|region| {
+            region
+                .body()
+                .iter()
+                .any(|block| block.body().iter().any(|nested| nested.carries_a_nested_exit()))
+        });
+
+        if all_results_are_redundant && op.is_memory_effect_free() && !carries_a_nested_exit {
             // The entire operation is actually redundant; just remove it.  Make sure the yield
             // vals are sorted first.
             let mut sorted_vals = redundant_yield_vals.into_vec();
@@ -735,6 +759,122 @@ mod tests {
         builder.ret(Some(ret_val), span)?;
 
         run_single_canonicalizer(&mut test, true)
+    }
+
+    /// **THE MISCOMPILE THIS PINS.** The guard above (`!term_op.is::<Yield>()`) inspects each
+    /// region's DIRECT terminator only. An `scf.break` one region deeper passes it — the `scf.if`
+    /// holding it is terminated by a perfectly ordinary `scf.yield` — and once `scf.break` declares
+    /// that it touches no memory, the enclosing `scf.if` is memory-effect-free, so the
+    /// whole-op-redundant path deletes the `scf.if` and the loop exit inside it with it.
+    ///
+    /// The shape below is the smallest one that reaches it: a doubly-nested break. The singly
+    /// nested case (`scf.if { scf.break }`) is what the direct-terminator guard already catches.
+    #[track_caller]
+    fn run_one(name: &str, source: &str) -> (bool, usize, usize) {
+        use midenc_hir::{
+            patterns::{FrozenRewritePatternSet, GreedyRewriteConfig, RewritePatternSet},
+            testing::parse_function_fixpoint,
+        };
+
+        let context = Rc::new(Context::default());
+        let (function, _) = parse_function_fixpoint(&context, name, source)
+            .unwrap_or_else(|err| panic!("'{name}' must parse before the pattern runs: {err}"));
+
+        let count_breaks = || {
+            let mut breaks = 0usize;
+            function.as_operation_ref().borrow().prewalk_all(|op| {
+                if op.is::<Break>() {
+                    breaks += 1;
+                }
+            });
+            breaks
+        };
+        let before = count_breaks();
+
+        let pattern_set = RewritePatternSet::from_iter(
+            context.clone(),
+            [Box::new(FoldRedundantYields::new(context.clone())) as Box<dyn RewritePattern>],
+        );
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(pattern_set));
+        let changed = patterns::apply_patterns_and_fold_greedily(
+            function.as_operation_ref(),
+            rewrites,
+            GreedyRewriteConfig::default(),
+        )
+        .expect("expected the canonicalizer to converge");
+
+        (changed, before, count_breaks())
+    }
+
+    /// The loop below can only leave early through the `scf.break`; deleting the `scf.if` that
+    /// holds it makes the loop unable to exit before its condition says so. The break count is
+    /// the assertion because the exit is the thing at stake, not the yields.
+    #[test]
+    fn fold_redundant_yields_keeps_an_if_carrying_a_nested_early_exit() {
+        let (_, before, after) = run_one(
+            "fold_redundant_yields_nested_early_exit.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %z = arith.constant 0 : u32;
+    %r = scf.while %z before {
+    ^before(%i: u32):
+        %c = arith.lt %i, %n;
+        scf.condition %c, %i : (i1, u32);
+    } after {
+    ^after(%j: u32):
+        %g = arith.gt %j, %n;
+        %o = scf.if %g then {
+            %p = scf.if %g then {
+                scf.break 1 %j : (u32);
+            } else {
+                scf.yield %j : (u32);
+            } : (i1) -> (u32);
+            scf.yield %j : (u32);
+        } else {
+            scf.yield %j : (u32);
+        } : (i1) -> (u32);
+        scf.yield %o : (u32);
+    } : (u32) -> (u32);
+    builtin.ret %r : (u32);
+};",
+        );
+        assert_eq!(before, 1, "the input must contain exactly one loop exit");
+        assert_eq!(
+            after, 1,
+            "the fold deleted an `scf.if` carrying an `scf.break`, so the loop can no longer exit \
+             early"
+        );
+    }
+
+    /// The control: the same fold, on an `scf.if` whose regions hold no terminator of their own
+    /// beyond the vetted `scf.yield`, still deletes the whole op. Without this the fix above could
+    /// be "decline everything" and nothing would say so.
+    #[test]
+    fn fold_redundant_yields_still_deletes_an_if_with_no_nested_terminator() {
+        let (changed, before, after) = run_one(
+            "fold_redundant_yields_nested_early_exit_control.hir",
+            "\
+builtin.function public extern(\"C\") @f(%n: u32) -> u32 {
+    %z = arith.constant 0 : u32;
+    %r = scf.while %z before {
+    ^before(%i: u32):
+        %c = arith.lt %i, %n;
+        scf.condition %c, %i : (i1, u32);
+    } after {
+    ^after(%j: u32):
+        %g = arith.gt %j, %n;
+        %o = scf.if %g then {
+            scf.yield %j : (u32);
+        } else {
+            scf.yield %j : (u32);
+        } : (i1) -> (u32);
+        scf.yield %o : (u32);
+    } : (u32) -> (u32);
+    builtin.ret %r : (u32);
+};",
+        );
+        assert!(changed, "an `scf.if` yielding the same value from both branches is redundant");
+        assert_eq!((before, after), (0, 0), "the control shape has no loop exit to lose");
     }
 
     /* A `while` test which initially showed that this rewriter probably isn't suited for them. {{{

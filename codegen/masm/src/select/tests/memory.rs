@@ -11,7 +11,7 @@ fn mem_grow_and_size_have_u32_publication() {
     assert_eq!(stack[0].ty(), midenc_hir::Type::U32);
 }
 
-/// Independent fixtures enumerate all fifteen public registrations.
+/// Independent fixtures enumerate all seventeen memory registrations.
 pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
     let mut out = vec![];
     for op in ["load", "store", "mem_set", "mem_cpy", "mem_move", "mem_grow", "mem_size"] {
@@ -92,6 +92,14 @@ pub(super) fn fixtures() -> Vec<(Parsed, bool)> {
     ] {
         let mut f = parse(&alloc::format!(
             "builtin.function public extern(\"C\") @{op}({args}){result} {{ {body} }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        out.push((f, false));
+    }
+    for op in ["alloca", "local_byte_address"] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function public extern(\"C\") @{op}() -> ptr<u32, byte> {{ %p = hir.{op} <{{ \
+             local = #builtin.local_variable<0, u32> }}>; builtin.ret %p : (ptr<u32, byte>); }};"
         ));
         f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
         out.push((f, false));
@@ -444,7 +452,7 @@ fn mutated_memory_calls_control_and_publication_reject() {
         let unit = selected.segments.iter_mut().flat_map(|s| &mut s.units).next().unwrap();
         unit.effects.may_trap = false;
         // LocalAddress has no trap; its effect mutation is handled separately by coverage.
-        if function.name().as_str() != "local_address" {
+        if !matches!(function.name().as_str(), "local_address" | "alloca" | "local_byte_address") {
             assert!(
                 check_selection(
                     selected,
@@ -791,6 +799,7 @@ fn selected_copy_overlap_direction_range_and_alignment_match_vm() {
             execute_linked_memory(&f, &[u32::MAX as usize, u32::MAX as usize, 0], &[], "", "")
                 .unwrap();
             assert!(execute_linked_memory(&f, &[u32::MAX as usize, 256, 1], &[], "", "").is_err());
+            assert!(execute_linked_memory(&f, &[256, u32::MAX as usize, 1], &[], "", "").is_err());
             assert!(
                 execute_linked_memory(&f, &[256, 320, u32::MAX as usize], &[], "", "").is_err()
             );
@@ -831,7 +840,7 @@ fn parsed_and_bound_local_authority_is_checked_before_emission() {
 }
 
 #[test]
-fn packed_store_support_does_not_authorize_aggregate_loads_or_scalar_copies() {
+fn packed_locals_do_not_authorize_aggregate_pointer_copies() {
     use midenc_hir::{ArrayType, Builder, BuilderExt, OpBuilder, PointerType, SourceSpan, Type};
     for size in [2, 3, 4] {
         let ty = Type::from(ArrayType::new(Type::U8, size));
@@ -853,7 +862,7 @@ fn packed_store_support_does_not_authorize_aggregate_loads_or_scalar_copies() {
         builder.create::<crate::hir::LocalAddress, _>(SourceSpan::UNKNOWN)(local).unwrap();
         execute_linked(&f, &[], &[]);
         builder.create::<crate::hir::LoadLocal, _>(SourceSpan::UNKNOWN)(local).unwrap();
-        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_ok());
     }
 }
 
@@ -1059,4 +1068,435 @@ fn shared_memory_and_arithmetic_result_verifier_diagnoses_malformed_results() {
             assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
         }
     }
+}
+
+#[test]
+fn byte_local_address_forms_select_and_replay() {
+    for name in ["alloca", "local_byte_address"] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function public extern(\"sigma\") @test() -> ptr<u32, byte> {{ %r = \
+             hir.{name} <{{ local = #builtin.local_variable<0, u32> }}>; builtin.ret %r : \
+             (ptr<u32, byte>); }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        let (plan, frame, body) = ready(&f, &SelectEnv::default());
+        verify::verify(&plan, &frame, body).unwrap();
+    }
+}
+
+fn unit_environment(f: &Parsed) -> SelectEnv<'static> {
+    SelectEnv {
+        byte_addressing: crate::lower::unit::UnitFacts::derive(f.borrow().as_operation(), &[])
+            .byte_addressing,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn byte_local_store_and_load_use_derived_wide_policy() {
+    for name in ["alloca", "local_byte_address"] {
+        let mut f = parse(&alloc::format!(
+            "builtin.function private extern(\"sigma\") @test(%v: u32) -> u32 {{ %p = hir.{name} \
+             <{{ local = #builtin.local_variable<0, u32> }}>; hir.store %p, %v : (ptr<u32, byte>, \
+             u32); %r = hir.load %p; builtin.ret %r : (u32); }};"
+        ));
+        f.function.borrow_mut().alloc_local(midenc_hir::Type::U32);
+        let env = unit_environment(&f);
+        assert_eq!(env.byte_addressing, crate::emit::addressing::ByteAddressing::Wide);
+        execute_linked_memory_env(&f, &env, &[0xabcdef12], &[0xabcdef12], "", "", |_| {}).unwrap();
+    }
+}
+
+#[test]
+fn retyped_pointer_memory_loads_a_wide_byte_address() {
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        AddressSpace, PointerType, SourceSpan, Symbol, Type, ValueRef, Visibility,
+        dialects::builtin::BuiltinOpBuilder, testing::Test,
+    };
+    for source in [None, Some(AddressSpace::Byte), Some(AddressSpace::Element)] {
+        for destination in [AddressSpace::Byte, AddressSpace::Element] {
+            let pointer =
+                |pointee, space| Type::from(PointerType::new_with_address_space(pointee, space));
+            let input_type = source.map_or(Type::U32, |space| pointer(Type::U32, space));
+            let mut test = Test::new("pointer_memory", &[input_type], &[Type::U32]);
+            test.function().borrow_mut().set_visibility(Visibility::Private);
+            {
+                let mut builder = test.function_builder();
+                let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                let target = pointer(pointer(Type::U32, AddressSpace::Byte), destination);
+                let retyped = if source.is_some() {
+                    builder.bitcast(input, target, SourceSpan::UNKNOWN).unwrap()
+                } else {
+                    builder.inttoptr(input, target, SourceSpan::UNKNOWN).unwrap()
+                };
+                let wide = builder.load(retyped, SourceSpan::UNKNOWN).unwrap();
+                let value = builder.load(wide, SourceSpan::UNKNOWN).unwrap();
+                builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+            }
+            let f = Parsed {
+                context: test.context_rc(),
+                function: test.function(),
+            };
+            let env = unit_environment(&f);
+            // Transparent casts preserve the numeric base. The selected destination space
+            // determines which cell contains the stored byte pointer, whose target is above 2^32.
+            let input = if destination == AddressSpace::Byte {
+                256
+            } else {
+                64
+            };
+            execute_linked_memory_env(
+                &f,
+                &env,
+                &[input],
+                &[123],
+                "push.4294967296 mem_store.64 push.123 mem_store.1073741824",
+                "",
+                |_| {},
+            )
+            .unwrap();
+        }
+    }
+}
+
+pub(super) fn gep_fixture(
+    space: midenc_hir::AddressSpace,
+    element: midenc_hir::Type,
+    index: usize,
+    load: bool,
+) -> Parsed {
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        ArrayType, PointerType, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
+    };
+    let ptr = Type::from(PointerType::new_with_address_space(
+        Type::from(ArrayType::new(element.clone(), 3)),
+        space,
+    ));
+    let result = if load {
+        element.clone()
+    } else {
+        Type::from(PointerType::new_with_address_space(element, space))
+    };
+    let mut test = Test::new("gep", &[ptr], &[result]);
+    {
+        let mut builder = test.function_builder();
+        let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+        let addr = builder.getelementptr(input, &[index], SourceSpan::UNKNOWN).unwrap();
+        let result = if load {
+            builder.load(addr, SourceSpan::UNKNOWN).unwrap()
+        } else {
+            addr
+        };
+        builder.ret([result], SourceSpan::UNKNOWN).unwrap();
+    }
+    Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    }
+}
+
+#[test]
+fn gep_crosses_narrow_boundary_and_scales_element_offsets() {
+    use midenc_hir::{AddressSpace, Type};
+    let f = gep_fixture(AddressSpace::Byte, Type::U32, 1, true);
+    let env = unit_environment(&f);
+    assert_eq!(env.byte_addressing, crate::emit::addressing::ByteAddressing::Wide);
+    execute_linked_memory_env(
+        &f,
+        &env,
+        &[0xffff_fffc],
+        &[123],
+        "push.123 mem_store.1073741824",
+        "",
+        |_| {},
+    )
+    .unwrap();
+    let f = gep_fixture(AddressSpace::Element, Type::U32, 2, true);
+    execute_linked_memory_env(
+        &f,
+        &unit_environment(&f),
+        &[64],
+        &[456],
+        "push.456 mem_store.66",
+        "",
+        |_| {},
+    )
+    .unwrap();
+}
+
+#[test]
+fn zero_gep_alias_and_malformed_gep_contracts() {
+    use midenc_hir::{AddressSpace, Type, Value};
+    let f = gep_fixture(AddressSpace::Element, Type::U32, 0, false);
+    let selected = select_function(&f.borrow(), &SelectEnv::default()).unwrap();
+    assert!(
+        selected
+            .segments
+            .iter()
+            .flat_map(|s| &s.units)
+            .all(|u| u.stack_inputs.is_empty())
+    );
+    execute(&f, &SelectEnv::default(), &[64], &[64]);
+    let f = gep_fixture(AddressSpace::Element, Type::U8, 1, false);
+    assert_eq!(
+        unit_environment(&f).byte_addressing,
+        crate::emit::addressing::ByteAddressing::Wide
+    );
+    assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    for index in [0, 1] {
+        let f = gep_fixture(AddressSpace::Byte, Type::U32, index, false);
+        f.borrow().as_operation().prewalk_all(|op| {
+            if op.is::<crate::hir::GetElementPtr>() {
+                let mut result = op.results()[0];
+                result.borrow_mut().set_type(Type::U32);
+            }
+        });
+        assert_eq!(
+            unit_environment(&f).byte_addressing,
+            crate::emit::addressing::ByteAddressing::Wide
+        );
+        assert!(select_function(&f.borrow(), &SelectEnv::default()).is_err());
+    }
+}
+
+#[test]
+fn aggregate_local_gep_reads_each_struct_field() {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_dialect_hir::HirOpBuilder;
+    use midenc_hir::{
+        AddressSpace, SourceSpan, StructType, Type, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
+    };
+    for space in [AddressSpace::Byte, AddressSpace::Element] {
+        for field in 0..4 {
+            let mut test = Test::new("fields", &[], &[Type::U32]);
+            {
+                let mut builder = test.function_builder();
+                let local = builder.alloc_local(Type::from(StructType::new(vec![Type::U32; 4])));
+                let base = if space == AddressSpace::Byte {
+                    builder.local_byte_address(local, Default::default()).unwrap()
+                } else {
+                    builder.local_address(local, Default::default()).unwrap()
+                };
+                let mut fields = vec![];
+                for index in 0..4 {
+                    let addr = builder.getelementptr(base, &[index], SourceSpan::UNKNOWN).unwrap();
+                    let value = builder.u32(100 + index as u32, SourceSpan::UNKNOWN);
+                    builder.store(addr, value, SourceSpan::UNKNOWN).unwrap();
+                    fields.push(addr);
+                }
+                let value = builder.load(fields[field], SourceSpan::UNKNOWN).unwrap();
+                builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+            }
+            let f = Parsed {
+                context: test.context_rc(),
+                function: test.function(),
+            };
+            execute_linked_memory_env(
+                &f,
+                &unit_environment(&f),
+                &[],
+                &[100 + field],
+                "",
+                "",
+                |_| {},
+            )
+            .unwrap();
+        }
+    }
+}
+
+/// Exercise typed locals against independently addressed memory, including their padding and
+/// adjacent locals. The returned raw cells make mutually compensating load/store bugs visible.
+fn aggregate_local_memory(ty: midenc_hir::Type, initialize: usize, store: bool) -> Parsed {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        AddressSpace, Felt, PointerType, SourceSpan, Type, dialects::builtin::BuiltinOpBuilder,
+        testing::Test,
+    };
+
+    use crate::hir::HirOpBuilder;
+
+    let cells = ty.size_in_felts();
+    let mut results = vec![ty.clone()];
+    results.extend(vec![Type::Felt; cells + 2]);
+    let mut test = Test::new("aggregate_local_memory", std::slice::from_ref(&ty), &results);
+    {
+        let span = SourceSpan::UNKNOWN;
+        let mut builder = test.function_builder();
+        let value = builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+        let prefix = builder.alloc_local(Type::Felt);
+        let local = builder.alloc_local(ty);
+        let suffix = builder.alloc_local(Type::Felt);
+        let prefix_value = builder.felt(Felt::new(17).unwrap(), span);
+        let suffix_value = builder.felt(Felt::new(29).unwrap(), span);
+        builder.store_local(prefix, prefix_value, span).unwrap();
+        builder.store_local(suffix, suffix_value, span).unwrap();
+        let base = builder.local_address(local, span).unwrap();
+        let base = builder.ptrtoint(base, Type::U32, span).unwrap();
+        let pointer_ty =
+            Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Element));
+        let mut addresses = vec![];
+        for i in 0..cells {
+            let offset = builder.u32(i as u32, span);
+            let address = builder.add(base, offset, span).unwrap();
+            let address = builder.inttoptr(address, pointer_ty.clone(), span).unwrap();
+            let fill = builder.felt(Felt::new(initialize as u64).unwrap(), span);
+            builder.store(address, fill, span).unwrap();
+            addresses.push(address);
+        }
+        if store {
+            builder.store_local(local, value, span).unwrap();
+        }
+        let mut values = vec![builder.load_local(local, span).unwrap()];
+        for address in addresses {
+            values.push(builder.load(address, span).unwrap());
+        }
+        values.push(builder.load_local(prefix, span).unwrap());
+        values.push(builder.load_local(suffix, span).unwrap());
+        builder.ret(values, span).unwrap();
+    }
+    Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    }
+}
+
+#[test]
+fn aggregate_locals_preserve_lane_order_padding_and_neighboring_locals() {
+    use midenc_hir::{ArrayType, StructType, Type, TypeRepr};
+    let cases = [
+        (Type::from(StructType::new([Type::U32, Type::U32])), vec![11, 23], vec![11, 23]),
+        (
+            Type::from(StructType::new([Type::U8, Type::U32, Type::U8])),
+            vec![0x12, 0x34567890, 0x56],
+            vec![0xa5a5a512, 0x34567890, 0xa5a5a556],
+        ),
+        (
+            Type::from(ArrayType::new(Type::U8, 7)),
+            vec![0x12345678, 0xabcdef],
+            vec![0x12345678, 0xa5abcdef],
+        ),
+        (
+            Type::from(StructType::new_with_repr(
+                TypeRepr::packed(1),
+                [Type::U8, Type::U64, Type::U8],
+            )),
+            vec![0x12345678, 0x9abcdef0, 0x4321],
+            vec![0x12345678, 0x9abcdef0, 0xa5a54321],
+        ),
+        (
+            Type::from(StructType::new_with_repr(TypeRepr::align(16), [Type::U64, Type::U8])),
+            vec![0x12345678, 0x9abcdef0, 0x43],
+            vec![0x12345678, 0x9abcdef0, 0xa5a5a543, 0xa5a5a5a5],
+        ),
+        (
+            Type::from(StructType::new([Type::Felt, Type::U32])),
+            vec![0xffff_ffff_0000_0000, 23],
+            vec![0xffff_ffff_0000_0000, 23],
+        ),
+        (
+            Type::from(StructType::new([Type::from(StructType::new([Type::Felt])), Type::U32])),
+            vec![0xffff_ffff_0000_0000, 23],
+            vec![0xffff_ffff_0000_0000, 23],
+        ),
+        (
+            Type::from(ArrayType::new(Type::Felt, 4)),
+            vec![0xffff_ffff_0000_0000, 11, 23, 37],
+            vec![0xffff_ffff_0000_0000, 11, 23, 37],
+        ),
+    ];
+    for (ty, input, cells) in cases {
+        assert_eq!(ty.size_in_felts(), cells.len(), "raw cell expectation for {ty}");
+        let f = aggregate_local_memory(ty.clone(), 0xa5a5a5a5, true);
+        let expected = input.iter().copied().chain(cells).chain([17, 29]).collect::<Vec<_>>();
+        execute_linked_memory(&f, &input, &expected, "", "")
+            .unwrap_or_else(|error| panic!("aggregate local {ty}: {error:?}"));
+    }
+}
+
+#[test]
+fn aggregate_local_partial_stores_accept_full_field_frame_contents() {
+    use midenc_hir::{ArrayType, Type};
+    let f = aggregate_local_memory(Type::from(ArrayType::new(Type::U8, 3)), 0x1a5a5a5a5, true);
+    execute_linked(&f, &[0x123456], &[0x123456, 0xa5123456, 17, 29]);
+}
+
+#[test]
+fn aggregate_local_loads_observe_aliased_memory() {
+    use midenc_hir::{StructType, Type};
+    let fill = 0x1a5a5a543;
+    let f =
+        aggregate_local_memory(Type::from(StructType::new([Type::Felt, Type::U8])), fill, false);
+    execute_linked(&f, &[0, 0], &[fill, 0x43, fill, fill, 17, 29]);
+}
+
+#[test]
+fn aggregate_local_accesses_reject_zero_and_oversized_values() {
+    use midenc_hir::{ArrayType, Type, testing::Test};
+
+    use crate::hir::HirOpBuilder;
+    for ty in [
+        Type::from(ArrayType::new(Type::U8, 0)),
+        Type::from(ArrayType::new(Type::U32, 5)),
+    ] {
+        for store in [false, true] {
+            let params = if store { vec![ty.clone()] } else { vec![] };
+            let mut test = Test::new("invalid_local_value", &params, &[]);
+            {
+                let mut builder = test.function_builder();
+                let local = builder.alloc_local(ty.clone());
+                if store {
+                    let value =
+                        builder.entry_block().borrow().arguments()[0].borrow().as_value_ref();
+                    builder.store_local(local, value, Default::default()).unwrap();
+                } else {
+                    builder.load_local(local, Default::default()).unwrap();
+                }
+                use midenc_hir::dialects::builtin::BuiltinOpBuilder;
+                builder.ret([], Default::default()).unwrap();
+            }
+            let error =
+                select_function(&test.function().borrow(), &SelectEnv::default()).unwrap_err();
+            assert!(format!("{error:?}").contains("one to four raw lanes"), "{ty}: {error:?}");
+        }
+    }
+}
+
+#[test]
+fn aggregate_local_accesses_preserve_spill_sentinels() {
+    use midenc_hir::{StructType, Type, dialects::builtin::BuiltinOpBuilder, testing::Test};
+
+    use crate::hir::HirOpBuilder;
+    let ty = Type::from(StructType::new(vec![Type::U32; 4]));
+    let mut types = vec![Type::U32; 20];
+    types.push(ty.clone());
+    let mut test = Test::new("aggregate_pressure", &types, &types);
+    {
+        let mut builder = test.function_builder();
+        let mut values = builder
+            .entry_block()
+            .borrow()
+            .arguments()
+            .iter()
+            .map(|v| v.borrow().as_value_ref())
+            .collect::<Vec<_>>();
+        builder.alloc_local(Type::U128);
+        let local = builder.alloc_local(ty);
+        builder.store_local(local, values[20], Default::default()).unwrap();
+        values[20] = builder.load_local(local, Default::default()).unwrap();
+        builder.ret(values, Default::default()).unwrap();
+    }
+    let f = Parsed {
+        context: test.context_rc(),
+        function: test.function(),
+    };
+    let (plan, frame, body) = ready(&f, &SelectEnv::default());
+    assert!(!frame.spills().is_empty());
+    verify::verify(&plan, &frame, body).unwrap();
+    let values = (100..120).chain([11, 23, 37, 41]).collect::<Vec<_>>();
+    execute_linked(&f, &values, &values);
 }

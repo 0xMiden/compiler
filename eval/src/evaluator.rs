@@ -761,58 +761,8 @@ impl HirEvaluator {
                             arguments,
                         } => {
                             // We're returning to the parent operation from a child region
-                            //
-                            // Check that arguments match parent op results
                             let parent = region.parent().unwrap();
-                            let parent_op = parent.borrow();
-                            if parent_op.num_results() != arguments.len() {
-                                return Err(self
-                                    .error("evaluation failed")
-                                    .with_primary_label(
-                                        op.span(),
-                                        format!(
-                                            "attempted to yield to parent with {} arguments, but \
-                                             {} were expected",
-                                            parent_op.num_results(),
-                                            arguments.len()
-                                        ),
-                                    )
-                                    .with_secondary_label(
-                                        parent_op.span(),
-                                        "this is the parent operation",
-                                    )
-                                    .into_report());
-                            }
-                            log::debug!(target: "eval", "  <= {}",
-                                DisplayValues::new(parent_op.results().iter().zip(arguments.iter()).map(|(result, arg)| {
-                                MaterializedValue {
-                                    id: *result as ValueRef,
-                                    value: self.get_value(&arg).unwrap(),
-                                }
-                            })));
-                            for (result, arg) in parent_op.results().iter().zip(arguments) {
-                                let expected = result.borrow();
-                                let expected_ty = expected.ty();
-                                let given = arg.borrow();
-                                let given_ty = given.ty();
-                                if expected_ty != given_ty {
-                                    return Err(self
-                                        .error("evaluation failed")
-                                        .with_primary_label(
-                                            op.span(),
-                                            "attempted to yield to parent with mismatched \
-                                             argument types",
-                                        )
-                                        .with_secondary_label(
-                                            expected.span(),
-                                            format!("expected {expected_ty}, got {given_ty}"),
-                                        )
-                                        .into_report());
-                                }
-
-                                let value = self.get_value(&arg)?;
-                                self.set_value(*result as ValueRef, value);
-                            }
+                            self.bind_receiver_results(&op, parent, &arguments)?;
 
                             // Yield
                             next_op = parent.next();
@@ -831,55 +781,54 @@ impl HirEvaluator {
                             }
                             continue 'op;
                         }
+                        ControlFlowEffect::Exit {
+                            target,
+                            to: RegionBranchPoint::Parent,
+                            arguments,
+                        } => {
+                            // A `break`: control leaves `target` and EVERY intermediate op
+                            // between here and it. `target` is not the immediate parent, which is
+                            // the whole reason this is not a `Yield` — resuming after
+                            // `region.parent()` would resume inside the loop being left, and the
+                            // loop would run again.
+                            self.bind_receiver_results(&op, target, &arguments)?;
+
+                            next_op = target.next();
+                            next_block = target.parent();
+                            if let Some(parent_region) = next_block.and_then(|block| block.parent())
+                            {
+                                region = parent_region;
+                                next_region = Some(parent_region);
+                            } else {
+                                next_region = None;
+                            }
+
+                            if next_op.is_none() {
+                                break 'region;
+                            }
+                            continue 'op;
+                        }
                         ControlFlowEffect::Yield {
                             successor: RegionBranchPoint::Child(successor),
                             arguments,
                         } => {
-                            // Check that arguments match successor region entry block signature
-                            let successor_region = successor.borrow();
-                            let dest = successor_region.entry();
-                            if dest.num_arguments() != arguments.len() {
-                                return Err(self
-                                    .error("evaluation failed")
-                                    .with_primary_label(
-                                        op.span(),
-                                        format!(
-                                            "attempted to yield to {dest} with {} arguments, but \
-                                             {} were expected",
-                                            dest.num_arguments(),
-                                            arguments.len()
-                                        ),
-                                    )
-                                    .into_report());
-                            }
-                            for (param, arg) in dest.arguments().iter().zip(arguments.iter()) {
-                                let expected = param.borrow();
-                                let expected_ty = expected.ty();
-                                let given = arg.borrow();
-                                let given_ty = given.ty();
-                                if expected_ty != given_ty {
-                                    return Err(self
-                                        .error("evaluation failed")
-                                        .with_primary_label(
-                                            op.span(),
-                                            format!(
-                                                "attempted to yield to {dest} with mismatched \
-                                                 argument types"
-                                            ),
-                                        )
-                                        .with_secondary_label(
-                                            expected.span(),
-                                            format!("expected {expected_ty}, got {given_ty}"),
-                                        )
-                                        .into_report());
-                                }
-
-                                let value = self.get_value(&arg)?;
-                                self.set_value(*param as ValueRef, value);
-                            }
+                            self.bind_region_entry_arguments(&op, successor, &arguments)?;
 
                             // Yield
                             next_region = Some(successor);
+                            continue 'region;
+                        }
+                        ControlFlowEffect::Exit {
+                            to: RegionBranchPoint::Child(header),
+                            arguments,
+                            ..
+                        } => {
+                            // A `continue`: control re-enters the TARGET's header, past every
+                            // intermediate op. The header's entry-block arguments receive the
+                            // exit's operands, exactly as an `scf.yield` back edge does.
+                            self.bind_region_entry_arguments(&op, header, &arguments)?;
+
+                            next_region = Some(header);
                             continue 'region;
                         }
                         ControlFlowEffect::Call { callee, arguments } => {
@@ -929,6 +878,117 @@ impl HirEvaluator {
         Ok(results)
     }
 
+    /// Bind `arguments` to the results of `receiver`, checking arity and types first.
+    ///
+    /// `receiver` is the op control is transferring OUT of: the immediate parent for an
+    /// `scf.yield` to parent, and the addressed ancestor for an `scf.break`. Nothing else about
+    /// the two cases differs, which is why they share this.
+    fn bind_receiver_results(
+        &mut self,
+        from: &Operation,
+        receiver: OperationRef,
+        arguments: &ValueRange<'static, 4>,
+    ) -> Result<(), Report> {
+        let receiver_op = receiver.borrow();
+        if receiver_op.num_results() != arguments.len() {
+            return Err(self
+                .error("evaluation failed")
+                .with_primary_label(
+                    from.span(),
+                    format!(
+                        "attempted to yield to parent with {} arguments, but {} were expected",
+                        receiver_op.num_results(),
+                        arguments.len()
+                    ),
+                )
+                .with_secondary_label(receiver_op.span(), "this is the receiving operation")
+                .into_report());
+        }
+        log::debug!(target: "eval", "  <= {}",
+            DisplayValues::new(receiver_op.results().iter().zip(arguments.iter()).map(|(result, arg)| {
+            MaterializedValue {
+                id: *result as ValueRef,
+                value: self.get_value(&arg).unwrap(),
+            }
+        })));
+        for (result, arg) in receiver_op.results().iter().zip(arguments.iter()) {
+            let expected = result.borrow();
+            let expected_ty = expected.ty();
+            let given = arg.borrow();
+            let given_ty = given.ty();
+            if expected_ty != given_ty {
+                return Err(self
+                    .error("evaluation failed")
+                    .with_primary_label(
+                        from.span(),
+                        "attempted to yield to parent with mismatched argument types",
+                    )
+                    .with_secondary_label(
+                        expected.span(),
+                        format!("expected {expected_ty}, got {given_ty}"),
+                    )
+                    .into_report());
+            }
+
+            let value = self.get_value(&arg)?;
+            self.set_value(*result as ValueRef, value);
+        }
+        Ok(())
+    }
+
+    /// Bind `arguments` to the entry-block arguments of `dest`, checking arity and types first.
+    ///
+    /// `dest` is a region of the immediate parent for an `scf.yield`/`scf.condition`, and the
+    /// addressed ancestor's header region for an `scf.continue`.
+    fn bind_region_entry_arguments(
+        &mut self,
+        from: &Operation,
+        dest: RegionRef,
+        arguments: &ValueRange<'static, 4>,
+    ) -> Result<(), Report> {
+        let dest_region = dest.borrow();
+        let dest_block = dest_region.entry();
+        if dest_block.num_arguments() != arguments.len() {
+            return Err(self
+                .error("evaluation failed")
+                .with_primary_label(
+                    from.span(),
+                    format!(
+                        "attempted to yield to {dest_block} with {} arguments, but {} were \
+                         expected",
+                        dest_block.num_arguments(),
+                        arguments.len()
+                    ),
+                )
+                .into_report());
+        }
+        for (param, arg) in dest_block.arguments().iter().zip(arguments.iter()) {
+            let expected = param.borrow();
+            let expected_ty = expected.ty();
+            let given = arg.borrow();
+            let given_ty = given.ty();
+            if expected_ty != given_ty {
+                return Err(self
+                    .error("evaluation failed")
+                    .with_primary_label(
+                        from.span(),
+                        format!(
+                            "attempted to yield to {dest_block} with mismatched argument types"
+                        ),
+                    )
+                    .with_secondary_label(
+                        expected.span(),
+                        format!("expected {expected_ty}, got {given_ty}"),
+                    )
+                    .into_report());
+            }
+
+            let value = self.get_value(&arg)?;
+            self.set_value(*param as ValueRef, value);
+        }
+        Ok(())
+    }
+
     /// Evaluate `op` and verify it's results (if applicable).
     ///
     /// This is intended to be called from `eval_region`. See `eval_op_and_gather_results` if you
@@ -962,7 +1022,10 @@ impl HirEvaluator {
             | ControlFlowEffect::Yield {
                 successor: RegionBranchPoint::Parent,
                 ..
-            }) => return Ok(effect),
+            }
+            // An early exit is a terminator with no results of its own; whatever results are
+            // produced belong to the target, and `eval_region` binds them there.
+            | ControlFlowEffect::Exit { .. }) => return Ok(effect),
             ControlFlowEffect::Yield {
                 successor,
                 ref arguments,
@@ -1062,6 +1125,20 @@ impl HirEvaluator {
                 }
                 RegionBranchPoint::Child(region) => self.eval_region(op, region),
             },
+            // An early exit leaves `op` AND every op between it and the target, so it cannot be
+            // resolved by a helper whose whole contract is "evaluate this one op and collect what
+            // it produced". Reaching here means a caller evaluated an early exit in isolation,
+            // outside the region walk that owns the ops it unwinds — a malformed request, not a
+            // malformed program, and it must not be answered with an empty result set.
+            ControlFlowEffect::Exit { target, .. } => Err(self
+                .error("evaluation failed")
+                .with_primary_label(
+                    op.span(),
+                    "this operation exits an enclosing operation, and cannot be evaluated in \
+                     isolation",
+                )
+                .with_secondary_label(target.borrow().span(), "control would transfer out of here")
+                .into_report()),
         }
     }
 

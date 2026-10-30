@@ -335,9 +335,27 @@ pub fn compile_manifest(
     context: Rc<Context>,
     dependencies: &[PackageInterface],
 ) -> CompilerResult<CodegenOutput> {
+    compile_manifest_with_dependencies(
+        manifest_path,
+        filesystem_cache_dir,
+        namespace,
+        context,
+        dependencies,
+        None,
+    )
+}
+
+pub(crate) fn compile_manifest_with_dependencies(
+    manifest_path: &Path,
+    filesystem_cache_dir: Option<&Path>,
+    namespace: Option<midenc_hir::SymbolPath>,
+    context: Rc<Context>,
+    dependencies: &[PackageInterface],
+    linked_inputs: Option<super::super::backend::LinkedCodegenInputs<'_>>,
+) -> CompilerResult<CodegenOutput> {
     let session = context.session_rc();
     let wasm = build_manifest_to_wasm(manifest_path, filesystem_cache_dir, &session)?;
-    lower_wasm_artifact(wasm, namespace, context, dependencies)
+    super::wasm::lower_wasm_input(&wasm, namespace, context, dependencies, linked_inputs)
 }
 
 /// Run `cargo` over the project the manifest at `manifest_path` declares, and hand back the
@@ -408,13 +426,14 @@ pub fn build_manifest_to_wasm(
 ///
 /// `namespace` is the target's component namespace, the Miden path the component is rooted at;
 /// `None` for a target without one, e.g. an executable.
+#[cfg(test)]
 fn lower_wasm_artifact(
     wasm: InputFile,
     namespace: Option<midenc_hir::SymbolPath>,
     context: Rc<Context>,
     dependencies: &[PackageInterface],
 ) -> CompilerResult<CodegenOutput> {
-    super::wasm::lower_wasm_input(&wasm, namespace, context, dependencies)
+    super::wasm::lower_wasm_input(&wasm, namespace, context, dependencies, None)
 }
 
 /// Compile the Rust source `input` to WebAssembly, and hand back the file it produced.
@@ -1188,6 +1207,7 @@ impl RustProjectFrontend {
         // Computed here, from this dependency's target context, because the nested build has
         // no view of the dependency graph: see `compile_manifest`.
         let dependencies = super::wasm::dependency_interfaces(cx)?;
+        let linked_dependencies = super::super::assembly::direct_dependencies(cx.assembly())?;
         crate::cargo::cargo_build(
             assembly.package.name().to_string(),
             assembly.target,
@@ -1197,6 +1217,10 @@ impl RustProjectFrontend {
             &cargo_opts,
             source_manager,
             &dependencies,
+            cx.link_inputs().map(|session| super::super::backend::LinkedCodegenInputs {
+                session,
+                dependencies: &linked_dependencies,
+            }),
         )
     }
 

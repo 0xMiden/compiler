@@ -1,4 +1,6 @@
 mod advice;
+mod aggregates;
+mod asm;
 mod assertions;
 mod cast;
 mod constants;
@@ -9,6 +11,9 @@ mod mem;
 mod primop;
 
 pub use self::{
-    advice::*, assertions::*, cast::*, constants::*, crypto::*, events::*, invoke::*, mem::*,
-    primop::*,
+    advice::*, aggregates::*, asm::*, assertions::*, cast::*, constants::*, crypto::*, events::*,
+    invoke::*, mem::*, primop::*,
 };
+
+#[cfg(test)]
+mod address_tests;

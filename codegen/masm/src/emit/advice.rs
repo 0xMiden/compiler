@@ -93,10 +93,10 @@ mod tests {
             Type::U64,
             Type::I64,
             Type::U128,
-            Type::Never,
-            Type::from(midenc_hir::ArrayType::new(Type::U8, 0)),
             Type::from(midenc_hir::ArrayType::new(Type::Felt, 4)),
         ] {
+            // Zero-sized types are rejected by ValueLayout before an Operand can be built.
+            // Exercise emitter validation with constructible, nonempty multi-lane operands.
             for index in 0..4 {
                 let mut types = vec![Type::Felt; 4];
                 types[index] = ty.clone();

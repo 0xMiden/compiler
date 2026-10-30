@@ -1390,3 +1390,50 @@ fn generic_event_authority_does_not_transfer_to_typed_or_ordinary_units() {
         );
     }
 }
+
+#[test]
+fn wide_byte_conversion_retains_only_source_memory_authority() {
+    let mut fixture = Fixture::new(0, 0);
+    fixture.effects.may_trap = true;
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 1,
+    };
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    let mut body = vec![
+        inst(Instruction::Locaddr(0.into())),
+        inst(Instruction::MulImm(Felt::from(4u32).into())),
+    ];
+    body.extend(crate::emit::addressing::ByteAddressing::Wide.native_ptr().into_iter().map(inst));
+    body.extend([inst(Instruction::MemLoad), inst(Instruction::Drop), inst(Instruction::Drop)]);
+    fixture.run(body.clone()).unwrap();
+    fixture.effects.memory = SourceMemoryEffects::default();
+    assert!(fixture.run(body.clone()).is_err());
+    let mut compiler = Fixture::new(0, 0).scratch(1);
+    compiler.effects.memory = SourceMemoryEffects::READ;
+    compiler.effects.may_trap = true;
+    assert_eq!(compiler.run(body).unwrap_err().category, DiagnosticCategory::IllegalStackAccess);
+}
+
+#[test]
+fn element_gep_keeps_exact_source_frame_extent() {
+    let mut fixture = Fixture::new(0, 0);
+    fixture.locals = SourceLocalLayout {
+        offsets: vec![0],
+        extent: 2,
+    };
+    fixture.effects.memory = SourceMemoryEffects::READ;
+    for offset in [1u32, 2] {
+        let result = fixture.run(vec![
+            inst(Instruction::Locaddr(0.into())),
+            inst(Instruction::AddImm(Felt::from(offset).into())),
+            inst(Instruction::MemLoad),
+            inst(Instruction::Drop),
+        ]);
+        if offset == 1 {
+            result.unwrap();
+        } else {
+            assert!(result.is_err());
+        }
+    }
+}

@@ -1,22 +1,26 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, Op, OperationName, OperationRef,
-    ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Spanned, Symbol,
-    TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, FxHashSet, Op, OperationName,
+    OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec,
+    Spanned, Symbol, TraceTarget, ValueRef,
     dialects::{
-        builtin::{Function, attributes::LocalVariable},
+        builtin::{
+            Function,
+            attributes::{LocalVariable, LocalVariableAttr},
+        },
         debuginfo::{
             DIBuilder, DebugDeclare, DebugValue,
             attributes::{ExpressionOp, FrameBase},
         },
     },
+    effects::MemoryEffectOpInterface,
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
 };
 
-use crate::{LoadLocal, StoreLocal};
+use crate::{LoadLocal, LocalAddress, LocalByteAddress, StoreLocal};
 
 /// The value `store` writes, read from the operation: a promotion earlier in the same run may have
 /// replaced it, and the operation, not a copy taken during the scan, holds the current one.
@@ -203,7 +207,13 @@ impl Pass for Local2Reg {
 
         let mut loaded = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
         let mut stored = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
+        let mut pinned = FxHashSet::default();
+        let function_op = op;
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
+            // Function effects summarize the body; inspect the body's declarations directly.
+            if op == function_op {
+                return;
+            }
             let operation = op.borrow();
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
@@ -224,6 +234,18 @@ impl Pass for Local2Reg {
                     ProgramPoint::before(op),
                 );
                 stored.entry(local).or_default().push(op);
+            } else if let Some(address) = operation.downcast_ref::<LocalAddress>() {
+                pinned.insert(*address.get_local());
+            } else if let Some(address) = operation.downcast_ref::<LocalByteAddress>() {
+                pinned.insert(*address.get_local());
+            } else if let Some(effects) = operation.as_trait::<dyn MemoryEffectOpInterface>() {
+                for effect in effects.effects() {
+                    if let Some(attribute) = effect.attribute()
+                        && let Some(local) = attribute.borrow().downcast_ref::<LocalVariableAttr>()
+                    {
+                        pinned.insert(*local.as_value());
+                    }
+                }
             }
         });
 
@@ -234,6 +256,9 @@ impl Pass for Local2Reg {
         let mut locals = SmallVec::<[_; 4]>::from_iter(loaded.keys().chain(stored.keys()).copied());
         locals.sort_by_key(|local| local.as_usize());
         locals.dedup_by_key(|local| local.as_usize());
+        // Address computations are pure, but publish pointers whose readers are invisible to
+        // direct local loads. Other attribute-level memory effects also require the slot.
+        locals.retain(|local| !pinned.contains(local));
 
         if locals.is_empty() {
             log::debug!(
@@ -419,6 +444,26 @@ mod tests {
 
     use super::Local2Reg;
     use crate::HirOpBuilder;
+
+    #[test]
+    fn preserves_stores_read_through_local_address() {
+        let mut test = Test::new("address_taken", &[Type::I32], &[Type::I32]);
+        let store;
+        {
+            let mut builder = test.function_builder();
+            let local = builder.alloc_local(Type::I32);
+            let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            store = builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            let addr = builder.local_address(local, SourceSpan::UNKNOWN).unwrap();
+            let loaded = builder.load(addr, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([loaded], SourceSpan::UNKNOWN).unwrap();
+        }
+        test.apply_pass::<Local2Reg>(true).unwrap();
+        assert!(
+            store.as_operation_ref().parent().is_some(),
+            "pointer readers keep the store live"
+        );
+    }
 
     #[test]
     fn promotes_fpi_inputs_and_preserves_semantic_operand_order() {

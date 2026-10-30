@@ -1037,3 +1037,141 @@ fn commutative_helper_projection_preserves_literal_obligations() {
         );
     }
 }
+
+#[test]
+fn source_pointer_selector_checks_word_read_authority_before_exact_token_equality() {
+    use super::super::{
+        replay::{ActiveUnit, Cursor, Verifier},
+        stack::State,
+        tokens::Identity,
+    };
+    for (extent, identity, tainted, read, expected) in [
+        (4, Identity::FrameAddress(0), false, true, None),
+        (
+            5,
+            Identity::FrameAddress(4),
+            false,
+            true,
+            Some(DiagnosticCategory::InvalidSpillSlotRead),
+        ),
+        (
+            4,
+            Identity::FrameAddress(4),
+            false,
+            true,
+            Some(DiagnosticCategory::InvalidSpillSlotRead),
+        ),
+        (
+            8,
+            Identity::FrameAddress(1),
+            false,
+            true,
+            Some(DiagnosticCategory::IllegalStackAccess),
+        ),
+        (
+            4,
+            Identity::FrameAddress(0),
+            true,
+            true,
+            Some(DiagnosticCategory::InvalidSpillSlotRead),
+        ),
+        (
+            4,
+            Identity::Input(0),
+            true,
+            true,
+            Some(DiagnosticCategory::InvalidSpillSlotRead),
+        ),
+        (4, Identity::Input(0), false, true, None),
+        (4, Identity::Literal(400), false, true, None),
+        (4, Identity::Literal((1u64 << 32) - 4), false, true, None),
+        (
+            4,
+            Identity::Literal(401),
+            false,
+            true,
+            Some(DiagnosticCategory::IllegalStackAccess),
+        ),
+        (
+            4,
+            Identity::Literal(1u64 << 32),
+            false,
+            true,
+            Some(DiagnosticCategory::IllegalStackAccess),
+        ),
+        (
+            4,
+            Identity::FrameAddress(0),
+            false,
+            false,
+            Some(DiagnosticCategory::InvalidSelectedLowering),
+        ),
+    ] {
+        let mut fixture = Fixture::new(1, 0).scratch(4);
+        fixture.locals = SourceLocalLayout {
+            offsets: vec![0],
+            extent,
+        };
+        fixture.effects.may_trap = true;
+        if read {
+            fixture.effects.memory = SourceMemoryEffects::READ;
+        }
+        // Even an explicit compiler borrow cannot authorize the source-memory call form.
+        fixture.scratch_effects.push(ScratchEffect::Borrow {
+            object: ScratchId(0),
+            offset: 0,
+            size: 4,
+            read: true,
+            write: false,
+            definite_write: false,
+            retained: false,
+        });
+        fixture.proof.calls.push(CallSite {
+            instruction: Instruction::DynExec,
+            abi: ProcedureAbi::new(CallingConvention::SameContext, 0, 0).unwrap(),
+            inputs: vec![],
+            path: vec![],
+            truncate: false,
+            outputs: vec![],
+            publications: vec![],
+            selector: Some(SelectorEvidence::SourcePointer {
+                address: Fixture::input(0),
+            }),
+        });
+        let plan = fixture.plan();
+        let frame = fixture.frame();
+        let mut verifier = Verifier::new(&plan, &frame).unwrap();
+        let pointer = verifier.tokens.intern(identity.clone());
+        if tainted {
+            let compiler = verifier.tokens.intern(Identity::FrameAddress(extent));
+            verifier.tokens.add_origins(pointer, verifier.tokens.origins(compiler));
+        }
+        let mut state = State::new(vec![pointer], BTreeMap::from([(Fixture::input(0), pointer)]));
+        // Borrowed cells initialized independently; source-pointer rejection cannot rely on staleness.
+        let value = verifier.tokens.fresh();
+        for cell in extent..extent + 4 {
+            state.cells.insert(cell, value);
+        }
+        let mut cursor = Cursor {
+            active: Some(ActiveUnit {
+                id: SelectedStepId(0),
+                incoming: state.clone(),
+                readonly: BTreeMap::new(),
+                call: 0,
+                path: vec![],
+            }),
+            ..Default::default()
+        };
+        let result = verifier.instruction(&Instruction::DynExec, &mut state, &mut cursor);
+        match expected {
+            None => {
+                result.unwrap();
+            }
+            Some(category) => assert_eq!(
+                result.unwrap_err().category,
+                category,
+                "{identity:?}, tainted={tainted}, read={read}"
+            ),
+        }
+    }
+}

@@ -1,4 +1,6 @@
 //! Validated raw value layouts and explicitly declared lane equalities.
+mod raw;
+
 use alloc::vec::Vec;
 
 use midenc_hir::Type;
@@ -15,22 +17,25 @@ pub(crate) struct ValueLayout {
 impl ValueLayout {
     /// Reject zero-sized, unrepresentable, or wider-than-word operands before planning.
     pub fn new(ty: Type) -> Result<Self, PlanError> {
-        let raw = ty.clone().to_raw_parts().ok_or_else(|| {
-            PlanError::new(
-                DiagnosticCategory::InvalidSelectedLowering,
-                "operand has no raw representation",
-            )
-        })?;
-        if ty.size_in_bytes() == 0 || raw.is_empty() || raw.len() > miden_core::WORD_SIZE {
+        // Enforce the public width boundary before decomposing aggregates. Oversized linked
+        // signatures are valid package metadata, but cannot become ordinary stack values.
+        if !matches!(checked_size_in_bits(&ty), Some(1..=128)) {
             return Err(PlanError::new(
                 DiagnosticCategory::InvalidSelectedLowering,
                 "ordinary operands must have one to four raw lanes",
             ));
         }
-        Ok(Self {
-            ty,
-            raw: raw.into_iter().collect(),
-        })
+        let raw = raw::parts(&ty);
+        if raw.is_empty()
+            || raw.len() > miden_core::WORD_SIZE
+            || raw.iter().any(|part| !matches!(part.size_in_bytes(), 1..=4))
+        {
+            return Err(PlanError::new(
+                DiagnosticCategory::InvalidSelectedLowering,
+                "ordinary operands must have one to four raw lanes",
+            ));
+        }
+        Ok(Self { ty, raw })
     }
 
     /// Semantic type whose raw representation was validated at construction.
@@ -39,7 +44,6 @@ impl ValueLayout {
     }
 
     /// Lane types in stack order, with the first lane nearest the top.
-    #[cfg(test)]
     pub fn raw_parts(&self) -> &[Type] {
         &self.raw
     }
@@ -47,6 +51,26 @@ impl ValueLayout {
     /// Number of physical stack elements needed for one copy of this value.
     pub fn lanes(&self) -> u8 {
         self.raw.len() as u8
+    }
+}
+
+/// Size before raw decomposition, using checked arithmetic for untrusted aggregate metadata.
+/// Physical pointers have their own fixed size; only inline array elements are traversed.
+fn checked_size_in_bits(ty: &Type) -> Option<usize> {
+    match ty {
+        Type::Array(array) => match array.len() {
+            0 => Some(0),
+            1 => checked_size_in_bits(array.element_type()),
+            count => {
+                let size = checked_size_in_bits(array.element_type())?;
+                let alignment = array.min_alignment().checked_mul(8)?;
+                let padded = size.checked_add(alignment.checked_sub(1)?)? / alignment * alignment;
+                size.checked_add(padded.checked_mul(count - 1)?)
+            }
+        },
+        Type::Struct(structure) => structure.size().checked_mul(8),
+        Type::Enum(enumeration) => enumeration.size_in_bytes().checked_mul(8),
+        _ => Some(ty.size_in_bits()),
     }
 }
 
