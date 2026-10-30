@@ -191,10 +191,10 @@ fn has_sdk_layout(ty: &Type, record: &CoreRecord) -> bool {
         })
 }
 
-/// The name a type named `name` is declared under: the core item of a core-types id, e.g.
-/// `account-id` for `miden:base/core-types@2.0.0/account-id`, and else the last segment of a
+/// The name the manifest type `name` is declared or used under: the core item of a core-types id,
+/// e.g. `account-id` for `miden:base/core-types@2.0.0/account-id`, and else the last segment of a
 /// Miden path (see [`naming::short_name`]).
-fn short_name(name: &str) -> &str {
+fn declared_name(name: &str) -> &str {
     sdk_core_item(name).unwrap_or_else(|| naming::short_name(name))
 }
 
@@ -309,7 +309,7 @@ impl TypeSet {
         if let Some(mapped) = self.map_by_name(ty, &name)? {
             return Ok(mapped);
         }
-        let wit_name = naming::kebab(short_name(&name));
+        let wit_name = naming::kebab(declared_name(&name));
         if let Some(mapped) = self.core_item(&wit_name, ty)? {
             return Ok(mapped);
         }
@@ -349,7 +349,7 @@ impl TypeSet {
         if let Some(mapped) = self.map_by_name(ty, name)? {
             return Ok(mapped);
         }
-        let wit_name = naming::kebab(short_name(name));
+        let wit_name = naming::kebab(declared_name(name));
         if let Some(mapped) = self.core_item(&wit_name, ty)? {
             return Ok(mapped);
         }
@@ -454,7 +454,7 @@ const PRELUDE_TYPES: &[&str] = &["Option", "Result", "String", "Vec"];
 /// has no WIT spelling, or its Rust spelling (see [`naming::rust_type_ident`]) is `Self` or
 /// one of the [`PRELUDE_TYPES`].
 fn local_ident(name: &str) -> Result<String, String> {
-    let short = short_name(name);
+    let short = declared_name(name);
     let ident = naming::ident(short).map_err(|err| format!("unsupported type `{name}`: {err}"))?;
     let rust = naming::rust_type_ident(short, &ident)
         .map_err(|err| format!("unsupported type `{name}`: {err}"))?;
