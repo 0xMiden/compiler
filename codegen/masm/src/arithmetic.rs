@@ -35,6 +35,10 @@ impl Pass for OptimizeMasmArithmetic {
         "masm-arithmetic"
     }
 
+    fn argument(&self) -> &'static str {
+        "masm-arithmetic"
+    }
+
     fn can_schedule_on(&self, _name: &OperationName) -> bool {
         true
     }

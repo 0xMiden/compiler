@@ -784,16 +784,17 @@ mod tests {
     fn the_masm_legalization_precedes_final_operand_sinking() {
         let (component, context) = build_component();
         let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
-        let functions =
-            "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,canonicalizer";
+        let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,\
+                         canonicalizer,masm-arithmetic";
         let last = "sink-operand-defs";
         assert_eq!(
             pipeline,
             alloc::format!(
                 "builtin.world(builtin.component(builtin.module(builtin.function({functions})),\
                  builtin.function({functions}),legalize-for-masm,builtin.module(builtin.\
-                 function({last})),builtin.function({last})),builtin.module(legalize-for-masm),\
-                 builtin.function(legalize-for-masm))"
+                 function({last})),builtin.function({last})),builtin.module(masm-arithmetic),\
+                 builtin.module(legalize-for-masm),builtin.function(masm-arithmetic),builtin.\
+                 function(legalize-for-masm))"
             )
         );
     }
@@ -822,7 +823,7 @@ mod tests {
         )()
         .expect("an empty world should build");
         let pipeline = textual_pipeline(world.as_operation_ref(), context);
-        assert!(pipeline.ends_with(",legalize-for-masm)"), "{pipeline}");
+        assert!(pipeline.ends_with(",masm-arithmetic,legalize-for-masm)"), "{pipeline}");
     }
 
     #[test]
