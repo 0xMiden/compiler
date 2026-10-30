@@ -64,7 +64,7 @@ fn shl_of_a_constant_by_a_variable_count() {
 /// A constant shift count next to an equal-valued constant operand of an add still folds into
 /// the shift. The frontend emits a separate `u32` count constant, so the two share nothing.
 #[test]
-fn constant_shared_by_a_shift_count_and_an_add() {
+fn a_count_constant_next_to_an_equal_operand_constant_still_folds() {
     let (test, package, masm) = compile(
         "i32",
         "local.get 0

@@ -1012,6 +1012,7 @@ fn semantic_alias_contract_rejects_physical_effects_and_incomplete_mappings() {
 /// Ways a literal-published count consumed as an immediate can be misdeclared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ImmediateDefect {
+    /// The sound declaration.
     None,
     /// The evidence names a value without a literal reconstruction as the immediate.
     NotLiteral,
@@ -1019,6 +1020,16 @@ enum ImmediateDefect {
     WrongLiteral,
     /// The immediate is also demanded as a stack lane.
     AlsoStackInput,
+    /// The immediate is also demanded as a stored input.
+    AlsoStoredInput,
+    /// The count is published on the stack, and its consumer takes it both as an immediate and
+    /// as a stack lane.
+    StackPublishedCountAlsoLane,
+    /// The literal publication defines a value without a literal reconstruction; the consumer
+    /// names no immediate.
+    LiteralWithoutLiteralValue,
+    /// A forward edge binds the literal into a parameter of the next segment.
+    BoundIntoParameter,
     /// The immediate is not a semantic input of its consumer.
     NotSemanticInput,
     /// The literal publication claims a semantic input.
@@ -1056,7 +1067,8 @@ impl GeneratedDefinition for ImmediateCount {
                     index: 0,
                 },
                 layout: ValueLayout::new(Type::U32).unwrap(),
-                reconstruction: Some(Reconstruction::Literal(vec![Felt::from(3u32)])),
+                reconstruction: (self.0 != LiteralWithoutLiteralValue)
+                    .then(|| Reconstruction::Literal(vec![Felt::from(3u32)])),
             },
         );
         let consumer = &mut evidence.program.segments[0].units[0];
@@ -1065,8 +1077,14 @@ impl GeneratedDefinition for ImmediateCount {
         if self.0 != NotSemanticInput {
             consumer.semantic_inputs.push(ValueId(2));
         }
-        if self.0 == AlsoStackInput {
+        if matches!(self.0, AlsoStackInput | StackPublishedCountAlsoLane) {
             consumer.stack_inputs.push(count);
+        }
+        if self.0 == AlsoStoredInput {
+            consumer.stored_inputs.push(StoredInput {
+                id: StoredInputId(0),
+                value: StoredValue::Atom(count),
+            });
         }
         let mut literal = consumer.clone();
         literal.id = SelectedStepId(0);
@@ -1078,12 +1096,69 @@ impl GeneratedDefinition for ImmediateCount {
             vec![]
         };
         literal.stack_inputs = vec![];
+        literal.stored_inputs = vec![];
         literal.outputs = vec![count];
-        literal.publication = OutputPublication::Literal;
+        literal.publication = if self.0 == StackPublishedCountAlsoLane {
+            OutputPublication::Stack
+        } else {
+            OutputPublication::Literal
+        };
         literal.effects.may_trap = self.0 == LiteralHasEffects;
         evidence.program.segments[0].units.insert(0, literal);
         if self.0 == BoundAcrossEdge {
             evidence.program.edges[0].bindings[0].source = ValueId(2);
+        }
+        if self.0 == BoundIntoParameter {
+            // The edge check rejects the forward binding before data flow would look at what
+            // the return edge of the second segment can see.
+            evidence.program.values.insert(
+                ValueId(3),
+                SelectedValue {
+                    id: ValueId(3),
+                    origin: ValueOrigin::Parameter {
+                        segment: SegmentId(1),
+                        index: 0,
+                    },
+                    layout: ValueLayout::new(Type::U32).unwrap(),
+                    reconstruction: Option::None,
+                },
+            );
+            evidence.program.segments.push(SelectedSegment {
+                content_parameters: vec![],
+                id: SegmentId(1),
+                parameters: vec![ValueId(3)],
+                units: vec![],
+            });
+            evidence.program.edges = vec![
+                TransferEdge {
+                    content_bindings: vec![],
+                    id: EdgeId(0),
+                    source: SegmentId(0),
+                    destination: Some(SegmentId(1)),
+                    kind: EdgeKind::Forward,
+                    bindings: vec![ParameterBinding {
+                        destination: ValueId(3),
+                        source: ValueId(2),
+                    }],
+                },
+                TransferEdge {
+                    content_bindings: vec![],
+                    id: EdgeId(1),
+                    source: SegmentId(1),
+                    destination: Option::None,
+                    kind: EdgeKind::Return,
+                    bindings: vec![ParameterBinding {
+                        destination: ValueId(1),
+                        source: ValueId(1),
+                    }],
+                },
+            ];
+            evidence.program.structure = ControlTree::Sequence(vec![
+                ControlTree::Segment(SegmentId(0)),
+                ControlTree::Edge(EdgeId(0)),
+                ControlTree::Segment(SegmentId(1)),
+                ControlTree::Edge(EdgeId(1)),
+            ]);
         }
         evidence.program.source_map = BTreeMap::from([
             (
@@ -1123,7 +1198,11 @@ impl GeneratedDefinition for ImmediateCount {
                         Atom::new(ValueId(1), 0),
                         Atom::new(ValueId(0), 0),
                     )]),
-                    immediates: vec![(immediate, Felt::from(registered))],
+                    immediates: if self.0 == LiteralWithoutLiteralValue {
+                        vec![]
+                    } else {
+                        vec![(immediate, Felt::from(registered))]
+                    },
                     ..Default::default()
                 },
             ),
@@ -1143,6 +1222,10 @@ fn immediate_inputs_are_lane_free_literals_named_by_their_consumer() {
         (NotLiteral, "immediate input is not a literal value"),
         (WrongLiteral, "immediate input disagrees with its literal value"),
         (AlsoStackInput, "literal publication demanded as a physical input"),
+        (AlsoStoredInput, "literal publication demanded as a physical input"),
+        (StackPublishedCountAlsoLane, "immediate input is not a lane-free semantic input"),
+        (LiteralWithoutLiteralValue, "literal publication lacks a literal value"),
+        (BoundIntoParameter, "literal publication bound across an edge"),
         (NotSemanticInput, "immediate input is not a lane-free semantic input"),
         (LiteralHasInputs, "literal publication has semantic inputs"),
         (LiteralHasEffects, "semantic publication has a physical or effectful contract"),
