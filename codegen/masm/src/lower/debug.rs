@@ -146,7 +146,8 @@ impl Observation {
 
 /// One currently valid lane location: a physical location, or the literal the lane reconstructs
 /// to. Cells remain symbolic until frame assignment.
-/// Unavailable includes missing values and lanes buried beyond the VM's accessible window.
+/// Unavailable includes missing values and physical lanes buried beyond the VM's accessible
+/// window; a literal lane has no depth, so it is never unavailable for that reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Location {
     /// Zero-based raw depth, with lane zero nearest the top. Only depths0..15 are accessible.

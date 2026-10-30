@@ -1376,8 +1376,8 @@ impl OpEmitter<'_> {
     /// Pops an integer value off the stack, `a`, and performs `a >> <imm>`, arithmetic for a
     /// signed `a` and logical otherwise.
     ///
-    /// Unsigned 32-bit and narrower values use the immediate instruction form; the other types
-    /// push `imm`.
+    /// Unsigned 32-bit and narrower values use the immediate instruction form; `u64`, `i64`
+    /// and `i32` push `imm`. `i8` and `i16` are unsupported.
     pub fn shr_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
