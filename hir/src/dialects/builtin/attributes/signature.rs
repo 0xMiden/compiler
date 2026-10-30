@@ -218,13 +218,6 @@ impl AbiParam {
         self.attrs.contains(&crate::interner::symbols::Sret)
     }
 
-    /// Returns the number of field elements the values of `params` occupy on the operand stack.
-    ///
-    /// A 64-bit value takes two field elements; a felt, a pointer or a narrower integer takes one.
-    pub fn felts_of(params: &[AbiParam]) -> usize {
-        params.iter().map(|param| param.ty.size_in_felts()).sum()
-    }
-
     pub fn extension(&self) -> ArgumentExtension {
         match self.attrs.find(&crate::interner::symbols::Extension).get() {
             None => ArgumentExtension::None,
@@ -400,12 +393,6 @@ impl Signature {
     /// Returns a slice containing the parameters for this function
     pub fn params(&self) -> &[AbiParam] {
         self.params.as_slice()
-    }
-
-    /// Returns the number of field elements the parameters occupy on the operand stack (see
-    /// [AbiParam::felts_of])
-    pub fn param_felts(&self) -> usize {
-        AbiParam::felts_of(self.params())
     }
 
     /// Returns the parameter at `index`, if present

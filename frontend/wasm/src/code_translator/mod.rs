@@ -895,7 +895,7 @@ fn translate_call_indirect<B: ?Sized + Builder>(
 
     // The lowering schedules the table index on the operand stack on top of the arguments, so
     // together they must fit in the addressable operand stack window
-    let arg_felts = signature.param_felts();
+    let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
     if arg_felts + 1 > MAX_DIRECT_STACK_FELTS {
         unsupported_diag!(
             diagnostics,
