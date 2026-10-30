@@ -513,17 +513,15 @@ impl Project {
     }
 }
 
-/// The Cargo target directory this test process builds under.
+/// The Cargo target directory this test process builds under, which the test cargo projects and
+/// the build caches live under.
 ///
 /// Derived from an absolute `CARGO_TARGET_DIR` when the process was started with one, otherwise
 /// inferred from the test executable's location. Read **once**, before [`use_shared_build_dir`]
 /// overwrites the variable, so both directories below are anchored to the same place whether the
 /// suite is invoked as `cargo test` (no ambient variable) or through `cargo make` (which sets one,
 /// `Makefile.toml`).
-///
-/// Public so that test crates can stage their own shared artifacts next to the ones this crate
-/// keeps there.
-pub fn test_target_dir() -> PathBuf {
+fn test_target_dir() -> PathBuf {
     static TARGET_DIR: OnceLock<PathBuf> = OnceLock::new();
     TARGET_DIR
         .get_or_init(|| {
