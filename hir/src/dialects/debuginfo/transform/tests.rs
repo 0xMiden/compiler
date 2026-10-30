@@ -1,6 +1,6 @@
 use alloc::{boxed::Box, rc::Rc};
 
-use super::*;
+use super::{super::capture_invalidation::tests::render, *};
 use crate::{
     FxHashSet, RegionKindInterface, SourceSpan, Type,
     dialects::{
@@ -931,7 +931,7 @@ fn check_retained_phase_after_root_erasure(
     assert!(owner.parent_op().is_none());
     assert_eq!(kill_lines(root), [1, 2]);
     let error = result.expect_err("audit accepted an unfinished phase after its root was erased");
-    let message = alloc::format!("{error}");
+    let message = render(&error);
     assert!(message.contains("capture invalidation phase outlived its audit"), "{message}");
     if body_error {
         assert!(message.contains("deliberate retained-phase pass failure"), "{message}");
@@ -1037,14 +1037,7 @@ fn capture_failure_is_reported_once_through_nested_pass_cleanup() -> Result<(), 
             (false, Some("independent pass body failure"), 0),
             (true, None, 1),
             (true, Some("independent pass body failure"), 1),
-            (
-                true,
-                Some(
-                    "capture invalidation failed: pending capture anchor erased, detached, or \
-                     changed without a mapping",
-                ),
-                2,
-            ),
+            (true, Some(ROOT_FAILURE), 2),
         ] {
             let (test, ..) = capture_fixture(&[1, 2, 3])?;
             let retained = Rc::new(RefCell::new(None));
@@ -1059,7 +1052,7 @@ fn capture_failure_is_reported_once_through_nested_pass_cleanup() -> Result<(), 
                     false,
                 )
                 .expect_err("failing pass must remain fatal without verification");
-            let message = alloc::format!("{error}");
+            let message = render(&error);
             assert_eq!(message.matches(ROOT_FAILURE).count(), expected_roots, "{message}");
             if let Some(body) = body {
                 assert!(message.contains(body), "{message}");
@@ -1098,7 +1091,7 @@ fn capture_failure_preserves_independent_out_of_order_cleanup() -> Result<(), Re
     collect_debug_ops(&root)[1].borrow_mut().erase();
     let _ = capture_invalidation_barrier(&test.context_rc()).unwrap_err();
     let error = outer.finish().unwrap_err();
-    let message = alloc::format!("{error}");
+    let message = render(&error);
     assert_eq!(message.matches("pending capture anchor").count(), 1, "{message}");
     assert_eq!(
         message.matches("capture invalidation phases completed out of order").count(),
@@ -1106,6 +1099,108 @@ fn capture_failure_preserves_independent_out_of_order_cleanup() -> Result<(), Re
         "{message}"
     );
     assert!(inner.finish().is_err());
+    assert!(!super::super::capture_invalidation::active(test.context()));
+    Ok(())
+}
+
+#[test]
+fn structured_pass_body_survives_capture_cleanup_with_provenance() -> Result<(), Report> {
+    use core::cell::RefCell;
+
+    use super::super::capture_invalidation::tests::{assert_structured, render, structured_report};
+    use crate::{
+        EntityMut, OperationName,
+        dialects::builtin::Function,
+        pass::{Pass, PassExecutionState},
+    };
+    struct FailStructured(Rc<RefCell<Option<CaptureInvalidationPhase>>>);
+    impl Pass for FailStructured {
+        type Target = Function;
+
+        fn name(&self) -> &'static str {
+            "structured-capture-pass"
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Function>,
+            _: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let root = op.as_operation_ref();
+            let context = op.as_operation().context_rc();
+            drop(op);
+            *self.0.borrow_mut() = Some(phase(root)?);
+            let record = collect_debug_ops(&root)[1];
+            let next = record.next().unwrap();
+            let mut rewriter: RewriterImpl = RewriterImpl::new(context);
+            invalidate_debug_captures(record, &mut rewriter)?;
+            next.prev().unwrap().borrow_mut().erase();
+            Err(structured_report())
+        }
+    }
+    let (test, ..) = capture_fixture(&[1, 2, 3])?;
+    let retained = Rc::new(RefCell::new(None));
+    let error = test
+        .apply_boxed_pass(Box::new(FailStructured(retained.clone())), false)
+        .unwrap_err();
+    assert_structured(&error);
+    let body = error
+        .related()
+        .unwrap()
+        .find(|diagnostic| {
+            diagnostic
+                .code()
+                .is_some_and(|code| alloc::format!("{code}") == "capture::structured")
+        })
+        .expect("structured body must remain exposed");
+    let body_message = alloc::format!("{body}");
+    assert_eq!(
+        body_message.matches("pass 'structured-capture-pass'").count(),
+        1,
+        "{body_message}"
+    );
+    let rendered = render(&error);
+    assert!(rendered.contains("structured-capture-pass"), "{rendered}");
+    assert_eq!(rendered.matches("pending capture anchor erased").count(), 1, "{rendered}");
+    assert_eq!(
+        rendered.matches("capture invalidation phase outlived its audit").count(),
+        1,
+        "{rendered}"
+    );
+    assert!(retained.borrow_mut().take().unwrap().finish().is_err());
+    Ok(())
+}
+
+#[test]
+fn replacement_failure_retains_prior_guard_poison_and_its_own_cause() -> Result<(), Report> {
+    let (test, records, _) = capture_fixture(&[1, 2])?;
+    let root = test.function().as_operation_ref();
+    let phase = phase(root)?;
+    let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+    invalidate_debug_captures(records[1], &mut rewriter)?;
+    let mut anchor = collect_debug_ops(&root)[1];
+    let chain = test
+        .context_rc()
+        .create_attribute::<super::super::attributes::InlineCallChainAttr, _>(
+            super::super::attributes::InlineCallChain::new(alloc::vec![]),
+        )
+        .as_attribute_ref();
+    anchor
+        .borrow_mut()
+        .set_attribute(super::super::attributes::INLINE_CALL_CHAIN_ATTR_NAME, chain);
+    let error = invalidate_debug_captures(anchor, &mut rewriter).unwrap_err();
+    let error = combine_capture_errors(error, phase.finish().unwrap_err());
+    let rendered = render(&error);
+    assert_eq!(
+        rendered.matches("pending capture changed before its mutation guard").count(),
+        1,
+        "{rendered}"
+    );
+    assert_eq!(rendered.matches("invalid pending capture replacement").count(), 1, "{rendered}");
     assert!(!super::super::capture_invalidation::active(test.context()));
     Ok(())
 }

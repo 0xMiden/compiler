@@ -1,7 +1,6 @@
 //! Deferred slot clears. Original capture witnesses remain immediate; only supplemental kills
 //! are solved here, from surviving IR, at an explicit rewrite/observer boundary.
 use alloc::{
-    format,
     rc::{Rc, Weak},
     string::String,
     sync::Arc,
@@ -21,48 +20,69 @@ use crate::{
     patterns::{Rewriter, RewriterImpl, RewriterListener},
 };
 
-/// Every observation of the sticky failure shares this identity. Equal messages from
-/// independent reports are deliberately not interchangeable.
-#[derive(Clone, Debug, thiserror::Error, Diagnostic)]
-#[error("{0}")]
-struct CaptureFailure(Arc<String>);
-impl CaptureFailure {
-    fn new(message: impl Into<String>) -> Self {
-        Self(Arc::new(message.into()))
-    }
-}
-
-#[derive(Debug)]
+/// The shared original report is also the identity of a cause. Observing it again never
+/// registers a new event; independently created reports remain distinct even with equal text.
+#[derive(Clone, Debug, Diagnostic)]
+#[diagnostic(forward(report))]
 struct CaptureError {
-    report: Report,
+    report: Arc<Report>,
     passes: Vec<&'static str>,
 }
-
-/// Composition at capture lifecycle boundaries retains original reports and their provenance.
-#[derive(Debug, thiserror::Error, Diagnostic)]
-struct CaptureErrors(Vec<CaptureError>);
-impl core::fmt::Display for CaptureErrors {
+impl core::fmt::Display for CaptureError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        for (index, error) in self.0.iter().enumerate() {
-            if index > 0 {
-                f.write_str("; ")?;
-            }
-            for pass in &error.passes {
-                write!(f, "pass '{pass}': ")?;
-            }
-            write!(f, "{}", error.report)?;
+        for pass in &self.passes {
+            write!(f, "pass '{pass}': ")?;
         }
-        Ok(())
+        core::fmt::Display::fmt(&self.report, f)
     }
 }
+impl core::error::Error for CaptureError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        // The wrapper supplies the original summary, so forward its cause rather than
+        // inserting the original summary a second time into the source chain.
+        self.report.source()
+    }
+}
+
+/// A flat aggregate exposes every original diagnostic, including its own related diagnostics.
+#[derive(Debug, thiserror::Error, Diagnostic)]
+#[error("capture lifecycle failed with multiple errors")]
+struct CaptureErrors(#[related] Vec<CaptureError>);
 impl CaptureErrors {
     fn from_report(report: Report) -> Self {
         match report.downcast::<Self>() {
             Ok(errors) => errors,
-            Err(report) => Self(alloc::vec![CaptureError {
-                report,
-                passes: Vec::new()
-            }]),
+            Err(report) => match report.downcast::<CaptureError>() {
+                Ok(error) => Self(alloc::vec![error]),
+                Err(report) => Self(alloc::vec![CaptureError {
+                    report: Arc::new(report),
+                    passes: Vec::new(),
+                }]),
+            },
+        }
+    }
+
+    fn extend(&mut self, errors: Self) {
+        for error in errors.0 {
+            if let Some(existing) =
+                self.0.iter_mut().find(|existing| Arc::ptr_eq(&error.report, &existing.report))
+            {
+                for pass in error.passes {
+                    if !existing.passes.contains(&pass) {
+                        existing.passes.push(pass);
+                    }
+                }
+            } else {
+                self.0.push(error);
+            }
+        }
+    }
+
+    fn into_report(mut self) -> Report {
+        if self.0.len() == 1 {
+            Report::new(self.0.pop().unwrap())
+        } else {
+            Report::new(self)
         }
     }
 }
@@ -71,26 +91,8 @@ impl CaptureErrors {
 /// of the same sticky capture failure once. Independent reports always remain independent.
 pub fn combine_capture_errors(body: Report, cleanup: Report) -> Report {
     let mut errors = CaptureErrors::from_report(body);
-    for error in CaptureErrors::from_report(cleanup).0 {
-        let duplicate = error.report.downcast_ref::<CaptureFailure>().and_then(|failure| {
-            errors.0.iter_mut().find(|existing| {
-                existing
-                    .report
-                    .downcast_ref::<CaptureFailure>()
-                    .is_some_and(|other| Arc::ptr_eq(&failure.0, &other.0))
-            })
-        });
-        if let Some(existing) = duplicate {
-            for pass in error.passes {
-                if !existing.passes.contains(&pass) {
-                    existing.passes.push(pass);
-                }
-            }
-        } else {
-            errors.0.push(error);
-        }
-    }
-    Report::new(errors)
+    errors.extend(CaptureErrors::from_report(cleanup));
+    errors.into_report()
 }
 
 pub(crate) fn capture_error_in_pass(report: Report, pass: &'static str) -> Report {
@@ -100,7 +102,7 @@ pub(crate) fn capture_error_in_pass(report: Report, pass: &'static str) -> Repor
             error.passes.push(pass);
         }
     }
-    Report::new(errors)
+    errors.into_report()
 }
 
 #[derive(Default)]
@@ -108,7 +110,7 @@ pub(crate) struct CaptureInvalidationState {
     next_id: u64,
     frames: Vec<Frame>,
     pending: FxHashMap<OperationRef, Request>,
-    failure: Option<CaptureFailure>,
+    failures: Vec<CaptureError>,
     resolving: bool,
 }
 struct Frame {
@@ -191,45 +193,63 @@ impl CaptureInvalidationPhase {
 
     fn close(&mut self) -> Result<(), Report> {
         let mut state = self.context.capture_invalidation.borrow_mut();
-        let out_of_order = (state.frames.iter().any(|frame| frame.id == self.id)
-            && state.frames.last().is_some_and(|frame| frame.id != self.id))
-        .then(|| {
-            let failure = CaptureFailure::new("capture invalidation phases completed out of order");
-            state.failure.get_or_insert_with(|| failure.clone());
-            Report::new(failure)
-        });
+        let out_of_order = state.frames.iter().any(|frame| frame.id == self.id)
+            && state.frames.last().is_some_and(|frame| frame.id != self.id);
         state.frames.retain(|frame| frame.id != self.id);
         state.pending.retain(|_, request| request.phase != self.id);
         state.resolving = false;
         self.finished = true;
         drop(state);
-        match (check(&self.context), out_of_order) {
-            (Err(sticky), Some(out_of_order)) => Err(combine_capture_errors(sticky, out_of_order)),
-            (result, _) => result,
+        if out_of_order {
+            poison(&self.context, "capture invalidation phases completed out of order");
         }
+        check(&self.context)
     }
 }
 impl Drop for CaptureInvalidationPhase {
     fn drop(&mut self) {
         if !self.finished {
-            poison(&self.context, "capture invalidation phase dropped without completion");
+            let live = self
+                .context
+                .capture_invalidation
+                .borrow()
+                .frames
+                .iter()
+                .any(|frame| frame.id == self.id);
+            if live {
+                poison(&self.context, "capture invalidation phase dropped without completion");
+            }
             let _ = self.close();
         }
     }
 }
 
+/// Register a newly detected violation, including on callbacks and Drop paths without a Result.
 pub(crate) fn poison(context: &Context, message: impl Into<String>) {
-    let message = message.into();
-    context
-        .capture_invalidation
-        .borrow_mut()
-        .failure
-        .get_or_insert_with(|| CaptureFailure::new(message));
+    let errors = CaptureErrors::from_report(Report::msg(message.into()));
+    record(context, errors);
 }
+
+fn record(context: &Context, errors: CaptureErrors) {
+    let mut state = context.capture_invalidation.borrow_mut();
+    let mut failures = CaptureErrors(core::mem::take(&mut state.failures));
+    failures.extend(errors);
+    state.failures = failures.0;
+}
+
+/// Register original reports while reusing identities already registered by an inner boundary.
+pub(super) fn fail(context: &Context, report: Report) -> Report {
+    record(context, CaptureErrors::from_report(report));
+    check(context).unwrap_err()
+}
+
+/// Observe registered causes. Construct the Report only after releasing the Context borrow.
 pub(crate) fn check(context: &Context) -> Result<(), Report> {
-    match &context.capture_invalidation.borrow().failure {
-        Some(error) => Err(Report::new(error.clone())),
-        None => Ok(()),
+    let failures = context.capture_invalidation.borrow().failures.clone();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(CaptureErrors(failures).into_report())
     }
 }
 pub(super) fn active(context: &Context) -> bool {
@@ -263,9 +283,8 @@ pub(super) fn submit(anchor: OperationRef) {
     let context = anchor.context_ref();
     let mut state = context.capture_invalidation.borrow_mut();
     if state.resolving {
-        state.failure.get_or_insert_with(|| {
-            CaptureFailure::new("capture rewrite invoked during materialization")
-        });
+        drop(state);
+        poison(context, "capture rewrite invoked during materialization");
         return;
     }
     if state.pending.contains_key(&anchor) {
@@ -297,10 +316,8 @@ pub(super) fn transfer(original: OperationRef, replacement: OperationRef) -> Res
     if !replacement.name().is::<DebugKill>()
         || SourceBinding::of(replacement).as_ref() != Some(&request.binding)
     {
-        state
-            .failure
-            .get_or_insert_with(|| CaptureFailure::new("invalid pending capture replacement"));
-        return Err(Report::new(state.failure.as_ref().unwrap().clone()));
+        drop(state);
+        return Err(fail(context, Report::msg("invalid pending capture replacement")));
     }
     state.pending.remove(&original);
     if !state.pending.contains_key(&replacement) {
@@ -327,8 +344,7 @@ pub(super) fn cancel(anchor: OperationRef) {
 pub fn capture_invalidation_barrier(context: &Rc<Context>) -> Result<bool, Report> {
     check(context)?;
     if context.capture_invalidation.borrow().resolving {
-        poison(context, "capture observer invoked during materialization");
-        return check(context).map(|()| false);
+        return Err(fail(context, Report::msg("capture observer invoked during materialization")));
     }
     let ids = {
         let state = context.capture_invalidation.borrow();
@@ -361,18 +377,16 @@ pub(crate) fn generation(context: &Context) -> u64 {
 /// Retire leaked state even after another failure; retained handles may only observe the poison.
 pub(crate) fn audit_boundary(context: &Context, since: u64) -> Result<(), Report> {
     let mut state = context.capture_invalidation.borrow_mut();
-    let abandoned = state.frames.iter().any(|frame| frame.id > since).then(|| {
+    let abandoned = state.frames.iter().any(|frame| frame.id > since);
+    if abandoned {
         state.frames.retain(|frame| frame.id <= since);
         state.pending.retain(|_, request| request.phase <= since);
-        let failure = CaptureFailure::new("capture invalidation phase outlived its audit");
-        state.failure.get_or_insert_with(|| failure.clone());
-        Report::new(failure)
-    });
-    drop(state);
-    match (check(context), abandoned) {
-        (Err(sticky), Some(abandoned)) => Err(combine_capture_errors(sticky, abandoned)),
-        (result, _) => result,
     }
+    drop(state);
+    if abandoned {
+        poison(context, "capture invalidation phase outlived its audit");
+    }
+    check(context)
 }
 
 pub(super) fn emit<R: ?Sized + Rewriter>(
@@ -457,11 +471,10 @@ fn drain(
         Ok(changed)
     })();
     context.capture_invalidation.borrow_mut().resolving = false;
-    if let Err(error) = &result {
-        poison(context, format!("capture invalidation failed: {error}"));
+    match result {
+        Err(error) => Err(fail(context, error)),
+        Ok(changed) => check(context).map(|()| changed),
     }
-    check(context)?;
-    result
 }
 
 #[derive(Default)]
@@ -689,4 +702,173 @@ pub(super) mod stats {
         pub edges: usize,
     }
     std::thread_local! { pub static COUNTS: core::cell::RefCell<Counts> = Default::default(); }
+}
+
+#[cfg(test)]
+pub(super) mod tests {
+    use alloc::{format, string::ToString, vec};
+
+    use super::*;
+    use crate::{
+        SourceSpan, Type, ValueRef,
+        dialects::{builtin::BuiltinOpBuilder, debuginfo::attributes::Variable},
+        testing::Test,
+    };
+
+    #[derive(Debug, thiserror::Error, Diagnostic)]
+    #[error("structured root failure")]
+    #[diagnostic(
+        code(capture::structured),
+        help("structured recovery advice"),
+        url("https://example.com/capture")
+    )]
+    struct StructuredFailure {
+        #[source_code]
+        source: miette::NamedSource<String>,
+        #[label("structured source label")]
+        span: miette::SourceSpan,
+        #[related]
+        related: Vec<Detail>,
+        #[source]
+        #[diagnostic_source]
+        cause: Detail,
+    }
+
+    #[derive(Debug, thiserror::Error, Diagnostic)]
+    #[error("{0}")]
+    struct Detail(&'static str);
+
+    pub(crate) fn structured_report() -> Report {
+        Report::new(StructuredFailure {
+            source: miette::NamedSource::new("capture.rs", String::from("let capture = invalid;")),
+            span: (14, 7).into(),
+            related: alloc::vec![Detail("structured related detail")],
+            cause: Detail("structured underlying cause"),
+        })
+    }
+
+    pub(crate) fn render(report: &Report) -> String {
+        let mut rendered = String::new();
+        miette::GraphicalReportHandler::new_themed(miette::GraphicalTheme::unicode_nocolor())
+            .with_links(false)
+            .render_report(&mut rendered, report.as_ref())
+            .unwrap();
+        rendered
+    }
+
+    pub(crate) fn assert_structured(report: &Report) {
+        let rendered = render(report);
+        for expected in [
+            "structured root failure",
+            "capture::structured",
+            "structured recovery advice",
+            "capture.rs",
+            "let capture = invalid;",
+            "structured source label",
+            "structured related detail",
+            "structured underlying cause",
+        ] {
+            assert_eq!(
+                rendered.matches(expected).count(),
+                1,
+                "missing or repeated {expected}: {rendered}"
+            );
+        }
+        fn inspect(diagnostic: &dyn Diagnostic) -> bool {
+            if diagnostic.code().is_some_and(|code| code.to_string() == "capture::structured") {
+                assert_eq!(diagnostic.url().unwrap().to_string(), "https://example.com/capture");
+                assert_eq!(diagnostic.source().unwrap().to_string(), "structured underlying cause");
+                assert_eq!(
+                    diagnostic.diagnostic_source().unwrap().to_string(),
+                    "structured underlying cause"
+                );
+                return true;
+            }
+            diagnostic.related().is_some_and(|mut related| related.any(inspect))
+        }
+        assert!(inspect(report.as_ref()), "structured diagnostic not exposed");
+    }
+
+    #[test]
+    fn structured_drain_failure_survives_sticky_observation_and_new_events() -> Result<(), Report> {
+        let mut test = Test::new("structured_drain", &[Type::U32], &[Type::U32]);
+        let (first, second) = {
+            let mut builder = test.function_builder();
+            let value = builder.current_block().borrow().arguments()[0] as ValueRef;
+            let mut record = |line| {
+                BuiltinOpBuilder::builder_mut(&mut builder)
+                    .debug_value(
+                        value,
+                        Variable::new("x".into(), "capture.rs".into(), line, None),
+                        SourceSpan::UNKNOWN,
+                    )
+                    .map(|op| op.as_operation_ref())
+            };
+            let first = record(1)?;
+            let second = record(2)?;
+            builder.ret([value], SourceSpan::UNKNOWN)?;
+            (first, second)
+        };
+        let root = test.function().as_operation_ref();
+        let phase = CaptureInvalidationPhase::begin(root, None)?;
+        let mut rewriter: RewriterImpl = RewriterImpl::new(test.context_rc());
+        super::super::transform::invalidate_debug_captures(second, &mut rewriter)?;
+        assert!(first.parent_op().is_some());
+        let error =
+            drain(&test.context_rc(), phase.id, |_, _, _| Err(structured_report())).unwrap_err();
+        poison(test.context(), "independent subsequent violation");
+        poison(test.context(), "independent subsequent violation");
+        let error = combine_capture_errors(error, check(test.context()).unwrap_err());
+        let error = combine_capture_errors(error, phase.finish().unwrap_err());
+        assert_structured(&error);
+        let rendered = render(&error);
+        assert_eq!(rendered.matches("independent subsequent violation").count(), 2, "{rendered}");
+        assert!(!active(test.context()));
+        assert!(capture_invalidation_barrier(&test.context_rc()).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn dropping_a_retired_phase_only_observes_the_audit_failure() -> Result<(), Report> {
+        let test = Test::new("retired_drop", &[], &[]);
+        let phase = CaptureInvalidationPhase::begin(test.function().as_operation_ref(), None)?;
+        let error = audit_boundary(test.context(), 0).unwrap_err();
+        drop(phase);
+        let error = combine_capture_errors(error, check(test.context()).unwrap_err());
+        let rendered = render(&error);
+        assert_eq!(
+            rendered.matches("capture invalidation phase outlived its audit").count(),
+            1,
+            "{rendered}"
+        );
+        assert!(!rendered.contains("dropped without completion"), "{rendered}");
+        Ok(())
+    }
+
+    #[test]
+    fn void_poison_and_drop_keep_independent_events_after_first_failure() -> Result<(), Report> {
+        let test = Test::new("void_poison", &[], &[]);
+        let root = test.function().as_operation_ref();
+        let outer = CaptureInvalidationPhase::begin(root, None)?;
+        let inner = CaptureInvalidationPhase::begin(root, None)?;
+        poison(test.context(), "initial poison");
+        drop(outer);
+        drop(inner);
+        let rendered = render(&check(test.context()).unwrap_err());
+        assert_eq!(rendered.matches("initial poison").count(), 1, "{rendered}");
+        assert_eq!(
+            rendered
+                .matches("capture invalidation phase dropped without completion")
+                .count(),
+            2,
+            "{rendered}"
+        );
+        assert_eq!(
+            rendered.matches("capture invalidation phases completed out of order").count(),
+            1,
+            "{rendered}"
+        );
+        assert!(!active(test.context()));
+        Ok(())
+    }
 }

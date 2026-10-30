@@ -973,11 +973,10 @@ impl DebugInfoMutation {
                     || !(owner == original || self.roots.contains(&owner))
                     || !is_under(original, owner)
                 {
-                    super::capture_invalidation::poison(
+                    return Err(super::capture_invalidation::fail(
                         &self.context,
-                        "invalid pending owner-anchored replacement",
-                    );
-                    return super::capture_invalidation::check(&self.context);
+                        Report::msg("invalid pending owner-anchored replacement"),
+                    ));
                 }
                 super::capture_invalidation::transfer(original, replacement)?;
             }

@@ -447,13 +447,8 @@ pub fn invalidate_debug_captures<R: ?Sized + Rewriter>(
             None,
         )?)
     };
-    let result = invalidate_records(owner, records, rewriter).map_err(|error| {
-        super::capture_invalidation::poison(
-            &context,
-            alloc::format!("capture replacement failed: {error}"),
-        );
-        super::capture_invalidation::check(&context).unwrap_err()
-    });
+    let result = invalidate_records(owner, records, rewriter)
+        .map_err(|error| super::capture_invalidation::fail(&context, error));
     let finish = phase.map(|phase| phase.finish_with(rewriter)).transpose();
     match (result, finish) {
         (Err(body), Err(finish)) => Err(combine_capture_errors(body, finish)),

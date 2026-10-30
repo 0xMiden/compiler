@@ -1021,16 +1021,17 @@ impl OpToOpPassAdaptor {
                 audit.abort()
             };
             if let Err(error) = completion {
-                let error = crate::dialects::debuginfo::capture_invalidation::capture_error_in_pass(
-                    error,
-                    pass.name(),
-                );
-                result = match result {
-                    Ok(()) => Err(error),
-                    Err(body) => Err(
-                        crate::dialects::debuginfo::transform::combine_capture_errors(body, error),
-                    ),
+                let error = match result {
+                    Ok(()) => error,
+                    Err(body) => {
+                        crate::dialects::debuginfo::transform::combine_capture_errors(body, error)
+                    }
                 };
+                result =
+                    Err(crate::dialects::debuginfo::capture_invalidation::capture_error_in_pass(
+                        error,
+                        pass.name(),
+                    ));
             }
         }
 
