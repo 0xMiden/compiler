@@ -4,8 +4,9 @@
 //! which owns the kernel's correctness checks; the benchmark inputs need not stay equal to the
 //! test's. The kernel hashes the advice-map entries back to the batch id and checks the sorted
 //! note lists against them, so a builder that drifts from that layout fails the benchmark run.
-//! The advice-stack expiration words are not authenticated (a fixture TODO) and only feed the
-//! expiration minimum.
+//! The kernel does not authenticate the advice-stack expiration words (they only feed the
+//! expiration minimum), the block commitment and output pointer arguments, or the output note
+//! list's value words; a drift there runs to completion.
 //!
 //! The inputs are compiled into the runner, so they follow the runner's revision rather than
 //! the `--workspace-root` checkout.

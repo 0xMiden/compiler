@@ -56,28 +56,34 @@ cargo run -p midenc-benchmark-runner --bin contract-benchmarks -- \
 Intermediate Cargo and compiler artifacts are isolated in `target/example-benchmark-build/`. Use
 `--output-dir`, `--build-dir`, `--workspace-root`, or `--commit` to override the corresponding
 defaults. When `--cargo-miden` is omitted, the runner invokes `cargo miden` from `PATH`. The batch
-kernel inputs are compiled into the runner, so a `--workspace-root` checkout whose kernel expects
-different inputs fails the run, even with `--skip-failed-builds`.
+kernel inputs are compiled into the runner and follow its revision, not the `--workspace-root`
+checkout: a kernel that rejects them fails the run (even with `--skip-failed-builds`), and inputs
+it does not authenticate (see `benches/src/batch_kernel.rs`) drift silently. The kernel's
+flamegraph build needs the fixture's `profiling` profile and a compiler that forwards custom
+build profiles to Cargo.
 
-To check DEX execution, replay capture, and flamegraph generation specifically:
+The following ignored tests need `CARGO_MIDEN` and `MIDEN_SYSROOT` set to the toolchain sysroot
+(`midenup show sysroot`). To check DEX execution, replay capture, and flamegraph generation
+specifically:
 
 ```bash
 cargo build -p cargo-miden
-CARGO_MIDEN="$PWD/target/debug/cargo-miden" cargo test -p midenc-benchmark-runner \
+MIDEN_SYSROOT="$(midenup show sysroot)" CARGO_MIDEN="$PWD/target/debug/cargo-miden" \
+  cargo test -p midenc-benchmark-runner \
   dex_note_transaction_records_cycles_replay_and_flamegraph -- --ignored
 ```
 
 To check the batch kernel rows and their flamegraphs, run
-`batch_kernel_records_cycles_size_and_named_flamegraphs` the same way, with `MIDEN_SYSROOT` set to
-the toolchain sysroot (`midenup show sysroot`).
+`batch_kernel_records_cycles_size_and_named_flamegraphs` the same way.
 
 ## Pull requests
 
 The `Examples and contracts benchmark` workflow builds `cargo-miden` from both the pull request
-and the current `origin/next` HEAD. Each compiler builds the examples and local SDK from its own
-checkout, so SDK, example, fixture, and input changes are included in the comparison. Each side is measured
-with the benchmark harness and VM executor built from its own checkout, so a VM upgrade that changes
-the package format does not stop the candidate from reading the baseline. The report therefore
+and the current `origin/next` HEAD. Each compiler builds the examples, the batch kernel fixture,
+and the local SDK from its own checkout, so SDK, example, fixture, and input changes are included
+in the comparison. Each side is measured with the benchmark harness and VM executor built from its
+own checkout, so a VM upgrade that changes the package format does not stop the candidate from
+reading the baseline. The report therefore
 compares the two toolchains as wholes. Schema changes must keep the comparison script able to read
 the baseline's output. The commit recorded in each result is read from that source checkout. A
 sticky PR comment reports cycle and MAST-size changes. Lower values are marked as improvements;

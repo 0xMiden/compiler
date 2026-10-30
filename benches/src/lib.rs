@@ -329,6 +329,12 @@ impl BenchmarkRunner {
                 "full",
                 batch_kernel::COMPILE_ARGS,
             )?)?;
+            // Without the package debug info the flamegraphs only hold unnamed frames.
+            ensure!(
+                debuggable.debug_info().map_err(|err| anyhow!(err.to_string()))?.is_some(),
+                "the {} flamegraph build carries no debug info",
+                batch_kernel::NAME
+            );
             for (row, scenario) in rows.iter_mut().zip(scenarios) {
                 let relative =
                     format!("flamegraphs/{}.svg", batch_kernel::artifact_stem(&scenario));
@@ -345,31 +351,15 @@ impl BenchmarkRunner {
         Ok(rows)
     }
 
-    /// Compiles a project with the build `profile`, keeping its dependency packages readable for
-    /// [`Self::profile`]. Failures are reported as [`BuildFailure`].
+    /// Compiles a project with the named build profile and returns the compiled package path,
+    /// keeping its dependency packages readable for the [`Self::profile`] executions.
     ///
-    /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
-    /// current compiler adopts the directory as its package cache and leaves the packages
-    /// in place after it exits. Old compiler versions — one runner binary drives both
-    /// during a benchmark comparison — ignore the inherited variable and persist their
-    /// packages in the project cache instead, which the legacy scan picks up.
-    ///
-    /// `extra_args` are appended to the runner's standard build flags.
+    /// A failing compiler run is reported as [`BuildFailure`]; failing to prepare the package
+    /// cache is a harness error. `extra_args` are appended to the runner's standard build flags.
     fn compile(
         &self,
         project_dir: &Path,
-        profile: &str,
-        debug: &str,
-        extra_args: &[&str],
-    ) -> Result<PathBuf> {
-        self.compile_project(project_dir, profile, debug, extra_args)
-            .map_err(|err| anyhow::Error::new(BuildFailure(err)))
-    }
-
-    fn compile_project(
-        &self,
-        project_dir: &Path,
-        profile: &str,
+        build_profile: &str,
         debug: &str,
         extra_args: &[&str],
     ) -> Result<PathBuf> {
@@ -378,6 +368,23 @@ impl BenchmarkRunner {
         // ignores the variable would leave the previous invocation's export in place, and
         // its non-empty state would suppress the legacy-cache fallback in `profile`.
         recreate_dir(&self.package_cache_dir(project_dir))?;
+        self.run_compiler(project_dir, build_profile, debug, extra_args)
+            .map_err(|err| anyhow::Error::new(BuildFailure(err)))
+    }
+
+    /// Runs `cargo miden build` for a project and returns the compiled package path.
+    ///
+    /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
+    /// current compiler adopts the directory as its package cache and leaves the packages
+    /// in place after it exits. Old compiler versions ignore the inherited variable and
+    /// persist their packages in the project cache instead, which the legacy scan picks up.
+    fn run_compiler(
+        &self,
+        project_dir: &Path,
+        build_profile: &str,
+        debug: &str,
+        extra_args: &[&str],
+    ) -> Result<PathBuf> {
         let mut command = if let Some(cargo_miden) = self.cargo_miden.as_ref() {
             let mut command = Command::new(cargo_miden);
             command.arg("miden");
@@ -390,7 +397,7 @@ impl BenchmarkRunner {
         command
             .arg("build")
             .arg("--profile")
-            .arg(profile)
+            .arg(build_profile)
             .arg("--manifest-path")
             .arg(project_dir.join("Cargo.toml"))
             .arg("--target-dir")
@@ -422,8 +429,9 @@ impl BenchmarkRunner {
         self.build_dir.join("package-cache").join(case)
     }
 
-    /// Executes `package` with the given inputs, loading the dependency packages of its latest
-    /// build of `project_dir`, and writes an SVG flamegraph to `flamegraph_path` if given.
+    /// Executes `package` with the given inputs and returns its cycle profile, writing an SVG
+    /// flamegraph to `flamegraph_path` if given. The dependency packages are loaded from the
+    /// latest [`Self::compile`] of `project_dir`.
     fn profile(
         &self,
         package: Arc<Package>,
@@ -737,24 +745,31 @@ mod tests {
     #[test]
     fn batch_kernel_names_do_not_collide() {
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let scenarios = batch_kernel::scenarios();
-        // Examples share the package, package-cache, and flamegraph namespaces with the kernel.
-        let mut names = discover_cases(workspace)
+        let examples = discover_cases(workspace)
             .unwrap()
             .into_iter()
             .map(|case| case.name)
             .collect::<BTreeSet<_>>();
-        let kernel_names = std::iter::once(batch_kernel::NAME.to_string())
-            .chain(scenarios.iter().map(batch_kernel::artifact_stem))
-            .chain(scenarios.iter().map(batch_kernel::row_name))
-            .collect::<Vec<_>>();
-        for name in kernel_names {
-            assert!(names.insert(name.clone()), "{name} is not unique");
+        let scenarios = batch_kernel::scenarios();
+        let stems = scenarios.iter().map(batch_kernel::artifact_stem).collect::<Vec<_>>();
+        let rows = scenarios.iter().map(batch_kernel::row_name).collect::<Vec<_>>();
+        let cache_key = Path::new(batch_kernel::PROJECT_DIR).file_name().unwrap().to_str().unwrap();
+
+        // Examples share the saved-package (`NAME`), package-cache (project directory name),
+        // flamegraph (artifact stems), and report-row namespaces with the kernel.
+        for name in [batch_kernel::NAME, cache_key]
+            .into_iter()
+            .chain(stems.iter().map(String::as_str))
+            .chain(rows.iter().map(String::as_str))
+        {
+            assert!(!examples.contains(name), "{name} collides with an example");
         }
+        assert_eq!(stems.iter().collect::<BTreeSet<_>>().len(), stems.len(), "duplicate stem");
+        assert_eq!(rows.iter().collect::<BTreeSet<_>>().len(), rows.len(), "duplicate row");
     }
 
     #[test]
-    #[ignore = "requires a built cargo-miden binary supplied via CARGO_MIDEN"]
+    #[ignore = "requires a built cargo-miden binary supplied via CARGO_MIDEN and MIDEN_SYSROOT"]
     fn batch_kernel_records_cycles_size_and_named_flamegraphs() {
         let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
         let output = tempfile::tempdir().unwrap();
@@ -777,7 +792,9 @@ mod tests {
             ["batch-kernel (two transactions)", "batch-kernel (eight transactions, 64 notes)"]
         );
         assert!(rows[0].mast_size > 0);
-        assert_eq!(rows[0].mast_size, rows[1].mast_size);
+        // The measured build is the release one; only the flamegraph build carries debug info.
+        let measured = load_package(&runner.output_dir.join("packages/batch-kernel.masp")).unwrap();
+        assert!(measured.debug_info().unwrap().is_none());
         assert!(rows[0].cycles.unwrap() < rows[1].cycles.unwrap());
         for row in &rows {
             let svg = fs::read_to_string(runner.output_dir.join(row.flamegraph.as_ref().unwrap()))

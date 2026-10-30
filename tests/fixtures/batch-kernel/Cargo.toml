@@ -21,8 +21,9 @@ opt-level = "z"
 debug = false
 trim-paths = ["diagnostics", "object"]
 
-# Release code for the `batch_kernel_profile` cycle profiler (pairs with the `profiling` profile
-# of `miden-project.toml`). Set `CARGO_PROFILE_PROFILING_DEBUG=line-tables-only` to resolve Rust
+# Release code for the `batch_kernel_profile` cycle profiler and the benchmark flamegraphs
+# (`DEBUG_PROFILE` in `benches/src/batch_kernel.rs`); pairs with the `profiling` profile of
+# `miden-project.toml`. Set `CARGO_PROFILE_PROFILING_DEBUG=line-tables-only` to resolve Rust
 # source lines; it perturbs the generated code slightly, so it is not the default.
 [profile.profiling]
 inherits = "release"
