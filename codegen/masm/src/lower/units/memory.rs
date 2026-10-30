@@ -3,6 +3,8 @@
 //! Source rules fix memory effects, helper ABIs, and lane relationships before allocation.
 //! Ordinary operations defer only source-local addresses to the final frame. Spanning-cell
 //! phases instead declare scratch contents explicitly so verification can track them across units.
+mod aggregate;
+
 use alloc::{collections::BTreeMap, vec, vec::Vec};
 
 use midenc_hir::Report;
@@ -355,18 +357,8 @@ impl Memory {
         };
         let ty = local_ty.clone().or(pointee.clone()).unwrap_or(Type::U32);
         let valid = match kind {
-            Load => {
-                inputs.len() == 1
-                    && pointee.as_ref() == outputs.first()
-                    && outputs.len() == 1
-                    && scalar(&ty)
-            }
-            Store => {
-                inputs.len() == 2
-                    && pointee.as_ref() == inputs.get(1)
-                    && outputs.is_empty()
-                    && storable(&ty)
-            }
+            Load => inputs.len() == 1 && pointee.as_ref() == outputs.first() && outputs.len() == 1,
+            Store => inputs.len() == 2 && pointee.as_ref() == inputs.get(1) && outputs.is_empty(),
             LoadLocal => inputs.is_empty() && outputs == [ty.clone()],
             StoreLocal => inputs == [ty.clone()] && outputs.is_empty(),
             LocalAddress | LocalByteAddress => {
@@ -411,13 +403,21 @@ impl Memory {
         for t in inputs.iter().chain(&outputs) {
             ValueLayout::new(t.clone())?;
         }
-        if matches!(kind, LoadLocal | StoreLocal) && !scalar(&ty) {
-            return Ok(Self::aggregate_local(
+        if matches!(kind, Load | Store | LoadLocal | StoreLocal) && !scalar(&ty) {
+            let address = if let Some(local) = local {
+                aggregate::Address::Local(local)
+            } else if matches!(inputs.first(), Some(Type::Ptr(p)) if p.is_byte_pointer()) {
+                aggregate::Address::Byte(env.byte_addressing)
+            } else {
+                aggregate::Address::Element
+            };
+            return Self::aggregate_access(
+                op.context_rc(),
                 &ValueLayout::new(ty)?,
-                local.expect("local access has a validated source local"),
-                kind == StoreLocal,
+                address,
+                matches!(kind, Store | StoreLocal),
                 op.span(),
-            ));
+            );
         }
         let mut stack = OperandStack::new(op.context_rc());
         for t in inputs.iter().rev() {
@@ -515,79 +515,6 @@ impl Memory {
         })
     }
 
-    /// Aggregate lanes occupy their original four-byte intervals, including interior padding.
-    /// Use one relocatable base address; lane offsets never depend on the final frame layout.
-    fn aggregate_local(
-        layout: &ValueLayout,
-        local: u32,
-        store: bool,
-        span: midenc_hir::SourceSpan,
-    ) -> Self {
-        use masm::Instruction as I;
-
-        let mut body = raw::Builder::new(span);
-        body.emit(I::Locaddr(0u16.into()));
-        let parts = layout.raw_parts();
-        let mut partial_store = false;
-        for step in 0..parts.len() {
-            let lane = if store { step } else { parts.len() - 1 - step };
-            let last = step + 1 == parts.len();
-            if !last {
-                body.emit(I::Dup0);
-                if store {
-                    // [base, base, value, ...] -> [base, value, base, ...]
-                    body.emit_all([I::MovUp2, I::Swap1]);
-                }
-            }
-            if lane != 0 {
-                body.emit(I::AddImm(midenc_hir::Felt::from(lane as u32).into()));
-            }
-            let bits = parts[lane].size_in_bits();
-            if store {
-                if bits < 32 {
-                    partial_store = true;
-                    let mask = (1u32 << bits) - 1;
-                    // Preserve padding in this cell's remaining bytes. Frame contents can be
-                    // full field elements; reduce to their low 32 bits before bitwise operations.
-                    body.emit_all([I::Dup0, I::MemLoad, I::U32Cast]);
-                    body.emit_push(!mask);
-                    body.emit_all([I::U32And, I::MovUp2, I::U32Cast]);
-                    body.emit_push(mask);
-                    body.emit_all([I::U32And, I::U32Or, I::Swap1]);
-                }
-                body.emit(I::MemStore);
-            } else {
-                body.emit(I::MemLoad);
-                if bits < 32 {
-                    body.emit(I::U32Cast);
-                    body.emit_push((1u32 << bits) - 1);
-                    body.emit(I::U32And);
-                }
-                if !last {
-                    body.emit(I::Swap1);
-                }
-            }
-        }
-        Self {
-            body: body.ops,
-            local: Some(local),
-            proof: UnitEvidence::default(),
-            effects: LoweringEffects {
-                memory: if !store {
-                    SourceMemoryEffects::READ
-                } else if partial_store {
-                    SourceMemoryEffects::READ_WRITE
-                } else {
-                    SourceMemoryEffects::WRITE
-                },
-                may_trap: true,
-                normal_return: true,
-            },
-            argument_lanes: vec![],
-            direct_results: None,
-        }
-    }
-
     /// Replace source-relative helper argument/result positions with exact selected lane atoms.
     /// Lane counts and ordering must match the tuple validated by `from_source`.
     pub fn bind(&mut self, inputs: &[Atom], outputs: &[Atom]) {
@@ -683,9 +610,15 @@ fn access_contract(
             Type::I128 | Type::U128 => ("load_qw", 2, 4),
             Type::I64 | Type::U64 => ("load_dw", 2, 2),
             Type::Felt => ("load_felt", 2, 1),
-            Type::I32 | Type::U32 | Type::Ptr(_) => ("load_sw", 2, 1),
-            Type::I16 | Type::U16 => ("load_u16", 2, 1),
-            _ => return Ok(vec![]),
+            _ if ty.size_in_bits() == 32 => ("load_sw", 2, 1),
+            _ if ty.size_in_bits() == 16 => ("load_u16", 2, 1),
+            _ if ty.size_in_bits() <= 8 => return Ok(vec![]),
+            _ => {
+                let mut p = path.to_vec();
+                p.push(CallPath::Then(ControlId(*next)));
+                *next += 1;
+                return Ok(vec![call("::intrinsics::mem::load_sw", 2, 1, &p)?]);
+            }
         }
     };
     Ok(vec![call(&alloc::format!("::intrinsics::mem::{name}"), args, results, path)?])

@@ -87,7 +87,7 @@ impl Builder {
     }
 }
 
-/// Replace `[element_addr, byte_offset]` with a masked 1-, 8-, or 16-bit value.
+/// Replace `[element_addr, byte_offset]` with a masked sub-word value.
 /// The caller supplies an offset whose value fits in the addressed field element.
 pub(crate) fn load_small(bits: usize, span: masm::SourceSpan) -> Vec<masm::Op> {
     let mut b = Builder::new(span);
@@ -117,14 +117,8 @@ pub(crate) fn load_small(bits: usize, span: masm::SourceSpan) -> Vec<masm::Op> {
     b.emit(masm::Instruction::Drop); // [shifted_word]
 
     // Mask to get only the bits we need
-    let mask = match bits {
-        1 => 0x1,
-        8 => 0xff,
-        16 => 0xffff,
-        _ => unreachable!("load_small called with non-small type"),
-    };
-
-    b.emit_push(mask as u32);
+    assert!((1..32).contains(&bits), "load_small requires a sub-word width");
+    b.emit_push((1u32 << bits) - 1);
     b.emit(masm::Instruction::U32And);
     b.ops
 }

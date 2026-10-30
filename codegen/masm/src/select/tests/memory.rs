@@ -1,5 +1,7 @@
 use super::*;
 
+mod aggregate_pointer;
+
 #[test]
 fn mem_grow_and_size_have_u32_publication() {
     let context = Rc::new(Context::default());
@@ -655,6 +657,19 @@ fn packed_store_fill_and_local_forms_preserve_approved_domain() {
                     } else {
                         vec![base, value]
                     };
+                    if !fill
+                        && offset != 0
+                        && matches!(&ty, Type::Array(array) if array.element_type() == &Type::Felt)
+                    {
+                        // Typed aggregate stores preserve whole Felts and reject splitting them.
+                        // Fill eligibility and behavior are a separate contract.
+                        let error = execute_linked_memory(&f, &inputs, &[], "", "").unwrap_err();
+                        let code = miden_core::mast::error_code_from_msg(
+                            "aggregate Felt access requires an element-aligned pointer",
+                        );
+                        assert!(error.to_string().contains(&code.to_string()), "{error}");
+                        continue;
+                    }
                     let mut bytes = [0xa5u8; 16];
                     for n in 0..count {
                         let bit = offset * 8 + n * ty.size_in_bytes() * 8;
@@ -708,7 +723,7 @@ fn packed_store_fill_and_local_forms_preserve_approved_domain() {
         builder.set_insertion_point_before(terminator);
         builder.create::<crate::hir::StoreLocal, _>(SourceSpan::UNKNOWN)(local, value).unwrap();
         execute_linked(&f, &[1], &[]);
-        // The same aggregate remains explicitly outside scalar SSA-load support.
+        // Pointer loads accept the same bounded aggregate representation as typed locals.
         let mut load = parse(
             "builtin.function public extern(\"C\") @packed_load(%p: ptr<u32, byte>) { %r = \
              hir.load %p; builtin.ret; };",
@@ -726,7 +741,7 @@ fn packed_store_fill_and_local_forms_preserve_approved_domain() {
             .results()
             .all()[0];
         result.borrow_mut().set_type(ty);
-        assert!(select_function(&load.borrow(), &SelectEnv::default()).is_err());
+        select_function(&load.borrow(), &SelectEnv::default()).unwrap();
     }
 }
 

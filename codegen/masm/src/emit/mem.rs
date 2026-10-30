@@ -255,16 +255,7 @@ impl OpEmitter<'_> {
                 }
                 // Convert the pointer to a native pointer representation
                 self.convert_to_native_ptr(ptr_ty, span);
-                match &ty {
-                    Type::I128 | Type::U128 => self.load_quad_word(None, span),
-                    Type::I64 | Type::U64 => self.load_double_word_int(None, span),
-                    Type::Felt => self.load_felt(None, span),
-                    Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(None, span),
-                    ty @ (Type::I16 | Type::U16 | Type::U8 | Type::I8 | Type::I1) => {
-                        self.load_small(ty, None, span);
-                    }
-                    ty => todo!("support for loading {ty} is not yet implemented"),
-                }
+                self.load_native(&ty, span);
                 self.push(ty);
             }
             ty if !ty.is_pointer() => {
@@ -311,6 +302,19 @@ impl OpEmitter<'_> {
     fn push_native_ptr(&mut self, ptr: NativePtr, span: SourceSpan) {
         self.emit_push(ptr.offset, span);
         self.emit_push(ptr.addr, span);
+    }
+
+    /// Load through an already normalized `[element_addr, byte_offset]` pair.
+    /// Shared by scalar accesses and validated aggregate lanes; does not update typed operands.
+    pub(crate) fn load_native(&mut self, ty: &Type, span: SourceSpan) {
+        match ty {
+            Type::I128 | Type::U128 => self.load_quad_word(None, span),
+            Type::I64 | Type::U64 => self.load_double_word_int(None, span),
+            Type::Felt => self.load_felt(None, span),
+            _ if ty.size_in_bits() == 32 => self.load_word(None, span),
+            _ if (1..32).contains(&ty.size_in_bits()) => self.load_small(ty, None, span),
+            ty => todo!("support for loading {ty} is not yet implemented"),
+        }
     }
 
     /// Load a field element from a naturally aligned address, either immediate or dynamic
@@ -381,6 +385,8 @@ impl OpEmitter<'_> {
     ///
     /// After execution, the stack will contain: `[loaded_value]`
     fn load_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
+        let bits = ty.size_in_bits();
+        assert!((1..32).contains(&bits), "load_small requires a sub-word width");
         // If we have an immediate pointer, handle it based on alignment
         if let Some(imm) = ptr {
             if imm.is_element_aligned() {
@@ -388,13 +394,7 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
                 // The value is already loaded, just need to mask it
                 self.emit(masm::Instruction::U32Cast, span);
-                let mask = match ty.size_in_bits() {
-                    1 => 0x1,
-                    8 => 0xff,
-                    16 => 0xffff,
-                    _ => unreachable!("load_small called with non-small type"),
-                };
-                self.emit_push(mask as u32, span);
+                self.emit_push((1u32 << bits) - 1, span);
                 self.emit(masm::Instruction::U32And, span);
                 return;
             } else {
@@ -407,8 +407,24 @@ impl OpEmitter<'_> {
             self.load_16bit_dynamic(span);
             return;
         }
-
-        self.load_small_from_current_element(ty, span);
+        if bits <= 8 {
+            self.load_small_from_current_element(ty, span);
+            return;
+        }
+        // Read a second cell only when the represented bits actually cross its boundary.
+        use masm::Instruction as I;
+        self.emit(I::Dup1, span);
+        self.emit_push(((32 - bits) / 8) as u32, span);
+        self.emit(I::U32Gt, span);
+        let crossed = self.build_masm_block(span, |emitter| {
+            emitter.load_word(None, span);
+            emitter.const_mask_u32((1u32 << bits) - 1, span);
+        });
+        self.current_block.push(masm::Op::If {
+            span,
+            then_blk: crossed,
+            else_blk: masm::Block::new(span, crate::lower::raw::load_small(bits, span)),
+        });
     }
 
     /// Load a sub-word value which is fully contained in the current 32-bit element.
@@ -733,7 +749,7 @@ impl OpEmitter<'_> {
 
     /// Store through an already normalized `[element_addr, byte_offset, value..]` pair.
     /// Shared by ordinary stores and contiguous typed fills; does not update typed operands.
-    fn store_native(&mut self, value_ty: &Type, span: SourceSpan) {
+    pub(crate) fn store_native(&mut self, value_ty: &Type, span: SourceSpan) {
         match value_ty {
             Type::I128 | Type::U128 => self.store_quad_word(None, span),
             Type::I64 | Type::U64 => self.store_double_word_int(None, span),
