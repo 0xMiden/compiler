@@ -1013,7 +1013,7 @@ fn semantic_alias_contract_rejects_physical_effects_and_incomplete_mappings() {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ImmediateDefect {
     None,
-    /// The immediate's value has no literal reconstruction.
+    /// The evidence names a value without a literal reconstruction as the immediate.
     NotLiteral,
     /// The evidence names a different literal than the value reconstructs to.
     WrongLiteral,
@@ -1054,8 +1054,7 @@ impl GeneratedDefinition for ImmediateCount {
                     index: 0,
                 },
                 layout: ValueLayout::new(Type::U32).unwrap(),
-                reconstruction: (self.0 != NotLiteral)
-                    .then(|| Reconstruction::Literal(vec![Felt::from(3u32)])),
+                reconstruction: Some(Reconstruction::Literal(vec![Felt::from(3u32)])),
             },
         );
         let consumer = &mut evidence.program.segments[0].units[0];
@@ -1104,6 +1103,12 @@ impl GeneratedDefinition for ImmediateCount {
             ),
         ]);
         let registered: u32 = if self.0 == WrongLiteral { 4 } else { 3 };
+        // The parameter is a semantic input of the consumer but has no literal value.
+        let immediate = if self.0 == NotLiteral {
+            Atom::new(ValueId(0), 0)
+        } else {
+            count
+        };
         evidence.units = BTreeMap::from([
             (SelectedStepId(0), UnitEvidence::default()),
             (
@@ -1113,7 +1118,7 @@ impl GeneratedDefinition for ImmediateCount {
                         Atom::new(ValueId(1), 0),
                         Atom::new(ValueId(0), 0),
                     )]),
-                    immediates: vec![(count, Felt::from(registered))],
+                    immediates: vec![(immediate, Felt::from(registered))],
                     ..Default::default()
                 },
             ),
@@ -1122,30 +1127,28 @@ impl GeneratedDefinition for ImmediateCount {
     }
 }
 
+/// Each immediate defect is rejected by the selection check that names it.
 #[test]
 fn immediate_inputs_are_lane_free_literals_named_by_their_consumer() {
     use ImmediateDefect::*;
     let sound = ImmediateCount(None);
     check_selection(sound.instantiate(&[]).unwrap().program, &SourceContext::Generated(&sound))
         .unwrap();
-    for defect in [
-        NotLiteral,
-        WrongLiteral,
-        AlsoStackInput,
-        NotSemanticInput,
-        LiteralHasInputs,
-        LiteralHasEffects,
+    for (defect, message) in [
+        (NotLiteral, "immediate input is not a literal value"),
+        (WrongLiteral, "immediate input disagrees with its literal value"),
+        (AlsoStackInput, "immediate input is not a lane-free semantic input"),
+        (NotSemanticInput, "immediate input is not a lane-free semantic input"),
+        (LiteralHasInputs, "literal publication has semantic inputs"),
+        (LiteralHasEffects, "semantic publication has a physical or effectful contract"),
     ] {
         let source = ImmediateCount(defect);
-        assert_eq!(
-            check_selection(
-                source.instantiate(&[]).unwrap().program,
-                &SourceContext::Generated(&source)
-            )
-            .unwrap_err()
-            .category,
-            DiagnosticCategory::InvalidSelectedLowering,
-            "{defect:?}"
-        );
+        let error = check_selection(
+            source.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&source),
+        )
+        .unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering, "{defect:?}");
+        assert_eq!(error.message, message, "{defect:?}");
     }
 }

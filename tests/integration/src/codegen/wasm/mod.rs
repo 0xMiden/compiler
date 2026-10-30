@@ -38,8 +38,8 @@ fn assert_single_output(expected: u64, outputs: Vec<u64>) {
 }
 
 /// Compile a Wasm module whose fields are `fields` (one memory page is declared), with the function
-/// exported as `entrypoint` as the program entrypoint, and the test harness that applies memory
-/// initializers. Returns the test, its package, and the emitted MASM of the module.
+/// exported as `entrypoint` as the program entrypoint. Returns the test, its package, and the
+/// emitted MASM of the module.
 fn compile_wat(fields: &str) -> (CompilerTest, Arc<Package>, String) {
     let wasm = wat::parse_str(format!("(module (memory 1) {fields})")).unwrap();
     let mut builder = CompilerTestBuilder::from_wasm("test", wasm, ["--test-harness".into()]);

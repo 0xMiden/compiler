@@ -35,8 +35,8 @@ fn shl_of_a_constant_by_a_constant_count() {
     i32.shl)"#,
     );
     // The shift is not folded: it reaches codegen with both operands constant.
-    assert!(masm.contains("u32shl.2"), "{masm}");
-    assert!(masm.contains("push.7"), "{masm}");
+    assert!(has_instruction(&masm, "u32shl.2"), "{masm}");
+    assert!(has_instruction(&masm, "push.7"), "{masm}");
     assert_eq!(run(&test, &package, &[]), 28, "{masm}");
 }
 
@@ -70,7 +70,7 @@ fn constant_shared_by_a_shift_count_and_an_add() {
     i32.const 3
     i32.add",
     );
-    assert!(masm.contains("u32shl.3"), "{masm}");
+    assert!(has_instruction(&masm, "u32shl.3"), "{masm}");
     for arg in [0u32, 1, 5, 0x2000_0000, u32::MAX] {
         let expected = (arg << 3).wrapping_add(3);
         assert_eq!(run(&test, &package, &[arg]), expected, "({arg} << 3) + 3\n{masm}");
@@ -87,7 +87,7 @@ fn shr_u_by_a_constant_count_uses_the_immediate_form() {
     i32.const 3
     i32.shr_u",
     );
-    assert!(masm.contains("u32shr.3"), "{masm}");
+    assert!(has_instruction(&masm, "u32shr.3"), "{masm}");
     assert!(!masm.contains("u32and"), "{masm}");
     assert!(!has_instruction(&masm, "push.3"), "{masm}");
     for arg in [0u32, 7, 8, 0x1234_5678, 0x8000_0000, u32::MAX] {
@@ -105,8 +105,8 @@ fn shr_u_of_a_constant_by_a_constant_count() {
     i32.const 4
     i32.shr_u)"#,
     );
-    assert!(masm.contains("u32shr.4"), "{masm}");
-    assert!(masm.contains("push.128"), "{masm}");
+    assert!(has_instruction(&masm, "u32shr.4"), "{masm}");
+    assert!(has_instruction(&masm, "push.128"), "{masm}");
     assert_eq!(run(&test, &package, &[]), 8, "{masm}");
 }
 
@@ -123,7 +123,7 @@ fn shl_by_a_constant_count_of_32_or_more() {
             ),
         );
         // The frontend reduces a constant count modulo 32, so the immediate is the reduced count.
-        assert!(masm.contains(&format!("u32shl.{effective}")), "{count}\n{masm}");
+        assert!(has_instruction(&masm, &format!("u32shl.{effective}")), "{count}\n{masm}");
         for arg in [0u32, 1, 0x1234_5678, 0x8000_0001, u32::MAX] {
             assert_eq!(run(&test, &package, &[arg]), arg << effective, "{arg} << {count}\n{masm}");
         }
@@ -161,6 +161,8 @@ fn shr_u_by_a_variable_count_masks_the_count() {
     local.get 1
     i32.shr_u",
     );
+    // The count is an operand on the stack, not an immediate.
+    assert!(has_instruction(&masm, "u32shr"), "{masm}");
     for (value, count) in
         [(0xf0u32, 35u32), (0xf0, 3), (u32::MAX, 0), (u32::MAX, 31), (u32::MAX, 32)]
     {
@@ -200,7 +202,7 @@ fn shl_in_a_loop_by_a_constant_count() {
     end
     local.get 1",
     );
-    assert!(masm.contains("u32shl.1"), "{masm}");
+    assert!(has_instruction(&masm, "u32shl.1"), "{masm}");
     for n in [0u32, 1, 5, 31] {
         assert_eq!(run(&test, &package, &[n]), 1u32.wrapping_shl(n), "1 << {n}\n{masm}");
     }
@@ -221,7 +223,7 @@ fn rotates_by_a_constant_count_use_the_immediate_forms() {
     i32.{op}"
             ),
         );
-        assert!(masm.contains(instruction), "{masm}");
+        assert!(has_instruction(&masm, instruction), "{masm}");
         assert!(!has_instruction(&masm, "push.5"), "{masm}");
         for arg in [0u32, 1, 0x8000_0000, 0x1234_5678, u32::MAX] {
             assert_eq!(run(&test, &package, &[arg]), rotate(arg, 5), "{arg} {op} 5\n{masm}");
@@ -241,7 +243,7 @@ fn rotl_by_a_constant_count_of_32_or_more() {
     i32.rotl"
             ),
         );
-        assert!(masm.contains(&format!("u32rotl.{effective}")), "{count}\n{masm}");
+        assert!(has_instruction(&masm, &format!("u32rotl.{effective}")), "{count}\n{masm}");
         for arg in [0u32, 1, 0x8000_0000, 0x1234_5678, u32::MAX] {
             assert_eq!(
                 run(&test, &package, &[arg]),
