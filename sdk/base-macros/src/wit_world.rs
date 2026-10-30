@@ -10,6 +10,7 @@ use std::{
 use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
 use miden_project::Uri;
+use midenc_frontend_wasm_metadata::namespace::{CORE_TYPES_PACKAGE, CORE_TYPES_PACKAGE_VERSION};
 use proc_macro2::Span;
 use semver::Version;
 use toml::Value;
@@ -485,6 +486,16 @@ fn collect_miden_dependencies(
     })
 }
 
+/// The version of the SDK WIT package (`miden:base`) that `details`, a wit-parser resolution
+/// failure, reports as not found, when it is not the bundled one.
+fn stale_sdk_wit_version(details: &str) -> Option<&str> {
+    let prefix = format!("package '{CORE_TYPES_PACKAGE}@");
+    let rest = &details[details.find(&prefix)? + prefix.len()..];
+    let (version, after) = rest.split_once('\'')?;
+    (after.trim_start().starts_with("not found") && version != CORE_TYPES_PACKAGE_VERSION)
+        .then_some(version)
+}
+
 /// Formats the dependency WIT diagnostic emitted by SDK macros.
 pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> String {
     let guidance = if source.origin == WitOrigin::Synthesized {
@@ -493,6 +504,16 @@ pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details
              package embeds none; provide the WIT manually via \
              package.metadata.miden.dependencies.{}.wit in miden-project.toml.",
             source.name
+        )
+    } else if let Some(version) = stale_sdk_wit_version(details) {
+        // The embedded WIT uses the SDK WIT package of another SDK version, which is what the
+        // bump of that package's version on a layout change is for: the dependency must be
+        // rebuilt, not made self-contained.
+        format!(
+            "The dependency's embedded WIT uses `{CORE_TYPES_PACKAGE}@{version}`, the WIT package \
+             of another Miden SDK version; this SDK bundles \
+             `{CORE_TYPES_PACKAGE}@{CORE_TYPES_PACKAGE_VERSION}`. Rebuild the dependency with the \
+             current `cargo miden build`."
         )
     } else if details.contains("not found") {
         // A "package not found" from wit-parser means the embedded WIT itself references
@@ -1304,6 +1325,46 @@ world importer {
 
         assert!(message.contains("invalid WIT override"), "unexpected error: {message}");
         assert!(message.contains("must be self-contained"), "unexpected error: {message}");
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn embedded_wit_of_another_sdk_version_reports_rebuild_advice() {
+        // A dependency built with a previous SDK embeds WIT using that SDK's `miden:base`
+        // version; the layout bump is what makes it fail here, so the advice is to rebuild it.
+        let stale_wit = r#"package miden:stale@0.1.0;
+
+interface api {
+    use miden:base/core-types@1.0.0.{felt};
+    get: func() -> felt;
+}
+
+world stale {
+    export api;
+}
+"#;
+        let fixture_root = empty_fixture_root();
+        let dependency_root = fixture_root.join("wit-world-fixture-dep");
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(
+            &fixture_root.join("package-cache/wit_world_fixture_dep.masp"),
+            Some(stale_wit),
+        );
+        let package = package_with_dependency(dependency_root);
+
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("embedded WIT of another SDK version must fail metadata load");
+        let message = error.to_string();
+
+        assert!(
+            message
+                .contains("uses `miden:base@1.0.0`, the WIT package of another Miden SDK version"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("bundles `miden:base@2.0.0`"), "unexpected error: {message}");
+        assert!(message.contains("Rebuild the dependency"), "unexpected error: {message}");
+        assert!(!message.contains("must be self-contained"), "unexpected error: {message}");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
