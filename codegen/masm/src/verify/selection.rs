@@ -314,6 +314,15 @@ fn validate_graph(
             return Err(error("value ID disagrees with definition"));
         }
     }
+    // A value published without a copy may only be consumed as an immediate: any lane demand
+    // or edge binding would need a copy its unit never produces.
+    let unpublished: BTreeSet<_> = program
+        .segments
+        .iter()
+        .flat_map(|segment| segment.units.iter())
+        .filter(|unit| unit.publication == OutputPublication::Literal)
+        .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
+        .collect();
     for segment in &program.segments {
         if !segments.insert(segment.id) {
             return Err(error("duplicate segment"));
@@ -443,6 +452,13 @@ fn validate_graph(
                             return Err(error("literal publication lacks a literal value"));
                         }
                     }
+                }
+                if unit.stack_inputs.iter().any(|atom| unpublished.contains(&atom.value))
+                    || unit.stored_inputs.iter().any(|stored| {
+                        matches!(stored.value, StoredValue::Atom(atom) if unpublished.contains(&atom.value))
+                    })
+                {
+                    return Err(error("literal publication demanded as a physical input"));
                 }
                 // An immediate is a dependency the body carries without a lane: its value must
                 // be a literal the unit names semantically but never physically.
@@ -606,6 +622,9 @@ fn validate_graph(
                 || !program.values.contains_key(&binding.source)
             {
                 return Err(error("duplicate or undefined edge binding"));
+            }
+            if unpublished.contains(&binding.source) {
+                return Err(error("literal publication bound across an edge"));
             }
             if let Some(destination) = edge.destination {
                 let target =

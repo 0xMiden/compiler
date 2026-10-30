@@ -248,40 +248,48 @@ impl<'a> Verifier<'a> {
                 }
             }
         }
+        let units = self.plan.selected.segments.iter().flat_map(|segment| &segment.units);
+        let claims = units.clone().try_fold(false, |any, unit| {
+            Ok::<_, VerificationError>(
+                any || unit.publication == OutputPublication::Literal
+                    || !self.plan.selected.evidence(unit.id)?.immediates.is_empty(),
+            )
+        })?;
+        if !claims {
+            return Ok(());
+        }
         let mut found = BTreeMap::new();
         scan(body, &mut found);
-        for segment in &self.plan.selected.segments {
-            for unit in &segment.units {
-                if unit.publication == OutputPublication::Literal
-                    && found.get(&unit.id).is_some_and(|found| found.instructions > 0)
-                {
-                    return Err(self.context(
-                        fail(
-                            DiagnosticCategory::InvalidSelectedLowering,
-                            "literal publication expands to instructions",
-                        ),
-                        Some(unit.id),
-                    ));
-                }
-                let expected = self
-                    .plan
-                    .selected
-                    .evidence(unit.id)?
-                    .immediates
-                    .iter()
-                    .map(|(_, literal)| literal.as_canonical_u64())
-                    .collect::<Vec<_>>();
-                if !expected.is_empty()
-                    && found.get(&unit.id).map(|found| &found.immediates) != Some(&expected)
-                {
-                    return Err(self.context(
-                        fail(
-                            DiagnosticCategory::InvalidSelectedLowering,
-                            "actual body immediates differ from registered evidence",
-                        ),
-                        Some(unit.id),
-                    ));
-                }
+        for unit in units {
+            if unit.publication == OutputPublication::Literal
+                && found.get(&unit.id).is_some_and(|found| found.instructions > 0)
+            {
+                return Err(self.context(
+                    fail(
+                        DiagnosticCategory::InvalidSelectedLowering,
+                        "literal publication expands to instructions",
+                    ),
+                    Some(unit.id),
+                ));
+            }
+            let expected = self
+                .plan
+                .selected
+                .evidence(unit.id)?
+                .immediates
+                .iter()
+                .map(|(_, literal)| literal.as_canonical_u64())
+                .collect::<Vec<_>>();
+            if !expected.is_empty()
+                && found.get(&unit.id).map(|found| &found.immediates) != Some(&expected)
+            {
+                return Err(self.context(
+                    fail(
+                        DiagnosticCategory::InvalidSelectedLowering,
+                        "actual body immediates differ from registered evidence",
+                    ),
+                    Some(unit.id),
+                ));
             }
         }
         Ok(())

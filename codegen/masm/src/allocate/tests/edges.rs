@@ -49,6 +49,7 @@ pub(super) fn context(values: &BTreeMap<ValueId, SelectedValue>) -> AllocationCo
             (SegmentId(0), Default::default()),
             (SegmentId(1), Default::default()),
         ]),
+        unpublished: Default::default(),
     }
 }
 

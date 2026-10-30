@@ -409,6 +409,9 @@ pub(crate) struct AllocationContext<'a> {
     pub options: AllocationOptions,
     /// Reconstructible definitions that dominate an entry before its first unit executes.
     pub(super) entry_reconstructions: BTreeMap<SegmentId, BTreeSet<ValueId>>,
+    /// Values published without a physical copy; entry layouts never name or request a lane
+    /// for them, since every consumer takes them as an instruction immediate.
+    pub(super) unpublished: BTreeSet<ValueId>,
 }
 
 impl<'a> AllocationContext<'a> {
@@ -463,10 +466,18 @@ impl<'a> AllocationContext<'a> {
                 (segment.id, eligible)
             })
             .collect();
+        let unpublished = program
+            .segments
+            .iter()
+            .flat_map(|segment| segment.units.iter())
+            .filter(|unit| unit.publication == OutputPublication::Literal)
+            .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
+            .collect();
         Self {
             values: &program.values,
             next_use: &analysis.next_use,
             options: AllocationOptions::default(),
+            unpublished,
             input_symmetries: program
                 .segments
                 .iter()

@@ -88,6 +88,8 @@ fn equal(
 
 /// A representation is renamed only through checked old-source equality. Duplicate
 /// destination names get explicit aliases; they do not duplicate physical occurrences.
+/// A value published without a copy never receives a lane's name: an equal resident literal
+/// would otherwise let an inherited layout request a copy for it.
 fn rename(
     incoming: &Incoming<'_>,
     atom: Atom,
@@ -95,6 +97,9 @@ fn rename(
     context: &AllocationContext<'_>,
 ) -> Result<Atom, AllocationError> {
     for candidate in live_atoms {
+        if context.unpublished.contains(&candidate.value) {
+            continue;
+        }
         if context.same(
             incoming.state,
             StoredValue::Atom(atom),
@@ -385,7 +390,8 @@ fn recoverable(
 /// Shared scratch and provenance facts must already hold; scalar repairs may materialize
 /// missing representations. Ordinary joins compare demand-ranked, common-resident, and
 /// inherited layouts unless predecessor agreement already provides a complete layout.
-/// Loop headers use a single layout ranked by cyclic demand before ordinary next use.
+/// Loop headers use a single layout ranked by cyclic demand before ordinary next use. A value
+/// published without a copy is never ranked or named, so no candidate requests a lane for it.
 ///
 /// Candidate scoring includes all forward repairs and the first unit's preparation,
 /// weighted by incoming edge count. Equal costs retain the earlier candidate. Failed
@@ -484,15 +490,11 @@ pub(super) fn choose(
         // reads. Residency cannot decide this, since another resident literal of the same
         // value compares equal. Any other value, including a parameter bound from a literal
         // and an ordinary pushed constant, keeps its place in the ranking.
-        let unpublished: BTreeSet<_> = program
-            .segments
+        let mut ranked: Vec<_> = live
             .iter()
-            .flat_map(|segment| segment.units.iter())
-            .filter(|unit| unit.publication == OutputPublication::Literal)
-            .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
+            .copied()
+            .filter(|value| !context.unpublished.contains(value))
             .collect();
-        let mut ranked: Vec<_> =
-            live.iter().copied().filter(|value| !unpublished.contains(value)).collect();
         if let Some(demand) = loop_demand {
             let cyclic = &demand.next_use.entry[&segment];
             let first = &translated[0];
