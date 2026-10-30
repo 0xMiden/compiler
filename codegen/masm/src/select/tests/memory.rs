@@ -187,6 +187,118 @@ fn typed_memory_matrix_matches_vm() {
 }
 
 #[test]
+fn byte_pointer_stores_merge_into_full_field_cells() {
+    // A cell's low bytes are 44 33 22 11. Its high bits may come from an earlier Felt store,
+    // including reuse of a procedure frame. Only bytes covered by this store may change.
+    let initial = (1usize << 40) | 0x1122_3344;
+    let mut failures = vec![];
+    for (ty, value, bytes) in [
+        ("u8", vec![0xaa], vec![0xaa]),
+        ("i8", vec![0xfe], vec![0xfe]),
+        ("u16", vec![0xbbaa], vec![0xaa, 0xbb]),
+        ("u32", vec![0xddcc_bbaa], vec![0xaa, 0xbb, 0xcc, 0xdd]),
+        (
+            "u64",
+            vec![0xddcc_bbaa, 0x8877_6655],
+            vec![0xaa, 0xbb, 0xcc, 0xdd, 0x55, 0x66, 0x77, 0x88],
+        ),
+        (
+            "u128",
+            vec![0xddcc_bbaa, 0x8877_6655, 0x0403_0201, 0x0807_0605],
+            vec![0xaa, 0xbb, 0xcc, 0xdd, 0x55, 0x66, 0x77, 0x88, 1, 2, 3, 4, 5, 6, 7, 8],
+        ),
+    ] {
+        for space in [", byte", ", element"] {
+            let f = memory_function(
+                ty,
+                space,
+                &alloc::format!("hir.store %p, %v : (ptr<{ty}{space}>, {ty}); builtin.ret;"),
+                false,
+            );
+            for offset in 0..if space == ", byte" { 4 } else { 1 } {
+                let mut expected_bytes = [0x44, 0x33, 0x22, 0x11].repeat(6);
+                expected_bytes[offset..offset + bytes.len()].copy_from_slice(&bytes);
+                let initialize = (0..6)
+                    .map(|i| alloc::format!("push.{initial} mem_store.{}", 64 + i))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let observe = expected_bytes
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .enumerate()
+                    .map(|(i, chunk)| {
+                        let touched = i * 4 < offset + bytes.len() && (i + 1) * 4 > offset;
+                        let expected = if touched {
+                            u32::from_le_bytes(*chunk) as usize
+                        } else {
+                            initial
+                        };
+                        alloc::format!("mem_load.{} push.{expected} assert_eq", 64 + i)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let mut inputs = vec![if space == ", byte" { 256 + offset } else { 64 }];
+                inputs.extend(&value);
+                if let Err(error) = execute_linked_memory(&f, &inputs, &[], &initialize, &observe) {
+                    failures.push(alloc::format!("{ty}{space} offset {offset}: {error}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn byte_pointer_loads_extract_low_bytes_from_full_field_cells() {
+    let mut failures = vec![];
+    let initial = (1usize << 40) | 0x4444_4444;
+    let initialize = (0..5)
+        .map(|i| alloc::format!("push.{initial} mem_store.{}", 64 + i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let observe = (0..5)
+        .map(|i| alloc::format!("mem_load.{} push.{initial} assert_eq", 64 + i))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for (ty, value, lanes) in [
+        ("i1", 0, 1),
+        ("u8", 0x44, 1),
+        ("i8", 0x44, 1),
+        ("u16", 0x4444, 1),
+        ("i16", 0x4444, 1),
+        ("u32", 0x4444_4444, 1),
+        ("u64", 0x4444_4444, 2),
+        ("u128", 0x4444_4444, 4),
+    ] {
+        for space in ["byte", "element"] {
+            let f = parse(&alloc::format!(
+                "builtin.function public extern(\"C\") @load(%p: ptr<{ty}, {space}>) -> {ty} {{ \
+                 %v = hir.load %p; builtin.ret %v : ({ty}); }};"
+            ));
+            for offset in 0..if space == "byte" { 4 } else { 1 } {
+                let address = if space == "byte" { 256 + offset } else { 64 };
+                // Whole-cell aligned loads retain full field values.
+                let expected = vec![
+                    if offset == 0 && value == 0x4444_4444 {
+                        initial
+                    } else {
+                        value
+                    };
+                    lanes
+                ];
+                if let Err(error) =
+                    execute_linked_memory(&f, &[address], &expected, &initialize, &observe)
+                {
+                    failures.push(alloc::format!("{ty} {space} offset {offset}: {error}"));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
 fn signed_loads_match_vm() {
     for (op, src, dst, bits) in [
         ("i32_load_8s", "i8", "i32", 8),
@@ -930,7 +1042,7 @@ fn selected_u16_uses_only_its_actual_memory_footprint() {
     );
     let neighbor = (1u64 << 40) + 7;
     let init = alloc::format!("push.287454020 mem_store.64 push.{neighbor} mem_store.65");
-    for (offset, expected) in [(0, 0x3344), (1, 0x2233), (2, 0x1122)] {
+    for (offset, expected) in [(0, 0x3344), (1, 0x2233), (2, 0x1122), (3, 0x0711)] {
         execute_linked_memory(
             &f,
             &[256 + offset],
@@ -940,7 +1052,6 @@ fn selected_u16_uses_only_its_actual_memory_footprint() {
         )
         .unwrap();
     }
-    assert!(execute_linked_memory(&f, &[259], &[], &init, "").is_err());
 }
 
 #[test]

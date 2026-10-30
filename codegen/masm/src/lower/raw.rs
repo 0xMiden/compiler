@@ -99,6 +99,7 @@ pub(crate) fn load_small(bits: usize, span: masm::SourceSpan) -> Vec<masm::Op> {
     b.emit(masm::Instruction::Swap1); // [byte_offset, element_addr]
     b.emit(masm::Instruction::Dup1); // [element_addr, byte_offset, element_addr]
     b.emit(masm::Instruction::MemLoad); // [loaded_word, byte_offset, element_addr]
+    b.emit(masm::Instruction::U32Cast); // Interpret only the cell's byte-addressable bits.
 
     // Now we need to extract the correct byte(s) based on the offset
     // Stack: [loaded_word, byte_offset, element_addr]
@@ -138,6 +139,7 @@ pub(crate) fn store_small(type_size: u32, span: masm::SourceSpan) -> Vec<masm::O
     b.emit_all([
         masm::Instruction::Dup0,    // [addr, addr, offset, value]
         masm::Instruction::MemLoad, // [prev, addr, offset, value]
+        masm::Instruction::U32Cast, // [prev_low32, addr, offset, value]
     ]);
 
     // Calculate bit offset and create mask
