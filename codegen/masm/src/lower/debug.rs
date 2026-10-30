@@ -144,7 +144,8 @@ impl Observation {
     }
 }
 
-/// One currently valid physical lane; cells remain symbolic until frame assignment.
+/// One currently valid lane location: a physical location, or the literal the lane reconstructs
+/// to. Cells remain symbolic until frame assignment.
 /// Unavailable includes missing values and lanes buried beyond the VM's accessible window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Location {

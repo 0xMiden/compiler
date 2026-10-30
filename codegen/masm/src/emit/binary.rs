@@ -1328,6 +1328,10 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Pops an integer value off the stack, `a`, and performs `a << <imm>`, truncated to the
+    /// width of `a`.
+    ///
+    /// 32-bit and narrower values use the immediate instruction form; 64-bit values push `imm`.
     pub fn shl_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1369,6 +1373,11 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Pops an integer value off the stack, `a`, and performs `a >> <imm>`, arithmetic for a
+    /// signed `a` and logical otherwise.
+    ///
+    /// Unsigned 32-bit and narrower values use the immediate instruction form; the other types
+    /// push `imm`.
     pub fn shr_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1405,6 +1414,10 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Pops a 32- or 64-bit integer value off the stack, `a`, and rotates the bits of `a` left by
+    /// `imm` bits.
+    ///
+    /// 32-bit values use the immediate instruction form; 64-bit values push `imm`.
     pub fn rotl_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();
@@ -1438,6 +1451,10 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Pops a 32- or 64-bit integer value off the stack, `a`, and rotates the bits of `a` right by
+    /// `imm` bits.
+    ///
+    /// 32-bit values use the immediate instruction form; 64-bit values push `imm`.
     pub fn rotr_imm(&mut self, imm: u32, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty();

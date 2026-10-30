@@ -28,7 +28,9 @@ use crate::{
 /// aliases and transfers describe separate operations, not fallback attempts.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum SchedulingTier {
-    /// Publish complete semantic aliases without moving their physical representations.
+    /// Publish complete semantic aliases without moving their physical representations, or a
+    /// literal publication, which moves nothing and whose outputs are available only through
+    /// reconstruction.
     Aliases,
     /// Establish an edge contract, using incremental repair or its constructive fallback.
     Transfer,

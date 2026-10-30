@@ -31,7 +31,7 @@ The [plan printer](../../../codegen/masm/src/plan/actions.rs) reports:
 | `unit sN`, `kind`, `source`, `origin` | Selected unit, registered lowering kind, source identity, source span and inline ancestry. `unplanned-unit` denotes a selected unit without an allocation decision, such as an unreachable tail. |
 | `stack`, `stored`, `outputs` | The unit's required inputs and published outputs, **not** a snapshot of the current stack. |
 | `publication`, `semantic` | Printed only for a unit without a stack publication or with lane-free semantic inputs: the publication mode, and the dependencies the unit consumes without a stack or stored lane (an instruction immediate, an alias source). |
-| `tier`, `victims`, `actions`, `cost`, `loads`, `stores` | Preparation class, evictions, action count, expanded instruction-cost estimate, and spill traffic. `Aliases` publishes identities without scheduling; it is not normalization. |
+| `tier`, `victims`, `actions`, `cost`, `loads`, `stores` | Preparation class, evictions, action count, expanded instruction-cost estimate, and spill traffic. `Aliases` publishes identities without scheduling, and also covers literal publication, which moves nothing; it is not normalization. |
 | `semantic-storage-reads` | Backing cells needed by the unit's semantic inputs; metadata for storage liveness, not emitted loads or verifier authority. |
 | `operand-traffic`, `edge-traffic` | Lane loads/stores for operand preparation versus control-flow repair. |
 | `control-preparation` | Control-predicate preparation: edge identity, tier, victims and action/cost/traffic counts. |

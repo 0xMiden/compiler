@@ -91,8 +91,16 @@ pub(crate) enum Kind {
 
 /// The count a bit movement carries as an instruction immediate: `op` is an `arith.shl`,
 /// `arith.shr`, `arith.rotl` or `arith.rotr` whose moved type has a native immediate form and
-/// whose count is an `arith.constant` below the 32-bit limit. Signed right shifts and every
-/// 64-bit movement are helper calls that take the count on the stack, so they never fold.
+/// whose count is an `arith.constant` below the 32-bit limit, distinct from the moved value.
+///
+/// The moved types with a native immediate form are:
+/// - `arith.shl`: `i8`, `u8`, `i16`, `u16`, `i32` and `u32`;
+/// - `arith.shr`: `u8`, `u16` and `u32`;
+/// - `arith.rotl` and `arith.rotr`: `i32` and `u32`.
+///
+/// Signed right shifts and every 64-bit movement are helper calls that take the count on the
+/// stack, so they never fold. A value shifted by itself never folds either: it would be both
+/// the moved lane and the immediate.
 ///
 /// The movement and the constant both consult this rule, so selection agrees on which values
 /// are consumed as immediates without a physical lane.
@@ -644,8 +652,9 @@ impl Arithmetic {
             .into());
         }
         let specs = expected_calls(kind, &ty, overflow, target.as_ref());
-        // An immediate form is a single native instruction; a helper would take the count on
-        // the stack and the folded lane would be missing from its arguments.
+        // An immediate form is a native instruction (plus a mask for narrow left shifts); a
+        // helper would take the count on the stack and the folded lane would be missing from
+        // its arguments.
         if !immediates.is_empty() && !specs.is_empty() {
             return Err(invalid("immediate movement count on a helper-backed type").into());
         }
