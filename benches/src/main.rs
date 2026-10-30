@@ -4,9 +4,9 @@ use clap::Parser;
 use midenc_benchmark_runner::{BenchmarkRunner, git_commit};
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark compiler examples by MAST size and VM cycles")]
+#[command(about = "Benchmark compiler examples and the batch kernel by MAST size and VM cycles")]
 struct Args {
-    /// Compiler workspace containing the examples directory.
+    /// Compiler workspace containing the examples directory and the batch kernel fixture.
     #[arg(long, default_value = env!("CARGO_MANIFEST_DIR"))]
     workspace_root: PathBuf,
     /// Directory in which results, packages, and flamegraphs are written.
@@ -21,7 +21,7 @@ struct Args {
     /// Commit recorded in results.json; defaults to workspace HEAD.
     #[arg(long)]
     commit: Option<String>,
-    /// Skip examples whose build fails instead of failing the whole run.
+    /// Skip examples (and the batch kernel) whose build fails instead of failing the whole run.
     ///
     /// Allows partial reports when testing a compiler against incompatible example sources.
     /// CI leaves this disabled for both revisions.

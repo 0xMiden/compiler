@@ -1,4 +1,4 @@
-//! End-to-end benchmarks for compiler example projects.
+//! End-to-end benchmarks for compiler example projects and the batch kernel fixture.
 
 use std::{
     collections::BTreeMap,
@@ -222,9 +222,7 @@ impl BenchmarkRunner {
             case.name
         );
 
-        let optimized = self
-            .compile(&project_dir, "none", &[])
-            .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+        let optimized = self.compile(&project_dir, "release", "none", &[])?;
         let optimized_package = if self.write_artifacts {
             let saved_package = self.output_dir.join("packages").join(format!(
                 "{}.{}",
@@ -252,9 +250,7 @@ impl BenchmarkRunner {
                 self.profile(optimized_package, config.clone(), &project_dir, None)?;
 
             let flamegraph = if self.write_artifacts {
-                let debuggable = self
-                    .compile(&project_dir, "full", &[])
-                    .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+                let debuggable = self.compile(&project_dir, "release", "full", &[])?;
                 let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
                 let flamegraph_path = self.output_dir.join(&relative_flamegraph);
                 self.profile(
@@ -285,12 +281,12 @@ impl BenchmarkRunner {
     /// Measures the batch kernel fixture: one row per [`batch_kernel::scenarios`] entry, each
     /// with the kernel's MAST size and the scenario's cycles.
     fn run_batch_kernel(&self) -> Result<Vec<BenchmarkResult>> {
+        if self.write_artifacts {
+            eprintln!("Benchmarking {}", batch_kernel::NAME);
+        }
         let project_dir = self.workspace_root.join(batch_kernel::PROJECT_DIR);
-        let build = |debug| {
-            self.compile(&project_dir, debug, batch_kernel::COMPILE_ARGS)
-                .map_err(|err| anyhow::Error::new(BuildFailure(err)))
-        };
-        let optimized = build("none")?;
+        let optimized =
+            self.compile(&project_dir, "release", "none", batch_kernel::COMPILE_ARGS)?;
         if self.write_artifacts {
             let saved_package = self.output_dir.join("packages").join(format!(
                 "{}.{}",
@@ -298,7 +294,11 @@ impl BenchmarkRunner {
                 Package::EXTENSION
             ));
             fs::copy(&optimized, &saved_package).with_context(|| {
-                format!("failed to copy optimized package to {}", saved_package.display())
+                format!(
+                    "failed to copy optimized package from {} to {}",
+                    optimized.display(),
+                    saved_package.display()
+                )
             })?;
         }
         let optimized = load_package(&optimized)?;
@@ -307,10 +307,7 @@ impl BenchmarkRunner {
         let scenarios = batch_kernel::scenarios();
         let mut rows = Vec::with_capacity(scenarios.len());
         for scenario in &scenarios {
-            let name = format!("{} ({})", batch_kernel::NAME, scenario.label);
-            if self.write_artifacts {
-                eprintln!("Benchmarking {name}");
-            }
+            let name = batch_kernel::row_name(scenario);
             let cycles = self
                 .profile(optimized.clone(), scenario.config.clone(), &project_dir, None)
                 .with_context(|| format!("{name} failed"))?
@@ -326,9 +323,15 @@ impl BenchmarkRunner {
 
         // Built after the optimized runs: compiling replaces the dependency packages they load.
         if self.write_artifacts {
-            let debuggable = load_package(&build("full")?)?;
+            let debuggable = load_package(&self.compile(
+                &project_dir,
+                batch_kernel::DEBUG_PROFILE,
+                "full",
+                batch_kernel::COMPILE_ARGS,
+            )?)?;
             for (row, scenario) in rows.iter_mut().zip(scenarios) {
-                let relative = format!("flamegraphs/{}-{}.svg", batch_kernel::NAME, scenario.slug);
+                let relative =
+                    format!("flamegraphs/{}.svg", batch_kernel::artifact_stem(&scenario));
                 self.profile(
                     debuggable.clone(),
                     scenario.config,
@@ -342,7 +345,8 @@ impl BenchmarkRunner {
         Ok(rows)
     }
 
-    /// Compiles an example, keeping its dependency packages readable for [`Self::profile`].
+    /// Compiles a project with the build `profile`, keeping its dependency packages readable for
+    /// [`Self::profile`]. Failures are reported as [`BuildFailure`].
     ///
     /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
     /// current compiler adopts the directory as its package cache and leaves the packages
@@ -351,7 +355,24 @@ impl BenchmarkRunner {
     /// packages in the project cache instead, which the legacy scan picks up.
     ///
     /// `extra_args` are appended to the runner's standard build flags.
-    fn compile(&self, project_dir: &Path, debug: &str, extra_args: &[&str]) -> Result<PathBuf> {
+    fn compile(
+        &self,
+        project_dir: &Path,
+        profile: &str,
+        debug: &str,
+        extra_args: &[&str],
+    ) -> Result<PathBuf> {
+        self.compile_project(project_dir, profile, debug, extra_args)
+            .map_err(|err| anyhow::Error::new(BuildFailure(err)))
+    }
+
+    fn compile_project(
+        &self,
+        project_dir: &Path,
+        profile: &str,
+        debug: &str,
+        extra_args: &[&str],
+    ) -> Result<PathBuf> {
         // The export directory is runner-owned and stable across invocations; recreate it so
         // this compile's output is the only content. Without the clear, an old compiler that
         // ignores the variable would leave the previous invocation's export in place, and
@@ -368,7 +389,8 @@ impl BenchmarkRunner {
         };
         command
             .arg("build")
-            .arg("--release")
+            .arg("--profile")
+            .arg(profile)
             .arg("--manifest-path")
             .arg(project_dir.join("Cargo.toml"))
             .arg("--target-dir")
@@ -394,12 +416,14 @@ impl BenchmarkRunner {
         parse_compiled_package(&output, project_dir)
     }
 
-    /// The per-example package-cache directory this run hands to the compiler.
+    /// The per-project package-cache directory this run hands to the compiler.
     fn package_cache_dir(&self, project_dir: &Path) -> PathBuf {
         let case = project_dir.file_name().unwrap_or_default();
         self.build_dir.join("package-cache").join(case)
     }
 
+    /// Executes `package` with the given inputs, loading the dependency packages of its latest
+    /// build of `project_dir`, and writes an SVG flamegraph to `flamegraph_path` if given.
     fn profile(
         &self,
         package: Arc<Package>,
@@ -708,6 +732,59 @@ mod tests {
         package.description = Some("metadata".repeat(1_000));
 
         assert_eq!(serialized_mast_size(&package), expected);
+    }
+
+    #[test]
+    fn batch_kernel_names_do_not_collide() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let scenarios = batch_kernel::scenarios();
+        // Examples share the package, package-cache, and flamegraph namespaces with the kernel.
+        let mut names = discover_cases(workspace)
+            .unwrap()
+            .into_iter()
+            .map(|case| case.name)
+            .collect::<BTreeSet<_>>();
+        let kernel_names = std::iter::once(batch_kernel::NAME.to_string())
+            .chain(scenarios.iter().map(batch_kernel::artifact_stem))
+            .chain(scenarios.iter().map(batch_kernel::row_name))
+            .collect::<Vec<_>>();
+        for name in kernel_names {
+            assert!(names.insert(name.clone()), "{name} is not unique");
+        }
+    }
+
+    #[test]
+    #[ignore = "requires a built cargo-miden binary supplied via CARGO_MIDEN"]
+    fn batch_kernel_records_cycles_size_and_named_flamegraphs() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let cargo_miden = std::env::var_os("CARGO_MIDEN").expect("set CARGO_MIDEN");
+        let runner = BenchmarkRunner::new(
+            workspace,
+            output.path().join("results"),
+            output.path().join("build"),
+            Some(cargo_miden.into()),
+            false,
+        )
+        .unwrap();
+        runner.prepare_output_dirs().unwrap();
+
+        let rows = runner.run_batch_kernel().unwrap();
+
+        let names = rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            ["batch-kernel (two transactions)", "batch-kernel (eight transactions, 64 notes)"]
+        );
+        assert!(rows[0].mast_size > 0);
+        assert_eq!(rows[0].mast_size, rows[1].mast_size);
+        assert!(rows[0].cycles.unwrap() < rows[1].cycles.unwrap());
+        for row in &rows {
+            let svg = fs::read_to_string(runner.output_dir.join(row.flamegraph.as_ref().unwrap()))
+                .unwrap();
+            // The debuggable build must carry procedure names, not only `<unknown>` frames.
+            assert!(svg.contains("batch_kernel::entrypoint"), "{} flamegraph is unnamed", row.name);
+        }
     }
 
     #[test]

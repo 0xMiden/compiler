@@ -1,9 +1,14 @@
 //! Benchmark scenarios for the Rust batch kernel fixture (`tests/fixtures/batch-kernel`).
 //!
-//! The input builders mirror those of `tests/integration/src/end_to_end/batch_kernel.rs`, which
-//! owns the kernel's correctness checks. The kernel authenticates every input against the batch
-//! id, so builders that drift from the kernel's advice layout fail the benchmark run instead of
-//! skewing its cycle counts.
+//! The input builders are a copy of those in `tests/integration/src/end_to_end/batch_kernel.rs`,
+//! which owns the kernel's correctness checks; the benchmark inputs need not stay equal to the
+//! test's. The kernel hashes the advice-map entries back to the batch id and checks the sorted
+//! note lists against them, so a builder that drifts from that layout fails the benchmark run.
+//! The advice-stack expiration words are not authenticated (a fixture TODO) and only feed the
+//! expiration minimum.
+//!
+//! The inputs are compiled into the runner, so they follow the runner's revision rather than
+//! the `--workspace-root` checkout.
 
 use miden_core::{EMPTY_WORD, Felt, Word, crypto::hash::Poseidon2, utils::hash_string_to_word};
 use miden_debug::ExecutionConfig;
@@ -18,10 +23,16 @@ pub(super) const NAME: &str = "batch-kernel";
 /// Compiler arguments the fixture needs on top of the runner's standard build flags.
 pub(super) const COMPILE_ARGS: &[&str] = &["--entrypoint", "batch_kernel::entrypoint"];
 
-/// Advice-map keys under which the sorted note lists are provided to the kernel. Must match the
-/// key constants baked into the fixture's `prologue.rs`.
+/// The fixture's build profile for flamegraphs: `release` plus the package debug info, which the
+/// fixture's `release` profile leaves out.
+pub(super) const DEBUG_PROFILE: &str = "profiling";
+
+/// Advice-map key message of the sorted input note list. Must match the key constants baked into
+/// the fixture's `prologue.rs`.
 const INPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::input_note_list";
 
+/// Advice-map key message of the sorted output note list. Must match the key constants baked
+/// into the fixture's `prologue.rs`.
 const OUTPUT_NOTE_LIST_KEY_MESSAGE: &str = "miden::batch_kernel::output_note_list";
 
 /// Byte address (in Rust memory) at which the kernel writes its output words.
@@ -31,10 +42,20 @@ const OUT_ADDR: u32 = 20 * 65536;
 pub(super) struct Scenario {
     /// The scenario's label, appended to [`NAME`] in the report.
     pub(super) label: &'static str,
-    /// A file-name-safe form of `label`.
+    /// A short file-name-safe identifier of the scenario, unique among the scenarios.
     pub(super) slug: &'static str,
     /// The kernel's operand stack and advice inputs.
     pub(super) config: ExecutionConfig,
+}
+
+/// The report row name of `scenario`.
+pub(super) fn row_name(scenario: &Scenario) -> String {
+    format!("{NAME} ({})", scenario.label)
+}
+
+/// The file stem of the artifacts written for `scenario`.
+pub(super) fn artifact_stem(scenario: &Scenario) -> String {
+    format!("{NAME}-{}", scenario.slug)
 }
 
 /// The benchmarked scenarios, in report order.
@@ -153,7 +174,7 @@ fn transaction(seed: u64) -> MockTransaction {
 }
 
 /// The protocol's two-transaction scenario, with authenticated and external unauthenticated
-/// inputs and three outputs.
+/// inputs and three outputs. Transaction order deliberately differs from nullifier order.
 fn two_tx_batch() -> Vec<MockTransaction> {
     let mut first = transaction(10);
     first.input_notes = vec![(word(2000, 0, 0, 2), EMPTY_WORD)];
