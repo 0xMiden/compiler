@@ -79,10 +79,6 @@ pub fn compile_masm_project(project_dir: &Path, sysroot: &Path) -> Arc<Package> 
     }
 }
 
-/// The SDK's `miden.wit` (the `miden:base` package, core types included), for tests that parse
-/// generated WIT next to it; this crate is never published, so it may read the SDK macros' tree.
-pub const SDK_MIDEN_WIT: &str = include_str!("../../../sdk/base-macros/wit/miden.wit");
-
 /// Returns the compiler workspace root.
 pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()

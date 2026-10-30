@@ -4755,7 +4755,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-frontend-wasm-metadata",
  "midenc-hir-type",
- "midenc-integration-test-support",
  "midenc-package-interface",
  "wit-bindgen-rust",
  "wit-parser 0.259.0",

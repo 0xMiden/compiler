@@ -1,13 +1,15 @@
 //! Generation over fixture packages assembled from MASM.
 
 use miden_mast_package::TargetType;
-use midenc_integration_test_support::SDK_MIDEN_WIT as MIDEN_WIT;
 use midenc_package_interface::{
     PackageInterface,
     testing::{assemble_account_component_fixture, assemble_fixture},
 };
 
 use super::*;
+
+/// The SDK's core-types WIT, which the generated interfaces import.
+const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 
 /// A component exercising every mapping and skip rule.
 const COMPONENT: &str = r#"

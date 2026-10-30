@@ -25,9 +25,11 @@ use miden_standards::account::{
     wallets::BasicWallet,
 };
 use midenc_expect_test::expect_file;
-use midenc_integration_test_support::SDK_MIDEN_WIT as MIDEN_WIT;
 use midenc_package_interface::PackageInterface;
 use midenc_package_wit::{AUTH_PROCEDURE_REASON, Error, Generated, Skipped, generate};
+
+/// The SDK's core-types WIT, which the generated interfaces import.
+const MIDEN_WIT: &str = include_str!("../../base-macros/wit/miden.wit");
 
 /// Every account component of `miden-standards`.
 fn components() -> Vec<&'static miden_mast_package::Package> {
