@@ -2,6 +2,8 @@
 //! that consume it, so each is exercised against a genuine package manifest rather than a
 //! hand-built one.
 
+extern crate std;
+
 use alloc::{string::ToString, sync::Arc};
 
 use miden_assembly_syntax::{
@@ -72,6 +74,25 @@ pub fn assemble_fixture(name: &str, root_path: &str, source: &str) -> Arc<Packag
         )
         .unwrap_or_else(|err| panic!("fixture must assemble: {err}"));
     Arc::from(package)
+}
+
+/// Assemble `source` as the root module `root_path` of an account-component package named
+/// `name`, as [`assemble_fixture`] does for a library package.
+pub fn assemble_account_component_fixture(
+    name: &str,
+    root_path: &str,
+    source: &str,
+) -> Arc<Package> {
+    let mut package = (*assemble_fixture(name, root_path, source)).clone();
+    package.kind = miden_mast_package::TargetType::AccountComponent;
+    Arc::new(package)
+}
+
+/// Write `package` as a `.masp` file at `path`, creating its parent directories.
+pub fn write_package(path: &std::path::Path, package: &Package) {
+    package
+        .write_to_file(path)
+        .unwrap_or_else(|err| panic!("`{}` must be written: {err}", path.display()));
 }
 
 #[cfg(test)]

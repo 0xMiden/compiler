@@ -338,9 +338,9 @@ pub(crate) fn require_input_path_for_seed(input: &InputFile) -> CompilerResult<(
 ///
 /// What re-rooting deliberately does *not* cover is an authored component name, which is the
 /// code's own identity — moving it would rename the procedures every dependent addresses. So for a
-/// `.hir` file declaring a component, this scan is the only thing that can make the two namespaces
-/// agree, which is why [`hir_declared_namespace`] re-renders the name through `SymbolPath` rather
-/// than echoing the token it found.
+/// `.hir` file declaring a component, reading it is the only thing that can make the two
+/// namespaces agree, which is why [`hir_declared_namespace`] renders the parsed component's own
+/// `SymbolPath` the way codegen does.
 ///
 /// Two mechanisms, and no third: either the file names its root, and the target is derived from
 /// it here, or it does not, and codegen puts the root wherever the target says.
@@ -391,18 +391,12 @@ fn declared_namespace(input: &InputFile, session: &Session) -> Option<String> {
 /// reject (a missing or malformed `external-id`, or exports under different namespaces) declare
 /// nothing here; the frontend reports the latter with its own diagnostic.
 fn wasm_declared_namespace(wasm: &[u8], session: &Session) -> Option<String> {
-    use midenc_hir::{SymbolNameComponent, SymbolPath};
-
     // The scan is given the packages the translation links, so that it classifies linker stubs
     // as the translation does.
     let linked_packages = session.package_interfaces().ok()?;
     let namespace =
         midenc_frontend_wasm::declared_namespace(wasm, Some(linked_packages), session).ok()??;
-    let relative = namespace
-        .components()
-        .filter(|component| !matches!(component, SymbolNameComponent::Root))
-        .collect::<SymbolPath>();
-    Some(relative.to_library_path().to_string())
+    Some(relative_library_path(&namespace))
 }
 
 /// The text of `input`'s root source, however the input carries it.
@@ -451,224 +445,120 @@ fn masm_namespace_declaration(source: &str) -> Option<String> {
     declared.split_whitespace().next().map(ToString::to_string)
 }
 
-/// The operation whose declaration names a `.hir` root's namespace, when it declares one.
-const HIR_COMPONENT_OP: &str = "builtin.component";
-
-/// The operation that names it when no component does; see [`hir_declared_namespace`] for why
-/// there are two and in which order they are read.
-const HIR_MODULE_OP: &str = "builtin.module";
-
 /// The namespace a file of HIR text declares for itself, rendered the way codegen roots that
 /// file's Miden Assembly.
 ///
-/// Scanned rather than parsed, for the reason [`masm_namespace_declaration`] is: this runs
-/// *before* the target the HIR will be parsed against exists, and the real parse follows a
-/// moment later. Here there is a second reason, which is the seam's shape. [`declared_namespace`]
-/// returns an [`Option`] with no error channel, so a parse failure could only be swallowed into
-/// `None` — and would then resurface downstream as a namespace mismatch instead of the syntax
-/// error it is. A scan has nothing to swallow.
+/// The source is parsed, unverified, into a context of its own, and the answer is read off the
+/// parsed operations. Preparation runs before the target the HIR is compiled against exists, so
+/// the compilation parses the file again into its own context; the extra parse is the price of
+/// reading the file exactly as the parser does, with no second grammar to keep in step.
+///
+/// Text the parser rejects declares nothing: the real parse reports it a moment later, with the
+/// parser's own diagnostic.
 ///
 /// # Two shapes, because codegen roots two ways
 ///
 /// What the target's namespace must equal is whatever `codegen/masm` roots the lowered Miden
 /// Assembly at, because `load_target_sources` rejects a root module that does not sit exactly at
-/// its target's namespace. Codegen decides that in one of two places, and this mirrors both:
+/// its target's namespace. Codegen decides from the *direct* children of the world the file
+/// parses to (a parsed `builtin.world`, or the world the parser anchors any other top-level
+/// operation at), and so does this:
 ///
-/// - **A file declaring a component** is rooted at that component's *name*
-///   (`ToMasmComponent for builtin::Component`). This is the case whether the component stands
-///   alone or is nested in a `builtin.world`, because a world holding one component is lowered by
-///   lowering that component.
-/// - **A file declaring no component** is rooted at the *target's own namespace*
+/// - **A world defining a component** is rooted at that component's name
+///   (`ToMasmComponent for builtin::Component`). Declaration-only components (import stubs, see
+///   `Component::is_declaration_only`) define nothing and are passed over, as
+///   `World::has_defining_component` passes over them.
+/// - **A world defining no component** is rooted at the *target's own namespace*
 ///   (`MasmComponent::source_inputs`), because such a world has no identity beyond the namespace
-///   its modules sit in. Reading its single top-level module's name is therefore not a second
-///   rule to keep in step but the way this scan *chooses* that namespace: what it returns is what
-///   codegen then roots at, and codegen's equality guard makes the re-rooting a no-op. A world of
+///   its modules sit in. Reading its single top-level module's name is the way this *chooses*
+///   that namespace, and codegen's equality guard then makes the re-rooting a no-op. A world of
 ///   modules is what `hir-opt` fixtures and `--emit=hir` output for a module-only program look
-///   like, so this is not an exotic shape.
+///   like.
 ///
-/// The two are tried in that order, and the fall-through is on *nothing being declared*, never on
-/// a component being unreadable — which is what keeps the modules **inside** a component, the
-/// commonest shape of all, from being mistaken for a top-level one.
+/// # Decision table
 ///
-/// # The names are re-rendered, not echoed
+/// | The world's direct items                  | Namespace                    |
+/// |-------------------------------------------|------------------------------|
+/// | exactly one defining component            | that component's name        |
+/// | two or more defining components           | none (codegen rejects them)  |
+/// | stubs and nothing else, exactly one stub  | that stub's name             |
+/// | otherwise exactly one module              | that module's name           |
+/// | anything else                             | none                         |
 ///
-/// A component's name is a Miden namespace path: its segments (see
-/// [`SymbolPath::segments_of`](midenc_hir::SymbolPath::segments_of)) become one path component
-/// each, rendered by the very same `SymbolPath::to_library_path` codegen calls, which quotes a
-/// segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
-/// `@"a:b"` becomes `"a:b"`. A module's name needs no such interpretation, and both sides
-/// normalize it identically: [`synthesize_target`] absolutizes it through `Path::to_absolute`
-/// while codegen builds `PathBuf::new("::{module}")`, and both route every component through
-/// `PathBuf::push_component`, which decides quoting.
+/// A file holding one stub and nothing else is rooted at the stub's name. That decides nothing:
+/// codegen rejects a world of stubs alone as undefined (`LinkerError::Undefined`), and lowers a
+/// lone top-level component as that component, at its name. Two or more defining components
+/// declare no single name, and codegen rejects such a world naming the package-metadata
+/// limitation (`too_many_components` in `codegen/masm`). Several modules and no defining
+/// component declare no single namespace either: codegen roots such a world at whatever the
+/// target ends up with, so the artifact name is as good an answer as any.
 ///
-/// This leaves the scan responsible for exactly one thing: *locating* the name. Everything after
-/// that is shared code, which is what makes a mis-scan fail rather than mislead.
+/// # The names are rendered by codegen's own path
 ///
-/// # A component name is a run of symbol names
-///
-/// A component is printed as `@a::@b::@c`, one `@`-name per segment, each either bare or quoted
-/// (a segment that is not a bare identifier is quoted, e.g. `@"a b"`). The whole run is scanned
-/// into one path component per `@`-name, exactly the segments the op's parser joins into the
-/// name; a leading `::`, which the parser accepts as the root marker and drops from the name, is
-/// skipped the same way.
-///
-/// # What it does not accept
-///
-/// - **A file declaring neither a component nor a module** — nothing was declared, so the
-///   artifact name stands, as it does for a core Wasm module.
-/// - **A file declaring more than one component.** There is no single name to be rooted at, and
-///   picking one would be an invention. Saying nothing agrees with codegen, which rejects such a
-///   world outright naming the package-metadata limitation (`too_many_components` in
-///   `codegen/masm`), so the build fails on the limitation rather than on a namespace this
-///   guessed at.
-/// - **A file declaring more than one top-level module**, which declares no single namespace and
-///   for which none has to be guessed: codegen roots a component-less world at whatever namespace
-///   the target ends up with, so the artifact name is as good an answer as any and the root-module
-///   check passes either way. (Assembly may still fail further on — the modules such a world
-///   declares are siblings of its root rather than children of it, and so sit outside the
-///   namespace — but that is a shape question, not a namespace one.)
-/// - **Declarations nested where codegen does not count them.** Both counts are of declarations
-///   *anywhere* in the file, while codegen counts only a world's direct children — so a component
-///   inside a component, or a module inside a module, is counted here and is not there. Such a
-///   file falls back to the artifact name.
-/// - **A declaration split across lines**, one whose visibility is joined to its name without
-///   whitespace (`private@"a:b"`, which the lexer does tokenize), and **a name containing the
-///   sequence `//` or an escaped line break** — being line-oriented where the lexer is not.
-///
-/// All of these **fail closed**, in the same sense [`masm_namespace_declaration`]'s misses do:
-/// the namespace this returns is compared against what codegen produces from the same file, so
-/// anything mis-scanned is a build that fails rather than one that assembles under a namespace
-/// the source never claimed. What is lost is the quality of the message, not the outcome.
+/// Both names are the operation's own `SymbolPath` (`Component::namespace_path`,
+/// `Symbol::path`), rendered by the same `SymbolPath::to_library_path` codegen calls, which
+/// quotes a segment that is not a bare identifier. So `@miden::@a::@b` becomes `miden::a::b`, and
+/// `@"a:b"` becomes `"a:b"`.
 fn hir_declared_namespace(source: &str) -> Option<String> {
-    use midenc_hir::{SymbolNameComponent, SymbolPath, interner::Symbol};
+    use alloc::rc::Rc;
 
-    let components = hir_declarations(source, HIR_COMPONENT_OP)?;
-    if !components.is_empty() {
-        let [segments] = &components[..] else {
-            return None;
-        };
-        let path = SymbolPath::from_iter(
-            segments
-                .iter()
-                .map(|segment| SymbolNameComponent::Component(Symbol::intern(segment))),
-        );
-        return Some(path.to_library_path().to_string());
+    use midenc_hir::{
+        Context, Symbol,
+        dialects::builtin::{Component, Module, World},
+        parse::{ParserConfig, parse_any},
+    };
+
+    // A context and source manager of its own, so that the throwaway parse registers nothing in
+    // the session's. Held until the end of the function: the parsed operations live in the
+    // context's arena. On the largest `.hir` file under `tests/lit` (31 KB) the parse costs about
+    // 13 ms in a debug build.
+    let context = Rc::new(Context::default());
+    let config = ParserConfig {
+        context: context.clone(),
+        verify: false,
+    };
+    let op = parse_any(config, Uri::new("namespace.hir"), source).ok()?;
+    let world = match op.try_downcast_op::<World>() {
+        Ok(world) => world,
+        Err(op) => op.parent_op()?.try_downcast_op::<World>().ok()?,
+    };
+
+    let entry = world.borrow().body().entry_block_ref()?;
+    let mut items = 0usize;
+    let mut defining = Vec::new();
+    let mut stubs = Vec::new();
+    let mut modules = Vec::new();
+    for op in entry.borrow().body().iter() {
+        items += 1;
+        if let Some(component) = op.downcast_ref::<Component>() {
+            if component.is_declaration_only() {
+                stubs.push(component.namespace_path());
+            } else {
+                defining.push(component.namespace_path());
+            }
+        } else if let Some(module) = op.downcast_ref::<Module>() {
+            modules.push(module.path());
+        }
     }
-
-    // A module name is a single symbol name
-    let [module] = &hir_declarations(source, HIR_MODULE_OP)?[..] else {
+    let named = if !defining.is_empty() {
+        defining
+    } else if stubs.len() == items {
+        stubs
+    } else {
+        modules
+    };
+    let [path] = &named[..] else {
         return None;
     };
-    match &module[..] {
-        [name] => Some(name.clone()),
-        _ => None,
-    }
+    Some(relative_library_path(path))
 }
 
-/// The names declared by every `op_name` declaration in `source`, in order, each as its segments
-/// (see [`hir_declared_name`]).
+/// `path` rendered as a Miden library path, relative (`a::b::c`) whether `path` is absolute or not.
 ///
-/// `None` — rather than a shorter list — when any occurrence of `op_name` cannot be read as a
-/// declaration, because a scan that skipped what it could not understand would report a *count*
-/// the file does not have, and the count is what decides whether anything is declared at all.
-fn hir_declarations(source: &str, op_name: &str) -> Option<Vec<Vec<String>>> {
-    let mut declared = Vec::new();
-    for line in source.lines() {
-        // `//` runs to the end of the line, so everything after it is trivia — as it is to the
-        // lexer, which skips a comment without producing a token. Truncating there is what keeps
-        // a commented-out declaration from being read as one. It also truncates a name that
-        // *contains* `//`, whose quote then never closes and which is therefore not read as a
-        // declaration either: both are the closed direction.
-        let mut rest = match line.split_once("//") {
-            Some((code, _comment)) => code,
-            None => line,
-        };
-        while let Some(at) = rest.find(op_name) {
-            let (before, found) = rest.split_at(at);
-            rest = &found[op_name.len()..];
-            // An operation name only when nothing joins it to what precedes it, or the tail of a
-            // longer identifier — both of these are legal *prefixes* of one — would be read as a
-            // declaration.
-            if before.chars().next_back().is_some_and(is_hir_identifier_char) {
-                continue;
-            }
-            declared.push(hir_declared_name(rest, op_name == HIR_COMPONENT_OP)?);
-        }
-    }
-    Some(declared)
-}
-
-/// The segments of the symbol name declared by `rest`, the text following an operation name.
-///
-/// One function for both operations because they are written alike: `builtin.component` and
-/// `builtin.module` each parse a visibility keyword and then a symbol name, in that order. A
-/// component's name (`is_component`) may be a run `@a::@b::@c` of symbol names, optionally
-/// preceded by `::`, which is returned as one unescaped segment per symbol name and without that
-/// leading marker; a module's name may not start with `::`. The segments are not joined: an
-/// unescaped segment may itself contain `::` (`@"a::b"`).
-fn hir_declared_name(rest: &str, is_component: bool) -> Option<Vec<String>> {
-    // A keyword only when a separator follows it, exactly as in Miden Assembly.
-    let rest = rest.strip_prefix(char::is_whitespace)?.trim_start();
-    // The visibility is not optional in either grammar, so it is not optional here.
-    let rest = ["public", "private", "internal"]
-        .into_iter()
-        .find_map(|visibility| {
-            rest.strip_prefix(visibility)
-                .filter(|rest| rest.starts_with(char::is_whitespace))
-        })?
-        .trim_start();
-
-    // The component parser accepts a leading `::` (an absolute path), which names the same
-    // component: the root marker is dropped when the path is joined into the component's name.
-    // The printer never writes it, so this only matters for hand-written input. A module's name
-    // is a single symbol name (`parse_symbol_name`), so a module scanned with more than one
-    // segment is not taken as a declaration by the caller. The lexer skips whitespace between
-    // tokens, so it may surround every `::`.
-    let rest = match rest.strip_prefix("::") {
-        Some(tail) if is_component => tail.trim_start(),
-        _ => rest,
-    };
-    let (first, mut rest) = hir_symbol_name(rest)?;
-    let mut segments = vec![first];
-    // A `::` must be followed by a symbol name on the same line: the parser rejects a dangling
-    // one, and a name continued on the next line is beyond this line-oriented scan. Stopping
-    // before the `::` would return a shorter, wrong name.
-    while let Some(tail) = rest.trim_start().strip_prefix("::") {
-        let (segment, tail) = hir_symbol_name(tail.trim_start())?;
-        segments.push(segment);
-        rest = tail;
-    }
-    Some(segments)
-}
-
-/// The `@`-prefixed symbol name at the start of `rest`, unescaped, and the text following it.
-fn hir_symbol_name(rest: &str) -> Option<(String, &str)> {
-    // `symbol-ref-id ::= '@' (bare-id | string-literal)`, which is what the lexer accepts.
-    let name = rest.strip_prefix('@')?;
-    match name.strip_prefix('"') {
-        // Unescaped as the lexer unescapes a quoted symbol name.
-        Some(quoted) => midenc_hir::unescape_quoted(quoted),
-        None => {
-            // The lexer's bare symbol name (`lex_identifier`): a letter or `_`, then letters,
-            // digits, `_`, `$` and `.`; unlike a keyword, no `-`.
-            if !name.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_') {
-                return None;
-            }
-            let end = name
-                .find(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '_' | '$' | '.')))
-                .unwrap_or(name.len());
-            Some((name[..end].to_string(), &name[end..]))
-        }
-    }
-}
-
-/// Whether `c` may appear in a HIR identifier, and so cannot end one thing and begin another.
-///
-/// The lexer's own continuation set for a bare identifier (`lex_keyword_or_ident`), which is
-/// wider than an ASCII word: `.` is what makes `builtin.component` a single token in the first
-/// place.
-fn is_hir_identifier_char(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '$' | '.')
+/// Only a library target's name is read from it: [`synthesized_target_name`] returns before
+/// reading a declaration for an executable or a kernel, the targets of a reserved namespace.
+fn relative_library_path(path: &midenc_hir::SymbolPath) -> String {
+    path.to_library_path().to_relative().to_string()
 }
 
 /// The core library dependency every standalone build links against.
@@ -2576,112 +2466,249 @@ namespace = "miden::prepare_fixture::prepare_fixture"
 
     #[test]
     fn what_counts_as_a_hir_namespace_declaration() {
-        // The scan stands in for a parse, so what it accepts has to be what the grammar
-        // accepts. Every row here is a claim about the *parser*: a name this rejects is one the
-        // parser rejects too (except the fail-closed rows marked below), and a name renders
-        // one path component per segment,
-        // exactly as codegen roots the component.
-        for (source, declared) in [
-            (
-                "builtin.component private @\"hir_ns:test@1.0.0\" {\n};\n",
-                Some("\"hir_ns:test@1.0.0\""),
-            ),
-            // A component named by a multi-segment path, as the printer writes it.
-            (
-                "builtin.component private @miden::@counter_contract::@counter_contract {\n};\n",
-                Some("miden::counter_contract::counter_contract"),
-            ),
-            // The same path written absolute, which the parser accepts and the printer never
-            // writes: the root marker names no segment, so the name is the same.
-            ("builtin.component private ::@a::@b {\n};\n", Some("a::b")),
-            // The lexer skips whitespace between tokens, also around `::`.
-            ("builtin.component private :: @a :: @b {\n};\n", Some("a::b")),
-            // A `::` not followed by a symbol name is a parse error, not the end of the name.
-            ("builtin.component private @a ::{\n};\n", None),
-            // Fail-closed rows the parser accepts and the scan does not; the printer writes
-            // neither. The scan is line-oriented, so a name continuing on the next line is not
-            // read (and not cut short to `a` either).
-            ("builtin.component private @a::\n@b {\n};\n", None),
-            // The lexer ends the visibility keyword at `:`, but the scan wants whitespace after
-            // it.
-            ("builtin.component private::@a::@b {\n};\n", None),
-            // Only a component's name may be absolute: the module parser rejects the `::`.
-            ("builtin.module public ::@lib {\n};\n", None),
-            // A quoted segment holding `::` is one segment, which the library path quotes.
-            ("builtin.component private @\"a::b\"::@c {\n};\n", Some("\"a::b\"::c")),
-            // Nested in a world and holding a module, which is the shape `--emit=hir` writes —
-            // and the shape that decides the *order* of the two scans: the component's name wins,
-            // and the module inside it is never read as a top-level one.
-            (
-                "builtin.world {\n  builtin.component public @\"a:b@2.1.0\" {\n    builtin.module \
-                 private @inner {\n    };\n  };\n};\n",
-                Some("\"a:b@2.1.0\""),
-            ),
-            // A quoted name is read unescaped, as the lexer reads it: an escaped `"` does not end
-            // it, and `\\` stands for one backslash. (It renders as codegen renders it; a `"` has
-            // no Miden Assembly spelling, so preparation then rejects the namespace.)
-            ("builtin.component private @\"a\\\"b\\\\c\" {\n};\n", Some("\"a\"b\\c\"")),
-            // No version is invented: the name is the namespace.
-            ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b\"")),
-            // A file declaring no component is rooted at the module it does declare, bare name
-            // or quoted: `synthesize_target` and codegen both normalize it the same way.
-            ("builtin.module public @lib {\n};\n", Some("lib")),
-            ("builtin.world {\n  builtin.module public @lib {\n  };\n};\n", Some("lib")),
-            ("builtin.module public @\"lib.rs\" {\n};\n", Some("lib.rs")),
-            // A single bare segment is a valid component name. The module inside it must *not*
-            // be read instead — a component was declared, so its name is the only answer, and
-            // there is no fall-through to the second scan.
-            (
-                "builtin.component private @test {\n  builtin.module public @m {\n  };\n};\n",
-                Some("test"),
-            ),
-            // Not a declaration: nothing separates the operation name from what follows it, so
-            // this is some other operation whose name merely begins the same way. What that
-            // costs is worth stating exactly, because the outcome looks like a skip and is not
-            // one: no name can be read here, so `hir_declarations` abandons the **whole file**
-            // and nothing is declared at all. The two are indistinguishable in a fixture holding
-            // one operation, and only the abandoning rule is fail-closed — a scan that skipped
-            // what it could not read would report a count the file does not have.
-            ("builtin.components private @\"a:b@1.0.0\" {\n};\n", None),
-            // Not a declaration: the visibility keyword is not optional in either grammar.
-            ("builtin.component @\"a:b@1.0.0\" {\n};\n", None),
-            ("builtin.module @lib {\n};\n", None),
-            // Not a declaration: a commented-out one is trivia, as it is to the lexer —
-            // whether the comment is the whole line or follows something on it.
-            ("// builtin.component private @\"a:b@1.0.0\" {\n", None),
-            ("builtin.world {\n}; // builtin.component private @\"a:b@1.0.0\"\n", None),
-            // Two components: no single name to be rooted at.
-            (
-                "builtin.world {\n  builtin.component private @\"a:b@1.0.0\" {\n  };\n  \
-                 builtin.component private @\"c:d@1.0.0\" {\n  };\n};\n",
-                None,
-            ),
-            // Two modules: codegen roots those at the constant `::init`, which is not something
-            // the file says.
-            (
-                "builtin.world {\n  builtin.module public @a {\n  };\n  builtin.module public @b \
-                 {\n  };\n};\n",
-                None,
-            ),
-            // A bare name is what the lexer reads as one: `.` and `$` continue it (and make the
-            // library path quote it), a digit cannot begin it.
-            ("builtin.component private @a.b$c {\n};\n", Some("\"a.b$c\"")),
-            ("builtin.component private @1st {\n};\n", None),
-            // Nothing to find at all.
-            ("", None),
-            ("builtin.world {\n};\n", None),
-        ] {
-            assert_eq!(hir_declared_namespace(source).as_deref(), declared, "scanning {source:?}");
+        // Every row is a claim about what the parser makes of the text and where codegen roots
+        // it: text the parser rejects declares nothing, and a name renders one path component
+        // per segment, exactly as codegen roots the component.
+        for (source, declared) in
+            [
+                (
+                    "builtin.component private @\"hir_ns:test@1.0.0\" {\n};\n",
+                    Some("\"hir_ns:test@1.0.0\""),
+                ),
+                // A component named by a multi-segment path, as the printer writes it.
+                (
+                    "builtin.component private @miden::@counter_contract::@counter_contract \
+                     {\n};\n",
+                    Some("miden::counter_contract::counter_contract"),
+                ),
+                // The same path written absolute, which the parser accepts and the printer never
+                // writes: the root marker names no segment, so the name is the same.
+                ("builtin.component private ::@a::@b {\n};\n", Some("a::b")),
+                // The lexer skips whitespace between tokens, also around `::`.
+                ("builtin.component private :: @a :: @b {\n};\n", Some("a::b")),
+                // A `::` not followed by a symbol name is a parse error, not the end of the name.
+                ("builtin.component private @a ::{\n};\n", None),
+                // Spellings the printer never writes and the lexer reads alike: a name continued on
+                // the next line, and a visibility keyword the lexer ends at `:`.
+                ("builtin.component private @a::\n@b {\n};\n", Some("a::b")),
+                ("builtin.component private::@a::@b {\n};\n", Some("a::b")),
+                // Only a component's name may be absolute: the module parser rejects the `::`.
+                ("builtin.module public ::@lib {\n};\n", None),
+                // A quoted segment holding `::` is one segment, which the library path quotes.
+                ("builtin.component private @\"a::b\"::@c {\n};\n", Some("\"a::b\"::c")),
+                // Nested in a world and holding a module, which is the shape `--emit=hir` writes:
+                // the component's name wins, and the module inside it is not a top-level one.
+                (
+                    "builtin.world {\n  builtin.component public @\"a:b@2.1.0\" {\n    \
+                     builtin.module private @inner {\n    };\n  };\n};\n",
+                    Some("\"a:b@2.1.0\""),
+                ),
+                // A segment with no Miden Assembly spelling (a `"`) is one the parser rejects.
+                ("builtin.component private @\"a\\\"b\\\\c\" {\n};\n", None),
+                // No version is invented: the name is the namespace.
+                ("builtin.component internal @\"a:b\" {\n};\n", Some("\"a:b\"")),
+                // A file declaring no component is rooted at the module it does declare, bare name
+                // or quoted, rendered as codegen renders the module's path.
+                ("builtin.module public @lib {\n};\n", Some("lib")),
+                ("builtin.world {\n  builtin.module public @lib {\n  };\n};\n", Some("lib")),
+                ("builtin.module public @\"lib.rs\" {\n};\n", Some("\"lib.rs\"")),
+                // A single bare segment is a valid component name. The module inside it must *not*
+                // be read instead — a component was declared, so its name is the only answer, and
+                // there is no fall-through to the module.
+                (
+                    "builtin.component private @test {\n  builtin.module public @m {\n  };\n};\n",
+                    Some("test"),
+                ),
+                // Not a declaration: some other operation whose name merely begins the same way.
+                ("builtin.components private @\"a:b@1.0.0\" {\n};\n", None),
+                // Not a declaration: the visibility keyword is not optional in either grammar.
+                ("builtin.component @\"a:b@1.0.0\" {\n};\n", None),
+                ("builtin.module @lib {\n};\n", None),
+                // Not a declaration: a commented-out one is trivia, as it is to the lexer —
+                // whether the comment is the whole line or follows something on it.
+                ("// builtin.component private @\"a:b@1.0.0\" {\n", None),
+                ("builtin.world {\n}; // builtin.component private @\"a:b@1.0.0\"\n", None),
+                // Two components: no single name to be rooted at.
+                (
+                    "builtin.world {\n  builtin.component private @\"a:b@1.0.0\" {\n  };\n  \
+                     builtin.component private @\"c:d@1.0.0\" {\n  };\n};\n",
+                    None,
+                ),
+                // Declaration-only components (import stubs) beside a module: codegen lowers the
+                // world through its modules, so the module names the namespace, however many stubs
+                // there are and whatever braces their quoted names or comments hold.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f(%a: u32) -> u32;\n  };\n  \
+                     builtin.module public @app {\n  };\n};\n",
+                    Some("app"),
+                ),
+                (
+                    "builtin.world {\n  builtin.component private @\"d{p\" { // {\n  };\n  \
+                     builtin.component private @dep::@empty {\n  };\n  builtin.module public @app \
+                     {\n  };\n};\n",
+                    Some("app"),
+                ),
+                // A stub beside a defining component: the defining one names the namespace.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n  };\n  \
+                     builtin.component public @app::@main {\n    builtin.module public @m {\n    \
+                     };\n  };\n};\n",
+                    Some("app::main"),
+                ),
+                // What the parser makes a declaration: a parameterless function with an empty
+                // region, and a declaration carrying an attribute dictionary.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f() {\n    };\n  };\n  \
+                     builtin.module public @app {\n  };\n};\n",
+                    Some("app"),
+                ),
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f(%a: u32) -> u32 attributes { a = \
+                     #builtin.u64<1> };\n    builtin.global_variable internal @g : u32 { } \
+                     attributes { b = #builtin.u64<2> };\n  };\n  builtin.module public @app {\n  \
+                     };\n};\n",
+                    Some("app"),
+                ),
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f() attributes { a = \
+                     #builtin.u64<1> };\n  };\n  builtin.component public @app::@main {\n    \
+                     builtin.module public @m {\n    };\n  };\n};\n",
+                    Some("app::main"),
+                ),
+                // And what it makes a definition: a function whose empty region the parser fills
+                // with an entry block for its parameters, and an alias, which introduces a name.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f(%a: u32) -> u32 {\n    };\n  };\n  \
+                     builtin.module public @app {\n  };\n};\n",
+                    Some("dep::stub"),
+                ),
+                (
+                    "builtin.world {\n  builtin.component public @acme::@app {\n    \
+                     builtin.function_alias public @entry -> ::@support::@body;\n  };\n  \
+                     builtin.module public @support {\n  };\n};\n",
+                    Some("acme::app"),
+                ),
+                // Only the world's own items count: a module inside a component is not a top-level
+                // one, and neither is a module nested in a module.
+                (
+                    "builtin.world {\n  builtin.component public @acme::@app {\n    \
+                     builtin.module\n    public @api {\n    };\n  };\n};\n",
+                    Some("acme::app"),
+                ),
+                (
+                    "builtin.module public @outer {\n  builtin.module public @inner {\n  };\n};\n",
+                    Some("outer"),
+                ),
+                // Stubs beside an item that is neither a component nor a module: codegen roots such
+                // a world at its target's namespace, so nothing is declared.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n  };\n  \
+                     builtin.function public extern(\"C\") @f() {\n    builtin.ret;\n  };\n};\n",
+                    None,
+                ),
+                // Two modules: no single name, and codegen re-roots such a world at the target's
+                // namespace, whatever it is.
+                (
+                    "builtin.world {\n  builtin.module public @a {\n  };\n  builtin.module public \
+                     @b {\n  };\n};\n",
+                    None,
+                ),
+                // A bare name is what the lexer reads as one: `.` and `$` continue it (and make the
+                // library path quote it).
+                ("builtin.component private @a.b$c {\n};\n", Some("\"a.b$c\"")),
+                // Nothing to find at all.
+                ("", None),
+                ("builtin.world {\n};\n", None),
+                // Spellings of a declaration the printer never writes: a parameter attribute
+                // dictionary, an entry-block label before the stub's items, and an op name
+                // without its `builtin.` prefix, which the parser's default dialect supplies.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @g(%a: u32 { k = #builtin.u64<1> }) \
+                     -> u32;\n  };\n  builtin.module public @app {\n  };\n};\n",
+                    Some("app"),
+                ),
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n  ^entry:\n    \
+                     builtin.function internal extern(\"C\") @f(%a: u32) -> u32;\n  };\n  \
+                     builtin.module public @app {\n  };\n};\n",
+                    Some("app"),
+                ),
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    function \
+                     internal extern(\"C\") @f() -> u32;\n  };\n  builtin.module public @app {\n  \
+                     };\n};\n",
+                    Some("app"),
+                ),
+                // The same freedom on the world and its component: a label in the world's body,
+                // unprefixed `component` and `world`, and the world in its generic form.
+                (
+                    "builtin.world {\n^entry:\n  builtin.component public @acme::@app {\n    \
+                     builtin.module public @api {\n    };\n  };\n};\n",
+                    Some("acme::app"),
+                ),
+                (
+                    "component public @acme::@app {\n  builtin.module public @api {\n  };\n};\n",
+                    Some("acme::app"),
+                ),
+                (
+                    "world {\n  component public @acme::@app {\n    module public @api {\n    \
+                     };\n  };\n};\n",
+                    Some("acme::app"),
+                ),
+                (
+                    "\"builtin.world\"() ({\n  builtin.component public @acme::@app {\n    \
+                     builtin.module public @api {\n    };\n  };\n}) : () -> ();\n",
+                    Some("acme::app"),
+                ),
+                // Two *defining* components: no single name, as for two stubs.
+                (
+                    "builtin.world {\n  builtin.component public @a::@x {\n    builtin.module \
+                     public @m {\n    };\n  };\n  builtin.component public @b::@y {\n    \
+                     builtin.module public @m {\n    };\n  };\n};\n",
+                    None,
+                ),
+                // A function body with no parameters is still a body: the stub defines it.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f() {\n      builtin.ret;\n    };\n  \
+                     };\n  builtin.module public @app {\n  };\n};\n",
+                    Some("dep::stub"),
+                ),
+                // Text the parser rejects: a function with no parameter list, an unbalanced
+                // brace, and anything after the top-level operation, which the parser does not
+                // drop.
+                (
+                    "builtin.world {\n  builtin.component private @dep::@stub {\n    \
+                     builtin.function internal extern(\"C\") @f -> u32;\n  };\n  builtin.module \
+                     public @app {\n  };\n};\n",
+                    None,
+                ),
+                ("builtin.module public @lib {\n", None),
+                (
+                    "builtin.world {\n  builtin.module public @app {\n  };\n};\nbuiltin.module \
+                     public @other {\n};\n",
+                    None,
+                ),
+                ("builtin.module public @lib {\n};;\n", None),
+            ]
+        {
+            assert_eq!(hir_declared_namespace(source).as_deref(), declared, "reading {source:?}");
         }
     }
 
     #[test]
     fn a_declared_namespace_reaches_the_root_module_codegen_lowers_to() {
         // The oracle for the whole arrangement, and the only test that runs both halves.
-        // Preparation derives the target's namespace from a scan of the root file; codegen
+        // Preparation derives the target's namespace from a read of the root file; codegen
         // derives the root Miden Assembly module's path from the parsed IR. The assembler
         // compares the two (`load_target_sources`), and a build in which they differ is
-        // rejected — so a scan that missed a declaration would root its target at `::lib` and no
+        // rejected — so a read that missed a declaration would root its target at `::lib` and no
         // standalone `.hir` build of that shape would assemble at all.
         //
         // Every shape a `.hir` file can declare a namespace in, and each is rooted by different
@@ -2700,6 +2727,11 @@ namespace = "miden::prepare_fixture::prepare_fixture"
                 COMPONENT.replace("@hir_ns::@test", r#"@"hir::ns"::@test"#),
             ),
             ("prepare_standalone_hir_oracle_module", MODULE.replace("@lib", "@renamed")),
+            // A module name the library path quotes.
+            (
+                "prepare_standalone_hir_oracle_quoted_module",
+                MODULE.replace("@lib", "@\"lib.rs\""),
+            ),
         ] {
             let prepared =
                 prepare_standalone_source(dir, "lib.hir", &contents, &registry_with_hir(), |_| {})

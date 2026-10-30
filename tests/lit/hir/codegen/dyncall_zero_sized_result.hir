@@ -1,0 +1,19 @@
+// RUN: not midenc %s --emit=masm=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// The call window is padded by felt count, and a zero-sized value has no field element in it,
+// so a `hir.dyncall` returning one (`?` parses to an unknown type of size zero) is reported as a
+// diagnostic at the call rather than panicking the backend.
+
+builtin.world {
+    builtin.module public @app {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt) {
+            %a = hir.dyncall [%r0, %r1, %r2, %r3]() : extern("component-model") () -> ?;
+            builtin.ret;
+        };
+    };
+};
+
+// The report is wrapped to the terminal's width, so its parts are pinned one by one.
+// CHECK: operand has no raw representation
+// CHECK: hir.dyncall
+// CHECK-NOT: panicked

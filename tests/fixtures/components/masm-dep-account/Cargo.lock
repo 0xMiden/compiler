@@ -1827,6 +1827,8 @@ dependencies = [
  "miden-project",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
+ "midenc-package-interface",
+ "midenc-package-wit",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -2436,6 +2438,7 @@ dependencies = [
 name = "midenc-frontend-wasm-metadata"
 version = "0.15.0"
 dependencies = [
+ "heck",
  "miden-mast-package",
  "serde",
  "serde_json",
@@ -2461,6 +2464,18 @@ dependencies = [
  "miden-mast-package",
  "miden-thiserror",
  "smallvec",
+]
+
+[[package]]
+name = "midenc-package-wit"
+version = "0.15.0"
+dependencies = [
+ "heck",
+ "miden-mast-package",
+ "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
+ "midenc-hir-type",
+ "midenc-package-interface",
 ]
 
 [[package]]

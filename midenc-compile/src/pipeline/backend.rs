@@ -259,9 +259,9 @@ pub fn apply_rewrites(op: OperationRef, context: Rc<Context>) -> CompilerResult<
 /// A component's functions get the semantic rewrite pipeline above. But codegen lowers
 /// more than the component, and checks all of it: the modules and functions a world holds
 /// beside its component are lowered with it (a component's supporting modules), and a world
-/// with no component is lowered as it stands. They are legalized too — beside a component, its
-/// sibling modules and functions; without one, the world as a whole — and nothing follows that
-/// for them, so the ordering rule above holds for them as well.
+/// with no defining component is lowered as it stands. They are legalized too — beside a
+/// component, its sibling modules and functions; without one, the world as a whole — and nothing
+/// follows that for them, so the ordering rule above holds for them as well.
 ///
 /// # Errors
 ///
@@ -331,17 +331,14 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
                 world.name()
             )));
         };
-        let body = world.body();
-        body.entry_block_ref().is_some_and(|entry| {
-            entry.borrow().body().iter().any(|op| op.is::<builtin::Component>())
-        })
+        world.has_defining_component()
     };
     if has_component {
         // The component's siblings: modules and functions of the world itself
         pm.nest::<builtin::Module>().add_pass(Box::new(LegalizeForMasm));
         pm.nest::<builtin::Function>().add_pass(Box::new(LegalizeForMasm));
     } else {
-        // A world without a component
+        // A world without a defining component
         pm.add_pass(Box::new(LegalizeForMasm));
     }
 

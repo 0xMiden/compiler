@@ -1119,7 +1119,7 @@ mod tests {
 
     fn wit_felt_type() -> Type {
         Type::from(StructType::named(
-            Arc::from("miden:base/core-types@1.0.0/felt"),
+            Arc::from("miden:base/core-types@2.0.0/felt"),
             [(Arc::from("inner"), Type::Felt)],
         ))
     }
@@ -1127,7 +1127,7 @@ mod tests {
     fn wit_word_type() -> Type {
         let felt_ty = wit_felt_type();
         Type::from(StructType::named(
-            Arc::from("miden:base/core-types@1.0.0/word"),
+            Arc::from("miden:base/core-types@2.0.0/word"),
             [
                 (Arc::from("a"), felt_ty.clone()),
                 (Arc::from("b"), felt_ty.clone()),
@@ -2224,6 +2224,67 @@ mod tests {
         let function = lowered.function_ref().expect("expected function lowering");
         assert_eq!(dyncall_signatures(function).len(), 1, "expected exactly one hir.dyncall");
         assert!(world_builder.find_component(stub_component).is_none());
+    }
+
+    /// Imports whose stub components nest (`x::y` and `x::y::z`, as for two dependencies whose
+    /// namespaces nest) are declared into one world, each in the stub its path's parent names,
+    /// and each path resolves to its own declaration.
+    #[test]
+    fn imports_with_nested_stub_components_are_declared_in_one_world() {
+        let (_context, mut world_builder, _module_builder) = world_with_core_module();
+        let signature = Signature {
+            params: vec![AbiParam::new(Type::Felt)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+
+        for (cm_name, path) in [("f", "x::y::f"), ("g", "x::y::z::g")] {
+            let import = import_at(test_import_path(cm_name), path);
+            let function = declare_import_function(&mut world_builder, &import, &signature)
+                .unwrap_or_else(|err| panic!("`{path}` should be declared: {err}"));
+            let stub = world_builder
+                .find_component(import.path.without_leaf().to_symbol_name().unwrap())
+                .expect("the stub component is defined");
+            assert!(stub.borrow().is_declaration_only());
+            let resolved =
+                world_builder.world.borrow().resolve(&import.path).expect("the import resolves");
+            assert_eq!(
+                resolved.borrow().as_symbol_operation().as_operation_ref(),
+                function.as_operation_ref(),
+                "`{path}` resolves to its own declaration"
+            );
+        }
+    }
+
+    /// An import declaring the leaf `z` in stub `x::y` beside an import from stub `x::y::z` (two
+    /// dependencies whose namespaces nest) is reported in either order: the path `x::y::z` cannot
+    /// name both the declaration and the component.
+    #[test]
+    fn an_import_captured_by_a_nested_stub_component_is_reported() {
+        let signature = Signature {
+            params: vec![AbiParam::new(Type::Felt)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+        let captured = ("z", "x::y::z");
+        let nested = ("g", "x::y::z::g");
+
+        for (first, second) in [(captured, nested), (nested, captured)] {
+            let (_context, mut world_builder, _module_builder) = world_with_core_module();
+            let import = import_at(test_import_path(first.0), first.1);
+            declare_import_function(&mut world_builder, &import, &signature)
+                .unwrap_or_else(|err| panic!("`{}` should be declared: {err}", first.1));
+            let import = import_at(test_import_path(second.0), second.1);
+            let Err(err) = declare_import_function(&mut world_builder, &import, &signature) else {
+                panic!("`x::y::z` cannot name both the declaration and the component");
+            };
+            assert!(
+                err.to_string().contains(
+                    "component `x::y` declares `z`, which component `x::y::z` would capture"
+                ),
+                "unexpected diagnostic: {err}"
+            );
+        }
     }
 
     /// A dyncall import whose results need the canonical out-pointer keeps that transformation:

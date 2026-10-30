@@ -1,0 +1,26 @@
+// RUN: not midenc %s --emit=masm=- --stop-after=lower 2>&1 | filecheck %s
+//
+// A declaration-only component `x::y` declaring `z` cannot have a component `x::y::z` nested in
+// it: the path `x::y::z` would name both the function and the component.
+
+builtin.world {
+    builtin.component private @x::@y {
+        builtin.function internal extern("C") @z(%a: u32) -> u32;
+    };
+    builtin.component private @x::@y::@z {
+        builtin.function internal extern("C") @g(%a: u32) -> u32;
+    };
+    builtin.component public @app::@main {
+        builtin.module public @m {
+            builtin.function public extern("C") @entry(%a: u32) -> u32 {
+                %b = hir.exec ::@x::@y::@z(%a) : extern("C") (u32) -> (u32);
+                %c = hir.exec ::@x::@y::@z::@g(%b) : extern("C") (u32) -> (u32);
+                builtin.ret %c : (u32);
+            };
+        };
+    };
+};
+
+// CHECK: component `x::y` declares `z`, which component `x::y::z` would capture: a
+// CHECK-NEXT: path `x::y::z` cannot name both
+// CHECK-NOT: panicked

@@ -15,7 +15,7 @@ use miden_assembly_syntax::ast::{
     Path, PathBuf,
     types::{AddressSpace, StructField, StructType, Type},
 };
-use midenc_package_interface::{PackageInterface, TypeItem, WasmScalar};
+use midenc_package_interface::{PackageInterface, TypeItem, WasmScalar, abi, comment::one_line};
 
 use crate::{Error, External, Options, layout, names};
 
@@ -75,7 +75,7 @@ pub(crate) struct LocalType {
     pub(crate) name: String,
     /// The type.
     pub(crate) ty: Type,
-    /// Its doc line: what it is and where it is used.
+    /// Its doc line: what it is and where it is used, on one line.
     pub(crate) doc: String,
     /// The type export it is declared just before, because that export uses it; `None` for a
     /// type only a signature uses, which is declared after the module's type exports.
@@ -261,7 +261,7 @@ impl<'a> TypeUniverse<'a> {
             module: module.to_path_buf(),
             name,
             ty: ty.clone(),
-            doc,
+            doc: one_line(&doc),
             before: before.cloned(),
         });
         Ok(())
@@ -332,7 +332,7 @@ impl<'a> TypeUniverse<'a> {
                 text: self.support_item("Felt", at),
                 kind: RustTypeKind::Felt,
             },
-            Type::Array(_) if words && layout::is_word(ty) => RustType {
+            Type::Array(_) if words && abi::is_word(ty) => RustType {
                 text: self.support_item("Word", at),
                 kind: RustTypeKind::Word,
             },

@@ -176,6 +176,13 @@ impl Verify<dyn SymbolTable> for Interface {
 }
 
 impl Interface {
+    /// Returns true if this interface holds declarations only: every item in it is a function or
+    /// global variable without a body, so it defines no code. An alias counts as a definition.
+    /// The rule is [Component::is_declaration_only](super::Component::is_declaration_only)'s.
+    pub fn is_declaration_only(&self) -> bool {
+        super::holds_declarations_only(&self.body())
+    }
+
     /// Returns the name an interface given the raw segment `name` gets: its Miden Assembly
     /// spelling (see [SymbolPath::segments_of]), e.g. `"my-api"` for `my-api` and `api` for `api`.
     ///

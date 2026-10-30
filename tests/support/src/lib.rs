@@ -46,6 +46,39 @@ pub fn compile_project(project_path: &Path) -> Arc<Package> {
     test.compile_package()
 }
 
+/// Compiles the Miden Assembly project whose `miden-project.toml` is in `project_dir`, as
+/// `midenc --manifest-path <project_dir>/miden-project.toml --sysroot <sysroot>` does, and returns
+/// its package.
+///
+/// Panics with the rendered diagnostics if the project does not compile.
+pub fn compile_masm_project(project_dir: &Path, sysroot: &Path) -> Arc<Package> {
+    use std::rc::Rc;
+
+    use midenc_compile::{CompiledArtifact, compile_to_memory};
+    use midenc_hir::Context;
+    use midenc_session::{InputFile, Session};
+
+    testing::setup::install_reporting_hooks();
+    let manifest = project_dir.join("miden-project.toml");
+    let input = InputFile::from_path(&manifest)
+        .unwrap_or_else(|err| panic!("cannot read {}: {err}", manifest.display()));
+    let argv = ["--sysroot".to_owned(), sysroot.display().to_string()];
+    let options = midenc_compile::Compiler::try_parse_from(std::env::current_dir().unwrap(), argv)
+        .unwrap_or_else(|err| panic!("invalid compiler options: {err}"));
+    let source_manager = Arc::new(miden_assembly::DefaultSourceManager::default());
+    let session = Rc::new(
+        Session::new(input, options, None, source_manager)
+            .unwrap_or_else(|err| panic!("{}", testing::format_report(err))),
+    );
+    match compile_to_memory(Rc::new(Context::new(session))) {
+        Ok(CompiledArtifact::Assembled(package)) => package,
+        Ok(CompiledArtifact::Lowered(_)) => {
+            panic!("the build of {} stopped before assembly", manifest.display())
+        }
+        Err(err) => panic!("{}", testing::format_report(err)),
+    }
+}
+
 /// Returns the compiler workspace root.
 pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()

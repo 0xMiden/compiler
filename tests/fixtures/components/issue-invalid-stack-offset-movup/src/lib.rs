@@ -31,7 +31,7 @@ impl InvalidStackOffsetMovupNote {
         let inputs = active_note::get_storage();
 
         let executing_account_id = active_account::get_id();
-        let swapp_note_creator_id = AccountId::new(inputs[16], inputs[17]);
+        let swapp_note_creator_id = AccountId::new(inputs[17], inputs[16]);
 
         if swapp_note_creator_id == executing_account_id {
             // active_note::add_assets_to_account();
@@ -149,8 +149,8 @@ fn create_p2id_note(serial_num: Word, input_asset: Asset, recipient_id: AccountI
         serial_num,
         active_note::get_script_root(),
         vec![
-            recipient_id.prefix,
             recipient_id.suffix,
+            recipient_id.prefix,
             felt!(0),
             felt!(0),
             felt!(0),
@@ -195,8 +195,8 @@ fn create_swapp_note(
             requested_asset.value[1],
             requested_asset.value[2],
             requested_asset.value[3],
-            note_creator_id.prefix,
             note_creator_id.suffix,
+            note_creator_id.prefix,
             felt!(0),
             felt!(0),
             felt!(0),

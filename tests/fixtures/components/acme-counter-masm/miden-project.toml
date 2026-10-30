@@ -1,0 +1,17 @@
+# A user-written account component in Miden Assembly: a counter kept in one value storage slot.
+#
+# The names are a user's on purpose (package `counter`, namespace `acme::counter::counter`): Rust
+# projects depend on this project by path and link its procedures through the interface the SDK
+# synthesizes from the compiled package, with no WIT of its own.
+[package]
+name = "counter"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "acme::counter::counter"
+path = "lib/mod.masm"
+
+[dependencies]
+miden-core = { linkage = "dynamic", version = "0.36" }
+miden-protocol = { linkage = "dynamic", version = "0.17.2" }

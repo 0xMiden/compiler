@@ -95,8 +95,8 @@ fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Pa
             .as_str(),
         "component-model",
     );
-    let felt_struct = "struct miden:base/core-types@1.0.0/felt {\n    inner : felt}";
-    let compact_felt_struct = "struct miden:base/core-types@1.0.0/felt {inner : felt}";
+    let felt_struct = "struct miden:base/core-types@2.0.0/felt {\n    inner : felt}";
+    let compact_felt_struct = "struct miden:base/core-types@2.0.0/felt {inner : felt}";
     let mixed_struct = format!(
         concat!(
             "struct mixed-struct {{f : u64, a : {felt_struct}, b : u32, ",

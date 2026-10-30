@@ -247,6 +247,21 @@ pub(crate) fn append_miden_project_dependencies(
     }
 }
 
+/// Appends registry dependencies (`(package name, version requirement)`) to a generated Miden
+/// project manifest; they resolve against the packages of the compiler's sysroot.
+pub(crate) fn append_miden_project_registry_dependencies(
+    manifest: &mut String,
+    dependencies: &[(&str, &str)],
+) {
+    for (dependency_name, version) in dependencies {
+        manifest.push_str(&format!(
+            r#"
+"{dependency_name}" = "{version}"
+"#
+        ));
+    }
+}
+
 /// Appends package metadata for dependencies to a generated Cargo manifest; a no-op without
 /// dependencies, like [`append_miden_project_dependencies`].
 pub(crate) fn append_cargo_dependency_metadata(

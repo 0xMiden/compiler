@@ -3,7 +3,7 @@
 //! # Felt layout
 //!
 //! The layout is structural over the resolved WIT type tree. The record
-//! `miden:base/core-types@1.0.0.felt` is one felt. A `u64` uses two felts in low-then-high
+//! `miden:base/core-types@2.0.0.felt` is one felt. A `u64` uses two felts in low-then-high
 //! `u32` limb order. A `u32`, `u8`, or `bool` uses one range-checked felt. An `option<T>` uses one
 //! tag felt followed by its payload when present. A variant uses one declaration-ordinal tag felt
 //! followed by the selected case payload. Record fields concatenate in declaration order.

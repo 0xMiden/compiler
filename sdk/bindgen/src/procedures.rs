@@ -38,6 +38,7 @@ use miden_assembly_syntax::ast::{
 };
 use midenc_package_interface::{
     FieldStep, LoweredSignature, PackageInterface, ProcedureItem, ReturnStrategy, WasmScalar,
+    comment::one_line,
 };
 
 use crate::{
@@ -142,12 +143,12 @@ pub(crate) fn emit(
 
     // The signature and its documentation.
     let is_unsafe = !pointers.is_empty();
-    w.line(&format!("/// `{}`", render_signature(item.name(), signature)));
+    w.line(&format!("/// `{}`", one_line(&render_signature(item.name(), signature))));
     w.line("///");
     w.line(&format!(
         "/// Calls `{}` (package `{}` {}).",
-        item.path,
-        AsRef::<str>::as_ref(&package.name),
+        one_line(&item.path.to_string()),
+        one_line(package.name.as_ref()),
         package.version
     ));
     if is_unsafe {
@@ -678,9 +679,10 @@ fn escape(text: &str) -> String {
     text.escape_default().to_string()
 }
 
-/// `text` escaped for a format string literal: as [`escape`], with braces doubled.
+/// `text` escaped for a format string literal: as [`escape`], with its own braces doubled.
 fn format_literal(text: &str) -> String {
-    escape(text).replace('{', "{{").replace('}', "}}")
+    // Doubling after escaping would also double the braces of a `\u{…}` escape.
+    escape(&text.replace('{', "{{").replace('}', "}}"))
 }
 
 /// An expression of the wrapper's, laid out as rustfmt lays it out: on one line when it fits and

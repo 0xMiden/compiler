@@ -4,7 +4,8 @@
 //!
 //! ```text
 //! # File
-//! top-level := (operation | attribute-alias-def | type-alias-def)+
+//! # (the generic-format entry points also read alias definitions and several operations)
+//! top-level := operation
 //!
 //! # Operations
 //! operation         := op-results? (generic-operation | custom-operation) trailing-location? ';'

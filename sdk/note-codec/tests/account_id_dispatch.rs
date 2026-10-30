@@ -7,7 +7,7 @@ from_wit_text!(
     r#"
 package example:account-codec@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{account-id};
@@ -24,10 +24,10 @@ interface note-storage {
     type storage = account-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
-        record account-id { prefix: felt, suffix: felt }
+        record account-id { suffix: felt, prefix: felt }
     }
 }
 "#
@@ -62,7 +62,7 @@ fn account_id_codec_uses_generated_structural_traits() {
     let fqn = AccountLabel::WIT_FQN;
 
     let encoded = __miden_note_codec_dispatch::parse(fqn, &input).unwrap();
-    assert_eq!(encoded, [account.prefix().as_u64(), account.suffix().as_canonical_u64(), 7, 0]);
+    assert_eq!(encoded, [account.suffix().as_canonical_u64(), account.prefix().as_u64(), 7, 0]);
     __miden_note_codec_dispatch::validate(fqn, &encoded).unwrap();
     assert_eq!(__miden_note_codec_dispatch::display(fqn, &encoded).unwrap(), input);
 }

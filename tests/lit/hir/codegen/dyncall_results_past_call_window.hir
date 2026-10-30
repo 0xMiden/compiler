@@ -1,0 +1,20 @@
+// RUN: not midenc %s --emit=masm=- -o %t/out.masp 2>&1 | filecheck %s
+//
+// A cross-context callee hands its results back in the 16-element call window, so a
+// `hir.dyncall` returning nine `u64`s (18 field elements) is reported by legalization rather
+// than reaching the emitter.
+
+builtin.world {
+    builtin.module public @app {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt) -> u64 {
+            %a, %b, %c, %d, %e, %f, %g, %h, %i = hir.dyncall [%r0, %r1, %r2, %r3]() : extern("component-model") () -> (u64, u64, u64, u64, u64, u64, u64, u64, u64);
+            builtin.ret %i : (u64);
+        };
+    };
+};
+
+// The report is wrapped to the terminal's width, so its parts are pinned one by one.
+// CHECK: failed to legalize operation 'hir.dyncall'
+// CHECK: returns 18 result field elements
+// CHECK: exceeding the 16-element context result ABI
+// CHECK-NOT: panicked

@@ -513,7 +513,8 @@ impl Project {
     }
 }
 
-/// The Cargo target directory this test process builds under.
+/// The Cargo target directory this test process builds under, which the test cargo projects and
+/// the build caches live under.
 ///
 /// Derived from an absolute `CARGO_TARGET_DIR` when the process was started with one, otherwise
 /// inferred from the test executable's location. Read **once**, before [`use_shared_build_dir`]

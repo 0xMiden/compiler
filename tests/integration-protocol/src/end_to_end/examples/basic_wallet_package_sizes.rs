@@ -21,7 +21,7 @@ fn basic_wallet_and_p2id() {
     assert!(note_package.is_library(), "expected library");
     // Pin executable MAST size independently of debug metadata, including generated call setup
     // and stack scheduling.
-    expect!["20148"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    expect!["20147"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build_recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -39,5 +39,5 @@ fn basic_wallet_and_p2id() {
     assert!(p2ide_package.is_library(), "expected library");
     // Pin executable MAST size independently of debug metadata, including generated call setup
     // and stack scheduling.
-    expect!["16226"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    expect!["16221"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

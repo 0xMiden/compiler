@@ -25,18 +25,24 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
         .expect("failed to spawn `cargo check` for the component macro regression test")
 }
 
+/// The over-wide-argument negative case: the account's `test_custom_types` export takes a
+/// `StructA` (12 felts) and an `Asset` (8 felts), 20 argument felts in all, more than the 16 a
+/// cross-context call passes on the operand stack. Canonical flattening collapses such a list into
+/// a tuple pointer, which export lifting rejects as the unimplemented advice-provider path.
 #[test]
 fn component_macros_account_and_note() {
     let config = WasmTranslationConfig::default();
     let mut account = CompilerTest::rust_source_cargo_miden(
         "../fixtures/components/component-macros-account",
-        config.clone(),
+        config,
         [],
     );
     let result = panic::catch_unwind(AssertUnwindSafe(move || account.compile_package()));
     let panic_message = match result {
         Ok(_) => {
-            panic!("Expected component export lifting with indirect pointer parameters to fail")
+            panic!(
+                "expected component export lifting to reject argument felts past the call window"
+            )
         }
         Err(panic_info) => {
             if let Some(message) = panic_info.downcast_ref::<String>() {
@@ -50,29 +56,11 @@ fn component_macros_account_and_note() {
     };
 
     assert!(
-        panic_message.contains("not yet implemented"),
+        panic_message.contains("test_custom_types")
+            && panic_message
+                .contains("not yet implemented for passing the parameters using the advice"),
         "unexpected panic message: {panic_message}"
     );
-
-    //    let builder = CompilerTestBuilder::rust_source_cargo_miden(
-    //        "../fixtures/components/component-macros-note",
-    //        config,
-    //        [],
-    //    assert!(
-    //        panic_message.contains("not yet implemented")
-    //            && panic_message.contains("indirect pointer parameters"),
-    //        "unexpected panic message: {panic_message}"
-    //    );
-    //    let mut note = builder.build();
-    //    let note_package = note.compile_package();
-    //    let program = note_package.unwrap_program();
-    //
-    //    let mut exec = executor_with_std(vec![], None);
-    //    exec.dependency_resolver_mut()
-    //        .add(account_package.digest(), account_package.into());
-    //    exec.with_dependencies(note_package.manifest.dependencies())
-    //        .expect("failed to add package dependencies");
-    //    exec.execute(&program, note.session.source_manager.clone());
 }
 
 #[test]
@@ -237,6 +225,16 @@ trait AuthComponent {
 
 /// Builds a generated note project whose `#[note]` type is declared in `src/lib.rs`.
 fn note_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
+    note_project_builder(name, lib_rs, "").build()
+}
+
+/// The builder of [`note_project`], with `dependencies` appended to the `[dependencies]` table of
+/// its `miden-project.toml`, which ends the file.
+fn note_project_builder(
+    name: &str,
+    lib_rs: &str,
+    dependencies: &str,
+) -> crate::cargo_proj::ProjectBuilder {
     let sdk_path = sdk_crate_path();
     let namespace = component_namespace(name);
     let component_package = format!("miden:{}", name.replace('_', "-"));
@@ -254,7 +252,7 @@ path = "src/lib.rs"
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"
-"#
+{dependencies}"#
     );
     let cargo_toml = format!(
         r#"
@@ -280,7 +278,6 @@ package = "{component_package}"
         .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", lib_rs)
-        .build()
 }
 
 #[test]
@@ -601,7 +598,7 @@ impl TestComponent for TestComponentStorage {
 /// tests don't have to compile a real dependency project with cargo-miden.
 const TEST_SIBLING_GENERATED_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface test-sibling {
     use core-types.{felt};
@@ -623,7 +620,7 @@ world test-sibling-world {
 /// resolve to the caller's `crate::bindings` rather than being regenerated in the sibling bindings.
 const TEST_SIBLING_OWNED_TYPE_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface test-sibling {
     use core-types.{felt};
@@ -656,9 +653,9 @@ fn account_component_project_with_sibling_dep(
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// `sibling_wit` is embedded into the WIT section of the dependency's synthesized `.masp`
-/// package. Passing `None` omits the section, reproducing a dependency package built by a
-/// toolchain that predates embedded WIT.
+/// `sibling_wit` is embedded into the WIT section of the dependency's `.masp` package, a library
+/// assembled from MASM. Passing `None` omits the section: a library gets no WIT synthesized from
+/// its manifest (only an account component does), so the dependency has no interface.
 fn account_component_project_with_sibling_dep_inner(
     name: &str,
     lib_rs: &str,
@@ -743,7 +740,6 @@ supported-types = ["RegularAccountUpdatableCode"]
 /// Synthesizes the sibling dependency `.masp` package into the project's `package-cache`.
 fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&str>) {
     use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, ast::ModuleKind};
-    use miden_core::serde::Serializable;
 
     let source_manager = std::sync::Arc::new(DefaultSourceManager::default());
     let module = ModuleParser::new(Some(ModuleKind::Library))
@@ -764,10 +760,10 @@ fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&s
             .push(miden_mast_package::Section::new(wit_section_id, wit.as_bytes().to_vec()));
     }
 
-    let package_dir = cargo_proj.root().join("package-cache");
-    std::fs::create_dir_all(&package_dir).expect("sibling package directory must be created");
-    std::fs::write(package_dir.join("test_sibling.masp"), package.to_bytes())
-        .expect("sibling package fixture must be written");
+    midenc_package_interface::testing::write_package(
+        &cargo_proj.root().join("package-cache/test_sibling.masp"),
+        &package,
+    );
 }
 
 #[test]
@@ -1000,8 +996,9 @@ impl TestComponent for TestComponentStorage {
 
 #[test]
 fn component_sibling_reports_dependency_package_without_embedded_wit() {
-    // The dependency package exists but predates embedded WIT (no `wit` section). Expansion
-    // should tell the user to rebuild the dependency with the current toolchain.
+    // The dependency package exists but is a library without a `wit` section, so no WIT is
+    // synthesized for it either. Expansion should say it is not an account component and tell the
+    // user to rebuild the dependency with the current toolchain.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1037,7 +1034,7 @@ impl TestComponent for TestComponentStorage {
 
     assert!(stderr.contains("does not embed component WIT"), "unexpected stderr: {stderr}");
     assert!(stderr.contains("cargo miden build"), "unexpected stderr: {stderr}");
-    assert!(stderr.contains("provide the WIT manually"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("is not an account component"), "unexpected stderr: {stderr}");
 }
 
 /// The sibling-consumer source shared by the `wit`-key escape-hatch tests.
@@ -1106,6 +1103,332 @@ fn component_sibling_wit_key_conflicts_with_embedded_wit() {
 
     assert!(stderr.contains("embeds component WIT"), "unexpected stderr: {stderr}");
     assert!(stderr.contains("remove the `wit` key"), "unexpected stderr: {stderr}");
+}
+
+/// The name of the MASM account-component dependency of [`masm_account_component_consumer`].
+const MASM_WALLET_DEPENDENCY: &str = "test-wallet";
+
+/// A note project `name` whose `src/lib.rs` is `lib_rs`, depending on the MASM account component
+/// `test-wallet` assembled from `source` with its procedures in `dependency_namespace`.
+///
+/// The dependency package embeds no WIT. `wit_override`, when set, is written to
+/// `wallet-wit/test-wallet.wit` and named by the dependency's `wit` key in `miden-project.toml`;
+/// otherwise the macros synthesize the interface from the package manifest.
+fn masm_account_component_consumer(
+    name: &str,
+    dependency_namespace: &str,
+    source: &str,
+    wit_override: Option<&str>,
+    lib_rs: &str,
+) -> crate::cargo_proj::Project {
+    use midenc_package_interface::testing::{assemble_account_component_fixture, write_package};
+
+    const DEPENDENCY: &str = MASM_WALLET_DEPENDENCY;
+    const WIT_OVERRIDE_PATH: &str = "wallet-wit/test-wallet.wit";
+    let wit_entry = wit_override
+        .map(|_| {
+            format!(
+                "\n[package.metadata.miden.dependencies]\n{DEPENDENCY} = {{ wit = \
+                 \"{WIT_OVERRIDE_PATH}\" }}\n"
+            )
+        })
+        .unwrap_or_default();
+    let dependencies =
+        format!("{DEPENDENCY} = {{ path = \"package-cache/{DEPENDENCY}.masp\" }}\n{wit_entry}");
+    let mut builder = note_project_builder(name, lib_rs, &dependencies);
+    if let Some(wit) = wit_override {
+        builder = builder.file(WIT_OVERRIDE_PATH, wit);
+    }
+    let cargo_proj = builder.build();
+    write_package(
+        &cargo_proj.root().join(format!("package-cache/{DEPENDENCY}.masp")),
+        &assemble_account_component_fixture(DEPENDENCY, dependency_namespace, source),
+    );
+    cargo_proj
+}
+
+/// The one-procedure source of the `test-wallet` dependency of the synthesis tests.
+const MASM_WALLET_SOURCE: &str =
+    "@account_procedure\npub proc receive_asset(asset: word)\n    dropw\nend\n";
+
+/// `cargo check` of a note project `name` that references, with
+/// `#[account(test_wallet::<iface>)]`, a MASM account component whose procedures live in
+/// `dependency_namespace`: its package embeds no WIT and the manifest sets no `wit` key, so the
+/// macros try to synthesize its interface from the package manifest, which may succeed or fail.
+fn check_masm_account_component_dependency(
+    name: &str,
+    dependency_namespace: &str,
+    iface: &str,
+) -> std::process::Output {
+    // The interface is named after the last namespace segment.
+    let lib_rs = format!(
+        r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{{account, note, Word}};
+
+#[account(test_wallet::{iface})]
+pub struct TestAccount;
+
+#[note]
+struct ReceiveNote;
+
+#[note]
+impl ReceiveNote {{
+    #[note_script]
+    pub fn script(self, arg: Word, account: &mut TestAccount) {{
+        account.receive_asset(arg);
+    }}
+}}
+"#
+    );
+    let cargo_proj = masm_account_component_consumer(
+        name,
+        dependency_namespace,
+        MASM_WALLET_SOURCE,
+        None,
+        &lib_rs,
+    );
+    cargo_check_miden_target(&cargo_proj)
+}
+
+/// A synthesized interface offers a several-result procedure as a `tuple` result and a procedure
+/// named by a WIT and Rust keyword (`type`) `%`-escaped; a Rust note binds both, the keyword as
+/// wit-bindgen escapes it (`type_`), the tuple on the active account and over FPI, and compiles to
+/// calls of the procedures. `split` returns `(x, x + 1)`, which the note asserts in that order.
+#[test]
+fn masm_account_component_tuple_result_and_keyword_name_compile() {
+    const NAMESPACE: &str = "miden::test_wallet::wallet";
+    const SOURCE: &str = "@account_procedure
+pub proc split(x: felt) -> (felt, felt)
+    dup add.1 swap movup.2 drop
+end
+
+@account_procedure
+pub proc type()
+    push.0 drop
+end
+";
+    const LIB_RS: &str = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::*;
+
+#[account(test_wallet::Wallet)]
+pub struct TestAccount;
+
+#[note]
+struct SplitNote;
+
+#[note]
+impl SplitNote {
+    #[note_script]
+    pub fn script(self, arg: Word, account: &mut TestAccount) {
+        let (low, high) = account.split(arg[0]);
+        assert_eq(high, low + felt!(1));
+        let remote = TestAccount::new(AccountId::new(arg[1], arg[2]));
+        let (remote_low, remote_high) = remote.split(arg[3]);
+        assert_eq(remote_high, remote_low + felt!(1));
+        account.type_();
+    }
+}
+"#;
+
+    let cargo_proj = masm_account_component_consumer(
+        "masm_account_component_tuple_and_keyword",
+        NAMESPACE,
+        SOURCE,
+        None,
+        LIB_RS,
+    );
+    let dependency_path =
+        cargo_proj.root().join(format!("package-cache/{MASM_WALLET_DEPENDENCY}.masp"));
+    let dependency = Package::read_from_bytes_trusted(
+        &fs::read(&dependency_path).expect("the wallet package must be readable"),
+    )
+    .expect("the wallet package must decode");
+    let generated = midenc_package_wit::generate(
+        &midenc_package_interface::PackageInterface::from_package(&dependency),
+    )
+    .unwrap_or_else(|err| panic!("the wallet must have an interface: {err}"));
+    for function in ["split: func(arg0: felt) -> tuple<felt, felt>;", "%type: func();"] {
+        assert!(generated.wit.contains(function), "expected `{function}` in:\n{}", generated.wit);
+    }
+
+    let mut test = CompilerTest::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    );
+    let masm = test.masm_src();
+    for procedure in ["split", "type"] {
+        let call = format!("call.::{NAMESPACE}::{procedure}");
+        assert!(masm.lines().any(|line| line.trim() == call), "expected `{call}` in:\n{masm}");
+    }
+    // The foreign `split` goes through the kernel by procedure root, not by a `call`.
+    assert!(
+        masm.contains("exec.::miden::protocol::tx::execute_foreign_procedure"),
+        "expected the foreign `split` to be invoked through FPI in:\n{masm}"
+    );
+}
+
+/// A `wit` key supplies the interface of a MASM account component that embeds none, in place of
+/// the one synthesized from its manifest: the consumer sees only the override's functions.
+#[test]
+fn masm_account_component_wit_override_wins_over_synthesis() {
+    // The override renames `receive_asset` to `deposit`, which synthesis would never produce.
+    const WIT_OVERRIDE: &str = r#"package miden:test-wallet@0.0.1;
+
+interface wallet {
+    use miden:base/core-types@2.0.0.{word};
+
+    @external-id("miden::test_wallet::wallet::receive_asset")
+    deposit: func(asset: word);
+}
+
+world wallet-world {
+    export wallet;
+}
+"#;
+    const LIB_RS: &str = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{account, note, Word};
+
+#[account(test_wallet::Wallet)]
+pub struct TestAccount;
+
+#[note]
+struct ReceiveNote;
+
+#[note]
+impl ReceiveNote {
+    #[note_script]
+    pub fn script(self, arg: Word, account: &mut TestAccount) {
+        account.deposit(arg);
+    }
+}
+"#;
+
+    let cargo_proj = masm_account_component_consumer(
+        "masm_account_component_wit_override",
+        "miden::test_wallet::wallet",
+        MASM_WALLET_SOURCE,
+        Some(WIT_OVERRIDE),
+        LIB_RS,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected the override's `deposit` to be bound: {stderr}"
+    );
+
+    // The synthesized `receive_asset` is not bound next to the override's functions.
+    std::fs::write(
+        cargo_proj.root().join("src/lib.rs"),
+        LIB_RS.replace("account.deposit(arg)", "account.receive_asset(arg)"),
+    )
+    .expect("the note source must be rewritten");
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "expected the synthesized `receive_asset` to be unbound"
+    );
+    assert!(
+        stderr.contains("no method named `receive_asset`"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+/// A procedure with ten parameter felts and a multi-value result is offered and compiles both
+/// natively and over FPI: the result pointer of the generated lowering never crosses the context
+/// boundary, so it does not count against the sixteen-element window the six FPI prefix felts
+/// and the parameters share.
+#[test]
+fn masm_account_component_ten_felts_and_tuple_result_compile_natively_and_over_fpi() {
+    const NAMESPACE: &str = "miden::test_wallet::wallet";
+    const SOURCE: &str = "@account_procedure
+pub proc check(a: word, b: felt, c: felt, d: word) -> (word, felt)
+    movup.5 drop movup.8 drop movup.7 drop movup.6 drop movup.5 drop
+end
+";
+    const NATIVE_LIB_RS: &str = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::*;
+
+#[account(test_wallet::Wallet)]
+pub struct TestAccount;
+
+#[note]
+struct CheckNote;
+
+#[note]
+impl CheckNote {
+    #[note_script]
+    pub fn script(self, arg: Word, account: &mut TestAccount) {
+        let (word, felt) = account.check(arg, arg[0], arg[1], arg);
+        assert_eq(word[0], felt);
+    }
+}
+"#;
+    let compiler_test = |name: &str, lib_rs: &str| {
+        let cargo_proj = masm_account_component_consumer(name, NAMESPACE, SOURCE, None, lib_rs);
+        CompilerTest::rust_source_cargo_miden(
+            cargo_proj.root(),
+            WasmTranslationConfig::default(),
+            [],
+        )
+    };
+
+    let masm = compiler_test("masm_account_component_ten_felts_native", NATIVE_LIB_RS).masm_src();
+    let call = format!("call.::{NAMESPACE}::check");
+    assert!(masm.lines().any(|line| line.trim() == call), "expected `{call}` in:\n{masm}");
+
+    let fpi_lib_rs = NATIVE_LIB_RS.replace(
+        "account.check(arg, arg[0], arg[1], arg)",
+        "TestAccount::new(AccountId::new(arg[1], arg[2])).check(arg, arg[0], arg[1], arg)",
+    );
+    let masm = compiler_test("masm_account_component_ten_felts_fpi", &fpi_lib_rs).masm_src();
+    assert!(
+        masm.contains("exec.::miden::protocol::tx::execute_foreign_procedure"),
+        "expected an FPI call in:\n{masm}"
+    );
+}
+
+/// A Miden Assembly account-component dependency without WIT is usable from `#[account]`.
+#[test]
+fn masm_account_component_dependency_needs_no_wit() {
+    let output = check_masm_account_component_dependency(
+        "masm_account_component_dependency",
+        "miden::test_wallet::wallet",
+        "Wallet",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected the MASM account component to be usable without WIT: {stderr}"
+    );
+}
+
+/// A Miden Assembly component with a keyword interface name fails where `#[account]` uses it.
+#[test]
+fn masm_account_component_with_a_keyword_interface_is_reported_at_its_reference() {
+    // The interface would be named `list`, a WIT keyword, so no WIT is synthesized and the
+    // dependency is skipped; the reason surfaces where `#[account]` references it.
+    let output = check_masm_account_component_dependency(
+        "masm_account_component_keyword_interface",
+        "miden::test_wallet::list",
+        "List",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "expected the keyword interface to be rejected");
+    assert!(
+        stderr.contains("the module `list` is a WIT keyword"),
+        "unexpected stderr: {stderr}"
+    );
 }
 
 #[test]
@@ -1203,7 +1526,7 @@ impl TestComponent for TestComponentStorage {
 /// Sibling WIT defining a function with the reserved stored-procedure dispatch prefix.
 const TEST_SIBLING_RESERVED_DYNCALL_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface test-sibling {
     use core-types.{felt, word};

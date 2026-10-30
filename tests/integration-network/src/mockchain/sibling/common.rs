@@ -42,7 +42,7 @@ pub(super) fn build_sibling_test_packages(
     let counter_root = counter_project.root();
     let dependencies = [(names.counter_account_package.as_str(), counter_root)];
     let (caller_project, caller_package) =
-        build_sibling_caller_project(&names, &dependencies, caller_source);
+        build_sibling_caller_project(&names, &dependencies, &[], caller_source);
     let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
 
     (counter_package, caller_package, note_package, counter_storage_slot)
@@ -97,7 +97,7 @@ pub(super) fn build_multi_sibling_test_packages(
         (second_account_package.as_str(), second_root),
     ];
     let (caller_project, caller_package) =
-        build_sibling_caller_project(&names, &dependencies, caller_source);
+        build_sibling_caller_project(&names, &dependencies, &[], caller_source);
     let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
 
     (
@@ -108,6 +108,44 @@ pub(super) fn build_multi_sibling_test_packages(
         first_storage_slot,
         second_storage_slot,
     )
+}
+
+/// Builds the caller component and note projects for a test whose siblings are standard (MASM)
+/// components resolved from the sysroot.
+///
+/// `std_dependencies` lists the `(package name, version requirement)` registry dependencies of the
+/// caller component. Returns the caller and note packages and the caller's `count_map` slot name.
+pub(super) fn build_std_sibling_test_packages(
+    test_name: &str,
+    std_dependencies: &[(&str, &str)],
+    caller_source: &str,
+    note_source: &str,
+) -> (Arc<Package>, Arc<Package>, StorageSlotName) {
+    let names = SiblingProjectNames::new(test_name);
+    let caller_storage_slot =
+        storage_slot_name_for_package(&names.caller_account_package, CALLER_INTERFACE);
+    let (caller_project, caller_package) =
+        build_sibling_caller_project(&names, &[], std_dependencies, caller_source);
+    let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
+    (caller_package, note_package, caller_storage_slot)
+}
+
+/// Builds the caller component and note projects for a test whose siblings are Miden Assembly
+/// projects the caller component depends on by path.
+///
+/// `masm_dependencies` lists the `(package name, project root)` of each MASM project. Returns the
+/// caller and note packages.
+pub(crate) fn build_masm_sibling_test_packages(
+    test_name: &str,
+    masm_dependencies: &[(&str, &Path)],
+    caller_source: &str,
+    note_source: &str,
+) -> (Arc<Package>, Arc<Package>) {
+    let names = SiblingProjectNames::new(test_name);
+    let (caller_project, caller_package) =
+        build_sibling_caller_project(&names, masm_dependencies, &[], caller_source);
+    let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
+    (caller_package, note_package)
 }
 
 /// Generates one sibling component project exporting the given WIT interface.
@@ -127,10 +165,12 @@ fn build_sibling_component_project(
         .build()
 }
 
-/// Generates and compiles the caller component project with its sibling dependencies.
+/// Generates and compiles the caller component project with its sibling dependencies: path
+/// dependencies on generated projects and registry dependencies on sysroot packages.
 fn build_sibling_caller_project(
     names: &SiblingProjectNames,
     dependencies: &[(&str, &Path)],
+    registry_dependencies: &[(&str, &str)],
     caller_source: &str,
 ) -> (Project, Arc<Package>) {
     let mut miden_project_toml = account_miden_project_toml_with_interface(
@@ -139,6 +179,7 @@ fn build_sibling_caller_project(
         CALLER_INTERFACE,
     );
     append_miden_project_dependencies(&mut miden_project_toml, dependencies);
+    append_miden_project_registry_dependencies(&mut miden_project_toml, registry_dependencies);
     let mut cargo_toml =
         account_cargo_toml_for(&names.caller_account_name, &names.caller_account_package);
     append_cargo_dependency_metadata(&mut cargo_toml, dependencies);

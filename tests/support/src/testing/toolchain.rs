@@ -121,24 +121,25 @@ pub fn packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError> 
     Ok(packages)
 }
 
-/// Reads and deserializes every package in `sysroot/lib`.
+/// Reads and deserializes every package in `sysroot/lib`, in the order of their `.masp` paths.
 fn read_packages_in(sysroot: &Path) -> Result<Vec<Arc<Package>>, ToolchainError> {
     let lib = sysroot.join("lib");
     let entries = std::fs::read_dir(&lib).map_err(|err| ToolchainError::new(&lib, err))?;
-    let mut packages = Vec::new();
+    // Keyed by path so the order does not depend on the directory listing
+    let mut packages = BTreeMap::new();
     for entry in entries {
         let path = entry.map_err(|err| ToolchainError::new(&lib, err))?.path();
         if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("masp")) {
             let bytes = std::fs::read(&path).map_err(|err| ToolchainError::new(&path, err))?;
             let package = Package::read_from_bytes_trusted(&bytes)
                 .map_err(|err| ToolchainError::new(&path, err))?;
-            packages.push(Arc::new(package));
+            packages.insert(path, Arc::new(package));
         }
     }
     if packages.is_empty() {
         return Err(ToolchainError::new(lib, "no .masp files"));
     }
-    Ok(packages)
+    Ok(packages.into_values().collect())
 }
 
 /// The packages of the session's toolchain, panicking with the install instructions if absent.

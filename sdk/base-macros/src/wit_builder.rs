@@ -40,7 +40,7 @@ impl WitBuilder {
     ) -> (String, T) {
         let interface_name = namespace.wit_interface();
         let mut wit = Self::new(generated_by, &namespace.wit_package(), package_version);
-        wit.use_path(&CORE_TYPES_INTERFACE_ID);
+        wit.use_path(CORE_TYPES_INTERFACE_ID);
         wit.blank_line();
         let result = wit.interface(&interface_name, build);
         wit.blank_line();
@@ -187,7 +187,7 @@ mod tests {
     #[test]
     fn renders_nested_blocks_with_expected_indentation() {
         let mut wit = WitBuilder::new("#[test]", "miden:test", &Version::new(1, 0, 0));
-        wit.use_path("miden:base/core-types@1.0.0");
+        wit.use_path("miden:base/core-types@2.0.0");
         wit.blank_line();
         wit.interface("foo", |interface| {
             interface.line("use core-types.{word};");
@@ -212,7 +212,7 @@ mod tests {
 
 package miden:test@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface foo {
     use core-types.{word};

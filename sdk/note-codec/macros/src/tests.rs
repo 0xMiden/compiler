@@ -35,7 +35,7 @@ interface note-storage {
 const EMBEDDED_CORE_SCHEMA: &str = r#"
 package example:embedded-core-schema@1.0.0;
 
-use miden:base/core-types@1.0.0;
+use miden:base/core-types@2.0.0;
 
 interface note-storage {
     use core-types.{digest};
@@ -43,7 +43,7 @@ interface note-storage {
     type storage = embedded-core-note;
 }
 
-package miden:base@1.0.0 {
+package miden:base@2.0.0 {
     interface core-types {
         record felt { inner: f32 }
         record word { a: felt, b: felt, c: felt, d: felt }

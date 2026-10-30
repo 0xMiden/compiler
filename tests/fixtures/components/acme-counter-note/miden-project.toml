@@ -1,0 +1,14 @@
+[package]
+name = "acme-counter-note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "acme::counter_note::counter_note"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+# The user-written MASM account component; no `wit =`: its interface comes from its package.
+counter = { path = "../acme-counter-masm" }

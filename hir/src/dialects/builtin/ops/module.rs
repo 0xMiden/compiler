@@ -94,6 +94,14 @@ impl Module {
     /// memory regions (global variables, function tables, and the dynamic heap).
     pub const RESERVED_MEMORY_ATTR: &'static str = "reserved_memory";
 
+    /// Returns true if this module holds declarations only: every item in it is a function or
+    /// global variable without a body, so it defines no code. A nested module or an alias counts
+    /// as a definition. The rule is
+    /// [Component::is_declaration_only](super::Component::is_declaration_only)'s.
+    pub fn is_declaration_only(&self) -> bool {
+        super::holds_declarations_only(&self.body())
+    }
+
     /// The module's own function operations, including declarations but excluding aliases.
     ///
     /// An alias to a function never adds a body to this inventory.

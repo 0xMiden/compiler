@@ -256,6 +256,8 @@ pub fn parse_file<T: OpParser + OpRegistration>(
 }
 
 /// Parse any operation from `source` with the provided `uri` and `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 pub fn parse_any(
     config: ParserConfig,
     uri: Uri,
@@ -268,6 +270,8 @@ pub fn parse_any(
 }
 
 /// Parse IR assembly anchored at an operation `name`, from `source` with the provided `uri` and `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 pub fn parse_anchored(
     name: OperationName,
     config: ParserConfig,
@@ -281,6 +285,8 @@ pub fn parse_anchored(
 }
 
 /// Parse any operation from `path` with the provided `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 #[cfg(feature = "std")]
 pub fn parse_file_any(
     config: ParserConfig,
@@ -292,6 +298,8 @@ pub fn parse_file_any(
 }
 
 /// Parse IR assembly anchored at an operation `name`, from `path` with the provided `config`
+///
+/// The source must hold exactly one top-level operation: anything after it is an error.
 #[cfg(feature = "std")]
 pub fn parse_file_anchored(
     anchor: OperationName,
@@ -304,6 +312,9 @@ pub fn parse_file_anchored(
 }
 
 /// Parse the single top-level operation in `source_file`, and return it.
+///
+/// Anything after that operation, another operation or text that is not one, is reported rather
+/// than dropped: a source is read whole or not at all.
 ///
 /// # The world the parser needs, and the one it must not leave behind
 ///
@@ -364,6 +375,10 @@ fn parse_anchored_source(
     let mut operation_parser = operation::OperationParser::new(parser, world);
     let op = operation_parser
         .parse_operation()
+        .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
+    operation_parser
+        .token_stream_mut()
+        .expect_if("end of input after the top-level operation", |token| token == Token::Eof)
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
     // See the note above: a parsed world is the root, not something to be rooted.
     //

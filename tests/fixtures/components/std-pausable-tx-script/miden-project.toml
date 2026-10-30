@@ -1,0 +1,14 @@
+[package]
+name = "std-pausable-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "miden::std_pausable_tx_script::std_pausable_tx_script"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+miden-standards-access-pausable = "0.17.0"
+miden-standards-access-pausable-manager = "0.17.0"

@@ -1,0 +1,30 @@
+// RUN: mkdir -p %t/at %t/under
+// RUN: printf '[package]\nname = "example"\nversion = "0.1.0"\n\n[lib]\npath = "%s"\nnamespace = "dep::stub"\n' > %t/at/miden-project.toml
+// RUN: not midenc %t/at/miden-project.toml --emit=mast=- -o %t/at/out.masp 2>&1 | filecheck %s
+// RUN: printf '[package]\nname = "example"\nversion = "0.1.0"\n\n[lib]\npath = "%s"\nnamespace = "dep::stub::app"\n' > %t/under/miden-project.toml
+// RUN: midenc %t/under/miden-project.toml --emit=masm=- -o %t/under/out.masp 2>&1 | filecheck %s --check-prefix=UNDER
+//
+// A world defining no component is rooted at its target's namespace, but never at the namespace
+// of one of its declaration-only components: its procedures would be published as the
+// dependency's, so a target asking for that is refused. A namespace nested under the stub's is
+// another name and is accepted, as the HIR accepts a defining component nested under a stub.
+
+builtin.world {
+    builtin.component private @dep::@stub {
+        builtin.function internal extern("C") @f(%a: u32) -> u32;
+    };
+    builtin.module public @app {
+        builtin.function public extern("C") @entry() -> u32 {
+            %v = arith.constant 1 : u32;
+            builtin.ret %v : (u32);
+        };
+    };
+};
+
+// CHECK: refusing to root a world that defines no component at '::dep::stub'
+// CHECK: published as that dependency's
+// CHECK-NOT: pub proc entry
+
+// UNDER-NOT: refusing to root
+// UNDER: namespace dep::stub::app
+// UNDER: pub proc entry

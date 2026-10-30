@@ -14,6 +14,7 @@
 extern crate alloc;
 
 pub mod abi;
+pub mod comment;
 pub mod model;
 pub mod resolve;
 

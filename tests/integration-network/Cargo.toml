@@ -27,6 +27,7 @@ miden-standards = { workspace = true, features = ["std", "testing"] }
 miden-testing = { workspace = true, features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-expect-test.workspace = true
 rand.workspace = true
 tokio.workspace = true
@@ -36,4 +37,3 @@ midenc-integration-test-support.workspace = true
 
 [dev-dependencies]
 miden-note-schema = { workspace = true, features = ["codec-component"] }
-midenc-frontend-wasm-metadata.workspace = true

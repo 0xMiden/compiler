@@ -7,8 +7,10 @@ use std::{
 
 use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
-    PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID, package_note_storage_schema_section_id,
-    trim_trailing_nuls,
+    PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
+    core_types::{CoreField, CoreRecord, core_record},
+    namespace::{CORE_TYPES_INTERFACE_ID, CORE_TYPES_PACKAGE, CORE_TYPES_PACKAGE_VERSION},
+    package_note_storage_schema_section_id, trim_trailing_nuls,
 };
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
@@ -427,11 +429,12 @@ fn ensure_expanded_node_limit(ty: &SchemaType, expanded_nodes: usize) -> Result<
 
 /// Verifies the raw embedded core-types definitions before the model applies native mappings.
 fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
-    let Some((_, package_id)) = resolve.package_names.iter().find(|(name, _)| {
-        name.namespace == "miden"
-            && name.name == "base"
-            && name.version.as_ref().is_some_and(|version| version.to_string() == "1.0.0")
-    }) else {
+    let core_types_package = format!("{CORE_TYPES_PACKAGE}@{CORE_TYPES_PACKAGE_VERSION}");
+    let Some((_, package_id)) = resolve
+        .package_names
+        .iter()
+        .find(|(name, _)| name.to_string() == core_types_package)
+    else {
         return Ok(());
     };
     let package = &resolve.packages[*package_id];
@@ -442,33 +445,26 @@ fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
 
     for leaf in StandardLeaf::ALL {
         let name = standard_leaf_name(leaf);
-        let fields = standard_leaf_fields(leaf);
+        let core = standard_leaf_record(leaf);
         let Some(type_id) = interface.types.get(name).copied() else {
             continue;
         };
         let type_id = follow_resolved_aliases(resolve, type_id)?;
         let TypeDefKind::Record(record) = &resolve.types[type_id].kind else {
-            return Err(core_shape_error(name, fields));
+            return Err(core_shape_error(core));
         };
-        if record.fields.len() != fields.len()
+        if record.fields.len() != core.fields.len()
             || record
                 .fields
                 .iter()
-                .zip(fields)
-                .any(|(field, expected)| field.name != *expected)
+                .zip(core.fields)
+                .any(|(field, (name, _))| field.name != *name)
         {
-            return Err(core_shape_error(name, fields));
+            return Err(core_shape_error(core));
         }
-        if leaf == StandardLeaf::Felt {
-            // Miden's canonical felt uses `f32` as its WIT-level placeholder representation.
-            if !resolves_to_primitive(resolve, record.fields[0].ty, Type::F32)? {
-                return Err(core_shape_error(name, fields));
-            }
-        } else {
-            for field in &record.fields {
-                if !resolves_to_fqn(resolve, field.ty, crate::FELT_FQN)? {
-                    return Err(core_shape_error(name, fields));
-                }
+        for (field, (_, expected)) in record.fields.iter().zip(core.fields) {
+            if !resolves_to_core_field(resolve, field.ty, *expected)? {
+                return Err(core_shape_error(core));
             }
         }
     }
@@ -508,6 +504,23 @@ fn resolves_to_primitive(resolve: &Resolve, mut ty: Type, expected: Type) -> Res
     }
 }
 
+/// Returns true when a raw WIT type resolves to the type of a core-record field: `f32` for the
+/// `felt` record's own field, the WIT primitive for an integer, the core record otherwise.
+fn resolves_to_core_field(resolve: &Resolve, ty: Type, expected: CoreField) -> Result<bool> {
+    match expected {
+        CoreField::Felt => resolves_to_primitive(resolve, ty, Type::F32),
+        CoreField::U8 => resolves_to_primitive(resolve, ty, Type::U8),
+        CoreField::U16 => resolves_to_primitive(resolve, ty, Type::U16),
+        CoreField::U32 => resolves_to_primitive(resolve, ty, Type::U32),
+        CoreField::Record(name) => resolves_to_fqn(resolve, ty, &core_type_fqn(name)),
+    }
+}
+
+/// The canonical FQN of the core-types record `name`.
+fn core_type_fqn(name: &str) -> String {
+    format!("{CORE_TYPES_INTERFACE_ID}.{name}")
+}
+
 /// Returns true when a raw WIT type resolves to one canonical FQN.
 fn resolves_to_fqn(resolve: &Resolve, ty: Type, expected: &str) -> Result<bool> {
     let Type::Id(id) = ty else {
@@ -527,19 +540,11 @@ fn validate_model_type_shapes(ty: &SchemaType, seen: &mut HashSet<String>) -> Re
 
     match ty.standard_leaf() {
         Some(StandardLeaf::Felt) if !matches!(ty.kind(), SchemaTypeKind::Felt) => {
-            return Err(core_shape_error(
-                standard_leaf_name(StandardLeaf::Felt),
-                standard_leaf_fields(StandardLeaf::Felt),
-            ));
+            return Err(core_shape_error(standard_leaf_record(StandardLeaf::Felt)));
         }
         Some(StandardLeaf::Felt) => {}
         Some(leaf) => {
-            validate_model_record(
-                ty,
-                standard_leaf_name(leaf),
-                standard_leaf_fields(leaf),
-                crate::FELT_FQN,
-            )?;
+            validate_model_record(ty, standard_leaf_record(leaf))?;
         }
         None => {}
     }
@@ -569,49 +574,59 @@ fn standard_leaf_name(leaf: StandardLeaf) -> &'static str {
         .1
 }
 
-/// Returns the canonical record field order for a standard leaf.
-fn standard_leaf_fields(leaf: StandardLeaf) -> &'static [&'static str] {
-    match leaf {
-        StandardLeaf::Felt | StandardLeaf::AssetAmount => &["inner"],
-        StandardLeaf::Word => &["a", "b", "c", "d"],
-        StandardLeaf::AccountId => &["prefix", "suffix"],
-    }
+/// Returns the SDK core record of a standard leaf, which gives its fields and their types.
+fn standard_leaf_record(leaf: StandardLeaf) -> &'static CoreRecord {
+    core_record(standard_leaf_name(leaf)).expect("every standard leaf is an SDK core record")
 }
 
-/// Verifies one mapped record in the owned schema model.
-fn validate_model_record(
-    ty: &SchemaType,
-    name: &str,
-    expected_fields: &[&str],
-    expected_field_fqn: &str,
-) -> Result<()> {
+/// Verifies one mapped record in the owned schema model against its core record.
+fn validate_model_record(ty: &SchemaType, core: &CoreRecord) -> Result<()> {
     let SchemaTypeKind::Record(fields) = ty.kind() else {
-        return Err(core_shape_error(name, expected_fields));
+        return Err(core_shape_error(core));
     };
-    if fields.len() != expected_fields.len()
-        || fields.iter().zip(expected_fields).any(|(field, expected)| {
-            field.name() != *expected || field.ty().fqn() != Some(expected_field_fqn)
+    if fields.len() != core.fields.len()
+        || fields.iter().zip(core.fields).any(|(field, (name, expected))| {
+            field.name() != *name || !model_field_matches(field.ty(), *expected)
         })
     {
-        return Err(core_shape_error(name, expected_fields));
+        return Err(core_shape_error(core));
     }
     Ok(())
 }
 
+/// Whether a field of the owned schema model has the type of a core-record field.
+fn model_field_matches(ty: &SchemaType, expected: CoreField) -> bool {
+    match expected {
+        CoreField::Felt => matches!(ty.kind(), SchemaTypeKind::Felt),
+        CoreField::U8 => matches!(ty.kind(), SchemaTypeKind::Primitive(PrimitiveType::U8)),
+        CoreField::U32 => matches!(ty.kind(), SchemaTypeKind::Primitive(PrimitiveType::U32)),
+        CoreField::U16 => false,
+        CoreField::Record(name) => ty.fqn() == Some(core_type_fqn(name).as_str()),
+    }
+}
+
 /// Creates the canonical core-type shape diagnostic.
-fn core_shape_error(name: &str, fields: &[&str]) -> Error {
-    let field_shape = if name == "felt" {
-        "inner: f32".to_owned()
-    } else {
-        fields
-            .iter()
-            .map(|field| format!("{field}: felt"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+fn core_shape_error(core: &CoreRecord) -> Error {
+    let field_shape = core
+        .fields
+        .iter()
+        .map(|(field, ty)| {
+            let ty = match ty {
+                CoreField::Felt => "f32",
+                CoreField::U8 => "u8",
+                CoreField::U16 => "u16",
+                CoreField::U32 => "u32",
+                CoreField::Record(name) => name,
+            };
+            format!("{field}: {ty}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     Error::new(format!(
-        "embedded WIT type `miden:base/core-types@1.0.0.{name}` does not match the pinned \
-         canonical shape `record {name} {{ {field_shape} }}`"
+        "embedded WIT type `{}` does not match the pinned canonical shape `record {} {{ \
+         {field_shape} }}`",
+        core_type_fqn(core.name),
+        core.name
     ))
 }
 
@@ -995,4 +1010,19 @@ fn kind_name(kind: &SchemaTypeKind) -> &'static str {
 #[cfg(feature = "protocol")]
 pub(crate) fn normalize_name(name: &str) -> String {
     name.trim().replace('_', "-")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every standard leaf is the SDK core record of its FQN, which gives its fields and their
+    /// types; the SDK macros' tests pin that table against `miden.wit`.
+    #[test]
+    fn standard_leaves_are_sdk_core_records() {
+        for leaf in StandardLeaf::ALL {
+            let core = standard_leaf_record(leaf);
+            assert_eq!(core_type_fqn(core.name), leaf.fqn());
+        }
+    }
 }
