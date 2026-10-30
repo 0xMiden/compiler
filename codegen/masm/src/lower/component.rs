@@ -737,10 +737,11 @@ fn world_body_to_masm_component(
 
     let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
-    // A component-less world is published at its target's namespace, which must not sit at or
-    // under the namespace of one of its declaration-only components: its procedures would be
-    // published under that dependency's name. The world defines no component, so every component
-    // in it is such a stub.
+    // A component-less world is published at its target's namespace, which must not be the
+    // namespace of one of its declaration-only components: its procedures would be published as
+    // that dependency's. A namespace nested under a stub's is another name, accepted here as the
+    // HIR accepts a defining component nested under a stub. The world defines no component, so
+    // every component in it is such a stub.
     if let EmissionNamespace::Target(target) = namespace
         && !target.is_executable()
     {
@@ -753,11 +754,11 @@ fn world_body_to_masm_component(
             let stub = path
                 .to_absolute()
                 .map_err(|err| Report::msg(format!("unable to canonicalize '{}': {err}", path)))?;
-            if namespace.strip_prefix(&stub).is_some() {
+            if namespace.strip_prefix(&stub).is_some_and(|rest| rest.is_empty()) {
                 return Err(Report::msg(format!(
-                    "refusing to root a world that defines no component at '{namespace}', at or \
-                     under '{stub}', the namespace of one of its declaration-only components: its \
-                     procedures would be published under that dependency's name"
+                    "refusing to root a world that defines no component at '{stub}', the \
+                     namespace of one of its declaration-only components: its procedures would be \
+                     published as that dependency's"
                 )));
             }
         }
