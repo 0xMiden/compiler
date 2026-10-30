@@ -515,6 +515,12 @@ fn interleaved_bases_share_a_bounded_number_of_conversions() {
     local.get 4 i32.load offset=4 align=4 i32.add
     local.get 5 i32.load offset=4 align=4 i32.add))"#,
     );
+    // The accesses of the first four bases interleave: the first two share their division, and
+    // the other two, which would make four groups open at once, keep their own. The last two
+    // bases share theirs.
+    let masm = test.masm_src();
+    let entry = masm_procedure(&masm, "entrypoint");
+    assert_eq!(entry.matches("u32divmod").count(), 8, "{entry}");
     let args = core::array::from_fn::<u32, 6, _>(|index| MEMORY_ADDR + 64 * index as u32);
     // Base `i` holds `2i + 1` at offset 0 and `2i + 2` at offset 4, so the sum is 78.
     let bytes = core::array::from_fn::<[u8; 8], 6, _>(|index| {
@@ -555,4 +561,67 @@ fn calls_between_accesses_end_the_shared_conversion() {
     let (result, cycles) = eval_wat_cycles(&mut test, None, &[MEMORY_ADDR]);
     assert_eq!(result, 32);
     midenc_expect_test::expect!["695"].assert_eq(&cycles.to_string());
+}
+
+/// A Wasm function `(addr0, addr1, cond) -> i32` that loads `addr0` from local 0, sets local 0 to
+/// `addr1` in a branch taken when `cond` is not zero, then reads offset 0 through the address loaded
+/// before the branch and offset 4 through local 0, and returns their sum.
+const LOAD_BEFORE_BRANCH_ACCESSES: &str = r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32 i32) (result i32)
+    local.get 0  local.get 2
+    if  local.get 1 local.set 0  end
+    i32.load offset=0 align=4
+    local.get 0  i32.load offset=4 align=4
+    i32.add))"#;
+
+/// Verifies that an address loaded from a local before a branch that sets the local, and used
+/// after it, does not share a conversion with a reload of the local after the branch: sharing one
+/// would read `addr0 + 4` instead of `addr1 + 4`.
+#[test]
+fn local_set_in_a_branch_splits_a_load_used_after_the_branch() {
+    let mut test = compile_wat(LOAD_BEFORE_BRANCH_ACCESSES);
+    let addr0 = MEMORY_ADDR;
+    let addr1 = MEMORY_ADDR + 64;
+    let mut bytes = [0u8; 72];
+    bytes[..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&5u32.to_le_bytes());
+    bytes[68..72].copy_from_slice(&7u32.to_le_bytes());
+    let initializers = [Initializer::MemoryBytes {
+        addr: addr0,
+        bytes: &bytes,
+    }];
+    let (result, _) = eval_wat_cycles(&mut test, initializers, &[addr0, addr1, 1]);
+    assert_eq!(result, 3 + 7);
+}
+
+/// A Wasm function `(addr0, addr1) -> i32` that loads `addr0` from local 0, sets local 0 to
+/// `addr1` while the loaded address stays on the operand stack, then reads offset 0 through the
+/// loaded address and offset 4 through local 0, and returns their sum.
+const LOAD_BEFORE_SET_ACCESSES: &str = r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32) (result i32)
+    local.get 0  local.get 1  local.set 0
+    i32.load offset=0 align=4
+    local.get 0  i32.load offset=4 align=4
+    i32.add))"#;
+
+/// Verifies that an address loaded from a local before a `local.set` of it, and used after it, does
+/// not share a conversion with a reload of the local after the `local.set`: sharing one would read
+/// `addr0 + 4` instead of `addr1 + 4`.
+#[test]
+fn local_set_splits_a_load_used_after_it() {
+    let mut test = compile_wat(LOAD_BEFORE_SET_ACCESSES);
+    let addr0 = MEMORY_ADDR;
+    let addr1 = MEMORY_ADDR + 64;
+    let mut bytes = [0u8; 72];
+    bytes[..4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[4..8].copy_from_slice(&5u32.to_le_bytes());
+    bytes[68..72].copy_from_slice(&7u32.to_le_bytes());
+    let initializers = [Initializer::MemoryBytes {
+        addr: addr0,
+        bytes: &bytes,
+    }];
+    let (result, _) = eval_wat_cycles(&mut test, initializers, &[addr0, addr1]);
+    assert_eq!(result, 3 + 7);
 }

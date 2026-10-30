@@ -548,6 +548,88 @@ builtin.module private @share_base_divmod {
         builtin.ret %4, %8 : (u32, u32);
     };
 
+    // A store nested in a region separates a load before the region, divided after it, from a
+    // reload after it, although the region also ends any group before it.
+    // CHECK-LABEL: @store_in_region_after_load(
+    // CHECK: %[[L:\d+]] = hir.load_local
+    // CHECK-NEXT: scf.if
+    // CHECK: arith.divmod %[[L]], %{{\d+}};
+    // CHECK-NEXT: %[[L2:\d+]] = hir.load_local
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[L2]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: arith.divmod %[[S]], %{{\d+}};
+    builtin.function public extern("C") @store_in_region_after_load(%0: i1, %1: u32, %2: u32) -> (u32, u32) {
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %3 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        scf.if %0 then {
+            hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+            scf.yield : ();
+        } else {
+            scf.yield : ();
+        } : (i1) -> ();
+        %4 = arith.constant 4 : u32;
+        %5, %6 = arith.divmod %3, %4;
+        %7 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %8 = arith.add %7, %4 <{ overflow = #builtin.overflow<checked> }>;
+        %9, %10 = arith.divmod %8, %4;
+        builtin.ret %6, %10 : (u32, u32);
+    };
+
+    // A load reads the local as of the load, not as of its division: a store between them
+    // separates it from a later reload.
+    // CHECK-LABEL: @store_between_load_and_division(
+    // CHECK: %[[L:\d+]] = hir.load_local
+    // CHECK-NEXT: hir.store_local
+    // CHECK-NEXT: arith.divmod %[[L]], %{{\d+}};
+    // CHECK-NEXT: %[[L2:\d+]] = hir.load_local
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[L2]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: arith.divmod %[[S]], %{{\d+}};
+    builtin.function public extern("C") @store_between_load_and_division(%0: u32, %1: u32) -> (u32, u32) {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %2 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %3 = arith.constant 4 : u32;
+        %4, %5 = arith.divmod %2, %3;
+        %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %7 = arith.add %6, %3 <{ overflow = #builtin.overflow<checked> }>;
+        %8, %9 = arith.divmod %7, %3;
+        builtin.ret %5, %9 : (u32, u32);
+    };
+
+    // Divisions of one base by different divisors are not shared.
+    // CHECK: @divisors_kept_apart(%[[B:\d+]]: u32)
+    // CHECK-DAG: %[[FOUR:\d+]] = arith.constant 4 : u32;
+    // CHECK-DAG: %[[EIGHT:\d+]] = arith.constant 8 : u32;
+    // CHECK: arith.divmod %[[B]], %[[FOUR]];
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[B]], %[[EIGHT]] <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: arith.divmod %[[S]], %[[EIGHT]];
+    builtin.function public extern("C") @divisors_kept_apart(%0: u32) -> (u32, u32) {
+        %1 = arith.constant 4 : u32;
+        %2 = arith.constant 8 : u32;
+        %3, %4 = arith.divmod %0, %1;
+        %5 = arith.add %0, %2 <{ overflow = #builtin.overflow<checked> }>;
+        %6, %7 = arith.divmod %5, %2;
+        builtin.ret %4, %7 : (u32, u32);
+    };
+
+    // Groups form in nested blocks too.
+    // CHECK-LABEL: @group_in_nested_block(
+    // CHECK: scf.if
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %{{\d+}}, %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: %{{\d+}}, %[[Q:\d+]] = arith.divmod %[[S]], %{{\d+}};
+    // CHECK-NEXT: arith.sub %[[Q]]
+    builtin.function public extern("C") @group_in_nested_block(%0: i1, %1: u32) -> (u32, u32) {
+        %2 = arith.constant 4 : u32;
+        %3, %4 = scf.if %0 then {
+            %5, %6 = arith.divmod %1, %2;
+            %7 = arith.add %1, %2 <{ overflow = #builtin.overflow<checked> }>;
+            %8, %9 = arith.divmod %7, %2;
+            scf.yield %6, %9 : (u32, u32);
+        } else {
+            scf.yield %1, %1 : (u32, u32);
+        } : (i1) -> (u32, u32);
+        builtin.ret %3, %4 : (u32, u32);
+    };
+
     builtin.function private extern("C") @sink(%0: u32) -> u32 {
         builtin.ret %0 : (u32);
     };
