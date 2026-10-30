@@ -173,11 +173,11 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   share one `add.Kmax` (checked unless the range analysis proves it fits, none
   when every offset is 0) and one division; other offsets subtract from the
   quotient. One base = one SSA value, bitcasts of one value, or reloads of one
-  local with no `store_local` of it between (other writes, unlike for CSE, do
-  not matter). A group ends at a call, FPI or region op; at most two groups are
-  open at any op.
+  local with no `store_local` of it between (Wasm input; other writes, unlike
+  for CSE, do not matter). A group ends at a call, FPI or region op; at most two
+  groups are open at any op.
 - CSE and SCCP see only pre-lift bodies, which hold zero region ops
-  (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no store
+  (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no Write
   between (the strongest Copy-constraint lever), and heap loads only 1 byte
   wide: for 2+ bytes the second load's alignment `hir.assertz` (a Write) sits
   between them (`memorder::cse_widths`, `cse::reload_write`). Dead end: CSE
