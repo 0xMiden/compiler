@@ -72,8 +72,8 @@ build only, asserts it fails with an error containing the expected text).
   flag, `MIDENC_TRACE='pass:<pass>=trace'` and `--nocapture`. Pass names:
   `canonicalizer`, `cse`, `sparse-conditional-constant-propagation`,
   `sink-operand-defs`, `local2reg`, `lift-control-flow`, `share-base-divmod`.
-  These match `Pass::name`,
-  not registration arguments such as `sccp` or `cfg-to-scf`. Repeated
+  These match `Pass::name`, not registration arguments such as `sccp` or
+  `cfg-to-scf`. Repeated
   canonicalizer/sinking runs share names; tell them by order.
 - `cargo make fuzza-probe <test> hir|wat|masm` dumps to
   `target/fuzza-probe/<case>/`; by hand, `MIDENC_EMIT` needs absolute

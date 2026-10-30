@@ -162,19 +162,21 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
 - Fixed pipeline at every level, on a function pass manager
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
   SinkOperandDefs → Local2Reg → LiftControlFlowToSCF → ShareBaseDivmod →
-  Canonicalizer →
-  component-level LegalizeForMasm → final SinkOperandDefs. `ControlFlowSink` and
+  Canonicalizer → component-level LegalizeForMasm → final SinkOperandDefs.
+  `ControlFlowSink` and
   DCE are commented out; there is no middle-end knob: `--optimize` sets only
   the guest LLVM level (`cargo_profile_opt_level`,
   `midenc-compile/src/pipeline/frontends/rust.rs`). Dead end: middle-end
   knobs (`Aggressive` simplification, `ControlFlowSink`, DCE, per-pass flags)
   and the advice-taint and postdominance analyses need a source change or
   `-Zlint`.
-- ShareBaseDivmod (after the lift): within a block, element-aligned accesses
-  through one base (one SSA value, its bitcasts, or reloads of one local with
-  no store between) share one checked `add.Kmax` + `u32divmod.4`; other
-  offsets subtract from the quotient. A group ends at a call, FPI or region
-  op; at most two groups overlap.
+- ShareBaseDivmod (after the lift): within a block, divisions by one constant
+  of one base plus multiples of it (element-aligned accesses: `u32divmod.4`)
+  share one `add.Kmax` (checked unless the range analysis proves it fits, none
+  when every offset is 0) and one division; other offsets subtract from the
+  quotient. One base = one SSA value, bitcasts of one value, or reloads of one
+  local with no store between. A group ends at a call, FPI or region op; at
+  most two groups are open at any op.
 - CSE and SCCP see only pre-lift bodies, which hold zero region ops
   (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no store
   between (the strongest Copy-constraint lever), and heap loads only 1 byte
