@@ -445,9 +445,10 @@ end
     );
 }
 
-/// An interface procedure outside the module of the first one is left out, not the package.
+/// Account procedures in two modules name no single interface, so the package has none: an
+/// interface named after whichever module sorts first would change with the procedure names.
 #[test]
-fn a_procedure_outside_the_interface_module_is_skipped() {
+fn account_procedures_in_several_modules_are_rejected() {
     let mut iface = component(
         r#"
 @account_procedure
@@ -462,18 +463,14 @@ end
         "@account_procedure\npub proc pong()\n    nop\nend\n",
     );
     iface.procedures.extend(PackageInterface::from_package(&other).procedures);
-    let generated = generate(&iface).unwrap();
-    let skipped: Vec<(&str, &str)> =
-        generated.skipped.iter().map(|s| (s.path.as_str(), s.reason.as_str())).collect();
+    let err = generate(&iface).unwrap_err();
+    assert!(matches!(err, Error::ModulesDiffer { .. }), "{err}");
     assert_eq!(
-        skipped,
-        [(
-            "miden::test::other::pong",
-            "lives in module `miden::test::other`, outside the interface module \
-             `miden::test::my_component`"
-        )]
+        err.to_string(),
+        "account procedures lie in module `miden::test::my_component` and in module \
+         `miden::test::other`; the procedures of an account component's interface must lie in one \
+         module"
     );
-    assert_eq!(generated.interface, "my-component");
 }
 
 /// An auth procedure sorting before the account procedures, in a submodule, neither decides the

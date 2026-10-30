@@ -6,9 +6,8 @@
 //! export path in `@external-id`, with the manifest types expressed through the SDK's `core-types`
 //! where they match exactly or are named by their `core-types` id (as in a Rust-built component),
 //! and declared locally otherwise. A procedure the interface cannot offer (an auth procedure, no
-//! typed signature, outside the interface module, unsupported or clashing names and types,
-//! parameters or results beyond the stack budget, 64-bit integer parameters or results, reserved
-//! or invalid names) is left out and reported in [`Generated::skipped`] and in
+//! typed signature, unsupported or clashing names and types, parameters or results beyond the
+//! stack budget, 64-bit integer parameters or results, reserved or invalid names) is left out and reported in [`Generated::skipped`] and in
 //! the interface's doc comment. A procedure with several results returns them as one tuple. A
 //! package fails as a whole only when it is not an account component ([`Error::NotAComponent`]),
 //! has no interface procedures ([`Error::NoInterfaceProcedures`]), has no usable WIT package id
@@ -95,6 +94,18 @@ pub enum Error {
     /// package id is the Miden SDK's own WIT package even with the package name kept whole.
     #[error("{0}")]
     Namespace(String),
+    /// The offerable account procedures lie in more than one module, so no single module names
+    /// the interface; the first two modules found, in path order.
+    #[error(
+        "account procedures lie in module `{module}` and in module `{other}`; the procedures of \
+         an account component's interface must lie in one module"
+    )]
+    ModulesDiffer {
+        /// The module of the first offerable procedure.
+        module: String,
+        /// The module of the first offerable procedure outside it.
+        other: String,
+    },
     /// Every interface procedure is left out; the procedures and why, in path order.
     #[error("every interface procedure is left out:{}", list_skipped(.0))]
     EverythingSkipped(Vec<Skipped>),
@@ -139,6 +150,18 @@ pub fn generate(package: &PackageInterface) -> Result<Generated, Error> {
         ));
     };
     let (head, leaf) = namespace(first)?;
+    // The interface is named after one module, so every offerable procedure must lie in it.
+    let module = first.namespace().to_relative();
+    if let Some(outside) = procedures
+        .iter()
+        .filter(|procedure| is_offerable(procedure))
+        .find(|procedure| procedure.namespace().to_relative() != module)
+    {
+        return Err(Error::ModulesDiffer {
+            module: module.to_string(),
+            other: outside.namespace().to_relative().to_string(),
+        });
+    }
 
     let package_name: &str = package.name.as_ref();
     let (id_namespace, id_name) =
@@ -165,24 +188,19 @@ pub fn generate(package: &PackageInterface) -> Result<Generated, Error> {
     let mut type_names: BTreeSet<String> = BTreeSet::new();
     for procedure in procedures.iter().filter(|procedure| is_offerable(procedure)) {
         if let Some(signature) = &procedure.signature
-            && let Ok((_, types)) = function(
-                procedure,
-                &procedure_path(procedure),
-                first,
-                signature,
-                &TypeSet::default(),
-            )
+            && let Ok((_, types)) =
+                function(procedure, &procedure_path(procedure), signature, &TypeSet::default())
         {
             type_names.extend(types.names().map(str::to_owned));
         }
     }
-    let mut pass = interface_pass(&procedures, first, &type_names);
+    let mut pass = interface_pass(&procedures, &type_names);
     loop {
         let kept_types: BTreeSet<String> = pass.types.names().map(str::to_owned).collect();
         if kept_types == type_names {
             break;
         }
-        let next = interface_pass(&procedures, first, &kept_types);
+        let next = interface_pass(&procedures, &kept_types);
         if !next.types.names().all(|name| kept_types.contains(name)) {
             break;
         }
@@ -231,13 +249,9 @@ struct Pass {
 }
 
 /// Offer `procedures` in order, leaving out each auth procedure, each one that has no function
-/// form in the interface module of the `first` offerable procedure, whose function name another
-/// kept function already has, or whose function name is one of `type_names`.
-fn interface_pass(
-    procedures: &[&ProcedureItem],
-    first: &ProcedureItem,
-    type_names: &BTreeSet<String>,
-) -> Pass {
+/// form, whose function name another kept function already has, or whose function name is one
+/// of `type_names`.
+fn interface_pass(procedures: &[&ProcedureItem], type_names: &BTreeSet<String>) -> Pass {
     // `TypeSet::map` may leave partial state behind on failure, so each function is mapped on a
     // clone (see `function`) that replaces the set only on success.
     let mut types = TypeSet::default();
@@ -248,8 +262,8 @@ fn interface_pass(
         let result = match &procedure.signature {
             _ if !is_offerable(procedure) => Err(AUTH_PROCEDURE_REASON.to_owned()),
             None => Err("no typed signature".to_owned()),
-            Some(signature) => function(procedure, &path, first, signature, &types).and_then(
-                |(function, extended)| {
+            Some(signature) => {
+                function(procedure, &path, signature, &types).and_then(|(function, extended)| {
                     if type_names.contains(function.name.trim_start_matches('%')) {
                         Err(format!(
                             "function `{}` has the name of a type in the interface",
@@ -260,8 +274,8 @@ fn interface_pass(
                     } else {
                         Ok((function, extended))
                     }
-                },
-            ),
+                })
+            }
         };
         match result {
             Ok((function, extended)) => {
@@ -293,8 +307,6 @@ fn is_offerable(procedure: &ProcedureItem) -> bool {
 
 /// The head and leaf segments of the module of `first`, the first offered account procedure (in
 /// path order; one not also tagged `@auth_script`), whose module is the interface module.
-///
-/// An interface procedure in another module is left out by [`function`].
 fn namespace(first: &ProcedureItem) -> Result<(String, String), Error> {
     let module = first.namespace();
     match (module.first(), module.last()) {
@@ -314,19 +326,9 @@ fn namespace(first: &ProcedureItem) -> Result<(String, String), Error> {
 fn function(
     procedure: &ProcedureItem,
     path: &str,
-    first: &ProcedureItem,
     signature: &FunctionType,
     types: &TypeSet,
 ) -> Result<(Function, TypeSet), String> {
-    // The interface is named after one module, that of the `first` offered account procedure, so
-    // it offers only that module's procedures.
-    let module = first.namespace().to_relative();
-    if procedure.namespace().to_relative() != module {
-        return Err(format!(
-            "lives in module `{}`, outside the interface module `{module}`",
-            procedure.namespace().to_relative(),
-        ));
-    }
     // Every `@external-id` consumer applies this rule; it also keeps the `"` and `\` that
     // `@external-id("...")` cannot spell out of the path.
     if let Err(err) = validate_procedure_path(path) {

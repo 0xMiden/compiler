@@ -227,7 +227,7 @@ SDK macros derive its interface from the package manifest:
   built by an SDK that put the prefix first) becomes a local type of that name instead. A type
   named by another WIT id is not supported;
 - auth procedures (also when tagged `@account_procedure`), procedures without a typed
-  signature, outside the interface module, with parameters or results beyond 16 stack elements
+  signature, with parameters or results beyond 16 stack elements
   (the pointer through which a result flattening to more than one value comes back is passed
   after the parameters but stays in the caller's context, so it does not count), with a 64-bit integer
   (`u64`/`s64`) parameter or result or a record containing a 64-bit integer field (not callable
@@ -251,7 +251,7 @@ SDK macros derive its interface from the package manifest:
 
 A package gets no interface at all when it has no `@account_procedure` or `@auth_script`
 procedure, when its first offered account procedure (one not also tagged `@auth_script`) is not
-inside a module, when its package name or namespace yields a keyword, an invalid WIT name or the
+inside a module, when its offered account procedures lie in more than one module, when its package name or namespace yields a keyword, an invalid WIT name or the
 reserved `core_types` interface leaf, when its WIT package id is the SDK's own `miden:base` (even
 with the package name kept whole) or the depending crate's own package id, when every one of its
 procedures is left out, or when its synthesized WIT fails to parse. Such a dependency is skipped,
