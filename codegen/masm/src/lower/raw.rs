@@ -128,16 +128,20 @@ pub(crate) fn load_small(bits: usize, span: masm::SourceSpan) -> Vec<masm::Op> {
     b.ops
 }
 
-/// Consume `[element_addr, byte_offset, value]` and replace just the selected bits in memory.
-/// `type_size` is a subword bit width; the value must fit that width without crossing the element.
+/// Consume `[element_addr, byte_offset, value]` and replace just the selected bits of the
+/// element's 32-bit view in memory; an element holding a felt at or above 2^32 keeps only its low
+/// 32 bits. `type_size` is a subword bit width; the value must fit that width without crossing
+/// the element.
 pub(crate) fn store_small(type_size: u32, span: masm::SourceSpan) -> Vec<masm::Op> {
     let mut b = Builder::new(span);
 
     // Stack: [addr, offset, value]
-    // Load the current aligned value
+    // Load the current aligned value. The cell may still hold a felt at or above 2^32 from an
+    // earlier store (a reused stack slot); keep its low 32 bits so the merge below does not trap.
     b.emit_all([
         masm::Instruction::Dup0,    // [addr, addr, offset, value]
         masm::Instruction::MemLoad, // [prev, addr, offset, value]
+        masm::Instruction::U32Cast, // [prev, addr, offset, value] (prev = low 32 bits of the cell)
     ]);
 
     // Calculate bit offset and create mask

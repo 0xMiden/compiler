@@ -500,7 +500,7 @@ fn batch_kernel() {
     check("same transaction erasure", &same_tx, build_advice_inputs(&same_tx), false);
 
     expect![[r#"
-        MAST bytes: 101075
+        MAST bytes: 101091
         VM cycles:
         two transactions: 24749
         partial erasure: 21560

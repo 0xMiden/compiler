@@ -164,7 +164,8 @@ impl ExecutionContext {
         memory::write_value(addr, value, &mut self.memory).wrap_err("invalid memory write")
     }
 
-    /// Write bytes without modifying neighboring bytes. Validate the whole write before mutation.
+    /// Write bytes without modifying neighboring bytes. Only the address range can fail, before
+    /// any mutation.
     pub fn write_memory_bytes(
         &mut self,
         addr: impl Into<MemoryAddress>,
@@ -173,7 +174,8 @@ impl ExecutionContext {
     ) -> Result<(), Report> {
         let addr = addr.into();
         self.check_write_bounds(addr, bytes.len(), at)?;
-        memory::write_bytes(addr, bytes, &mut self.memory).wrap_err("invalid memory write")
+        memory::write_bytes(addr, bytes, &mut self.memory);
+        Ok(())
     }
 
     /// Snapshot complete cells containing an element-aligned byte range, including hidden values.
@@ -193,7 +195,8 @@ impl ExecutionContext {
     }
 
     /// Write a snapshot to an element-aligned byte range. The exact length excludes snapshot
-    /// padding: complete cells are replaced, while a partial final cell preserves its other bytes.
+    /// padding: complete cells are replaced, while a partial final cell preserves its other bytes
+    /// (a cell holding a felt at or above 2^32 keeps only its low 32 bits).
     pub fn write_memory_elements(
         &mut self,
         addr: MemoryAddress,
@@ -208,7 +211,8 @@ impl ExecutionContext {
         if elements.len() != len.div_ceil(4) as usize {
             return Err(WriteFailed::InvalidSnapshot).wrap_err("invalid memory write");
         }
-        // Write the only fallible part first, so a bad boundary cell leaves the whole range intact.
+        // Validate the only fallible part, the partial snapshot element, before any write, so a
+        // bad snapshot leaves the whole range intact.
         let tail = (len % 4) as usize;
         if tail != 0 {
             let value = elements[elements.len() - 1].as_canonical_u64();
@@ -217,8 +221,7 @@ impl ExecutionContext {
                 .wrap_err("invalid memory write")?
                 .to_le_bytes();
             let tail_addr = addr.checked_add(u64::from(len - len % 4)).expect("range was checked");
-            memory::write_bytes(tail_addr, &bytes[..tail], &mut self.memory)
-                .wrap_err("invalid memory write")?;
+            memory::write_bytes(tail_addr, &bytes[..tail], &mut self.memory);
         }
         for (offset, &element) in elements[..(len / 4) as usize].iter().enumerate() {
             self.memory.set(addr.element + offset as u32, element);

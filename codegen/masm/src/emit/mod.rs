@@ -3350,73 +3350,81 @@ mod tests {
         );
     }
 
-    /// An 8-bit store to the first byte of an element masks the byte out of the element, and ors
-    /// the value into it: `[v] => []`, with nothing left behind.
+    /// An 8-bit store to the first byte of an element truncates the element to its 32-bit view
+    /// (it may hold a stale felt), masks the byte out of it, and ors the value into it:
+    /// `[v] => []`, with nothing left behind.
     #[test]
     fn an_8_bit_store_to_a_constant_address_ors_the_value_into_its_element() {
         assert_emits(
             &[Type::U8],
             |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.32
-            push.4294967040
-            u32and
-            swap.1
-            u32or
-            mem_store.32
-        "#]],
+                mem_load.32
+                u32cast
+                push.4294967040
+                u32and
+                swap.1
+                u32or
+                mem_store.32
+            "#]],
         );
     }
 
-    /// An 8-bit store to the second byte of an element shifts the value into place first.
+    /// An 8-bit store to the second byte of an element truncates the element to its 32-bit view,
+    /// then shifts the value into place.
     #[test]
     fn an_8_bit_store_to_a_constant_byte_offset_shifts_the_value_into_place() {
         assert_emits(
             &[Type::U8],
             |emitter| emitter.store_imm(129, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.32
-            push.4294902015
-            u32and
-            swap.1
-            u32shl.8
-            u32or
-            mem_store.32
-        "#]],
+                mem_load.32
+                u32cast
+                push.4294902015
+                u32and
+                swap.1
+                u32shl.8
+                u32or
+                mem_store.32
+            "#]],
         );
     }
 
-    /// A 16-bit store to the first byte of an element masks the low half out of the element.
+    /// A 16-bit store to the first byte of an element truncates the element to its 32-bit view and
+    /// masks the low half out of it.
     #[test]
     fn a_16_bit_store_to_a_constant_aligned_address_ors_the_value_into_its_element() {
         assert_emits(
             &[Type::U16],
             |emitter| emitter.store_imm(128, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.32
-            push.4294901760
-            u32and
-            swap.1
-            u32or
-            mem_store.32
-        "#]],
+                mem_load.32
+                u32cast
+                push.4294901760
+                u32and
+                swap.1
+                u32or
+                mem_store.32
+            "#]],
         );
     }
 
-    /// A small store to address 0, which is aligned to every power of two, compiles.
+    /// A small store to address 0, which is aligned to every power of two, compiles and truncates
+    /// the element to its 32-bit view before the merge.
     #[test]
     fn a_small_store_to_address_zero_compiles() {
         assert_emits(
             &[Type::I1],
             |emitter| emitter.store_imm(0, SourceSpan::UNKNOWN),
             expect![[r#"
-            mem_load.0
-            push.4294967294
-            u32and
-            swap.1
-            u32or
-            mem_store.0
-        "#]],
+                mem_load.0
+                u32cast
+                push.4294967294
+                u32and
+                swap.1
+                u32or
+                mem_store.0
+            "#]],
         );
     }
 

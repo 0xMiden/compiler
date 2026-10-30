@@ -44,9 +44,9 @@ fn link_core_package(assembler: &mut Assembler) {
 /// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
 /// as entry point.
 ///
-/// Both i32 and i64 intrinsics modules are statically linked so the body can call the intrinsics
-/// of either type by their fully-qualified path (`::intrinsics::i32::*` or `::intrinsics::i64::*`).
-pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
+/// Every `::intrinsics` module is statically linked, so the body can call any intrinsic by its
+/// fully-qualified path, such as `::intrinsics::i64::*` or `::intrinsics::mem::*`.
+pub(crate) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let mut assembler = Assembler::new(source_manager.clone());
     link_core_package(&mut assembler);

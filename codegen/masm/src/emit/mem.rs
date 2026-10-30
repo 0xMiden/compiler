@@ -701,7 +701,17 @@ impl OpEmitter<'_> {
                 if !ptr_ty.is_byte_pointer() && is_single_element_scalar(&value_ty) {
                     if value_ty.size_in_bits() < 32 {
                         // [addr, value] -> [prev, addr, value]
-                        self.emit_all([masm::Instruction::Dup0, masm::Instruction::MemLoad], span);
+                        //
+                        // The cell may still hold a felt at or above 2^32 from an earlier store (a
+                        // reused stack slot); keep its low 32 bits so the merge below does not trap.
+                        self.emit_all(
+                            [
+                                masm::Instruction::Dup0,
+                                masm::Instruction::MemLoad,
+                                masm::Instruction::U32Cast,
+                            ],
+                            span,
+                        );
                         self.const_mask_u32(!((1u32 << value_ty.size_in_bits()) - 1), span);
                         self.emit_all(
                             [
@@ -1368,7 +1378,7 @@ impl OpEmitter<'_> {
     /// Store a sub-word value (u8, u16, etc.) to memory
     ///
     /// For sub-word stores, we need to:
-    /// 1. Load the current 32-bit word at the target address
+    /// 1. Load the touched element(s) and keep only their low 32 bits (they may hold a stale felt)
     /// 2. Mask out the bits where we'll place the new value
     /// 3. Shift the new value to the correct bit position
     /// 4. Combine with OR and store back
@@ -1379,8 +1389,8 @@ impl OpEmitter<'_> {
     /// - offset: The byte offset within the element (0-3)
     /// - value: The value to store (already truncated to the correct size)
     ///
-    /// The approach preserves other bytes in the same word while updating only
-    /// the target byte(s).
+    /// The approach preserves the other bytes of the 32-bit view of the touched element(s) while
+    /// updating only the target byte(s).
     fn store_small(&mut self, ty: &Type, ptr: Option<NativePtr>, span: SourceSpan) {
         let type_size = ty.size_in_bits();
         // Whole-cell values (including small wrappers) retain the word owner's existing
@@ -1411,8 +1421,11 @@ impl OpEmitter<'_> {
         self.emit(I::U32Gt, span);
         let crossed = self.build_masm_block(span, |emitter| {
             // [addr, offset, value | S] -> [window, addr, offset, value | S]
+            //
+            // The window helper truncates each cell to its low 32 bits, so a stale felt in
+            // either cell does not trap the merge below.
             emitter.emit_all([I::Dup1, I::Dup1], span);
-            emitter.raw_exec("::intrinsics::mem::load_sw", span);
+            emitter.raw_exec("::intrinsics::mem::load_rmw_window", span);
             emitter.const_mask_u32(!((1u32 << bits) - 1), span);
             // The existing sub32 representation requires value to be already truncated.
             emitter.emit_all([I::MovUp3, I::U32Or, I::Swap2, I::Swap1], span);
@@ -1446,10 +1459,12 @@ impl OpEmitter<'_> {
     ///
     /// This function stores sub-word values (u8, u16, etc.) to memory at a specific immediate address.
     /// It handles both aligned and unaligned addresses by:
-    /// 1. Loading the current 32-bit word at the element-aligned address
+    /// 1. Loading the current element and keeping only its low 32 bits (it may hold a stale felt)
     /// 2. Masking out the bits where the new value will be placed
     /// 3. Shifting the new value to the correct bit position based on the byte offset
     /// 4. Combining with OR and storing back
+    ///
+    /// Crossing stores and unaligned 16-bit stores delegate to [Self::store_small].
     ///
     /// # Stack Effects
     /// - Before: `[value]` (where value is already truncated to the correct size)
@@ -1469,7 +1484,13 @@ impl OpEmitter<'_> {
 
         // For immediate pointers, we always load from the element-aligned address
         // The offset determines which byte(s) within that element we're modifying
-        self.emit(masm::Instruction::MemLoadImm(imm.addr.into()), span);
+        //
+        // The cell may still hold a felt at or above 2^32 from an earlier store (a reused stack
+        // slot); keep its low 32 bits so the merge below does not trap.
+        self.emit_all(
+            [masm::Instruction::MemLoadImm(imm.addr.into()), masm::Instruction::U32Cast],
+            span,
+        );
 
         // Calculate bit offset from byte offset
         let bit_offset = imm.offset * 8;
@@ -1721,6 +1742,9 @@ mod tests {
         }
     }
 
+    /// A typed fill keeps the bytes outside its footprint in partially covered cells (the low 32
+    /// bits of a cell holding a stale felt), leaves the caller's stack suffix intact, and still
+    /// rejects an unaligned felt fill.
     #[test]
     fn fill_preserves_partial_cells_and_suffix() {
         let base = 0xc000_0010;
@@ -1768,15 +1792,16 @@ mod tests {
                 Some(&expected),
             );
         }
-        // Partial-cell integer writes require a u32 byte view; full-cell Felt needs alignment.
+        // Partial-cell integer writes merge into the low 32 bits of a cell that still holds a
+        // felt at or above 2^32 (#1482); full-cell Felt needs alignment.
         check_fill(
             Type::U16,
             Immediate::U16(0xabcd),
             AddressSpace::Element,
             base,
             1,
-            &[(base, 1u64 << 40)],
-            None,
+            &[(base, (1u64 << 40) + 0x1234_5678)],
+            Some(&[(base, 0x1234_abcd)]),
         );
         check_fill(
             Type::Felt,
@@ -1941,6 +1966,7 @@ mod tests {
         }
     }
 
+    /// The packed sub-word types (9, 17, 24 and 25 bits) that may cross a cell boundary.
     fn packed_types() -> [Type; 4] {
         [
             Type::from(ArrayType::new(Type::I1, 2)),
@@ -1950,6 +1976,8 @@ mod tests {
         ]
     }
 
+    /// Store every packed type at every byte offset over u32 cells and over cells holding a stale
+    /// felt, through the dynamic or the immediate store owner, and check the merged cells.
     fn check_packed_crossings(immediate: bool) {
         for ty in packed_types() {
             let bits = ty.size_in_bits();
@@ -1961,11 +1989,20 @@ mod tests {
                     } else {
                         [(16, 0xa1b2_c3d4), (17, 0x5566_7788)]
                     };
-                    let previous = (initial[1].1 << 32) | initial[0].1;
                     let shift = offset * 8;
                     let positioned_mask = (mask as u64) << shift;
-                    let updated = (previous & !positioned_mask) | ((value as u64) << shift);
-                    let expected = [(16, updated & 0xffff_ffff), (17, updated >> 32)];
+                    let crossing = shift + bits > 32;
+                    // The expected cells after merging `value` into `cells`. A cell the store
+                    // touches keeps only the low 32 bits of its previous content (#1482); a cell
+                    // the store does not touch is left exactly as it was.
+                    let merged = |cells: [(u32, u64); 2]| {
+                        let previous =
+                            ((cells[1].1 & 0xffff_ffff) << 32) | (cells[0].1 & 0xffff_ffff);
+                        let updated = (previous & !positioned_mask) | ((value as u64) << shift);
+                        let second = if crossing { updated >> 32 } else { cells[1].1 };
+                        [(16, updated & 0xffff_ffff), (17, second)]
+                    };
+                    let expected = merged(initial);
                     let ptr = NativePtr::new(16, offset as u8);
                     check_packed_store(
                         ty.clone(),
@@ -1975,43 +2012,29 @@ mod tests {
                         &initial,
                         Some(&expected),
                     );
+                    // Either cell may still hold a felt at or above 2^32 from an earlier store.
                     let high = (1u64 << 40) + 7;
-                    let neighbor = [(16, initial[0].1), (17, high)];
-                    if shift + bits <= 32 {
+                    for felt_cells in
+                        [[(16, initial[0].1), (17, high)], [(16, high), (17, initial[1].1)]]
+                    {
                         check_packed_store(
                             ty.clone(),
                             value,
                             ptr,
                             immediate,
-                            &neighbor,
-                            Some(&[(16, expected[0].1), (17, high)]),
-                        );
-                        check_packed_store(
-                            ty.clone(),
-                            value,
-                            NativePtr::new(u32::MAX, offset as u8),
-                            immediate,
-                            &[(u32::MAX, initial[0].1)],
-                            Some(&[(u32::MAX, expected[0].1)]),
-                        );
-                    } else {
-                        check_packed_store(ty.clone(), value, ptr, immediate, &neighbor, None);
-                        check_packed_store(
-                            ty.clone(),
-                            value,
-                            NativePtr::new(u32::MAX, offset as u8),
-                            immediate,
-                            &[(u32::MAX, initial[0].1)],
-                            None,
+                            &felt_cells,
+                            Some(&merged(felt_cells)),
                         );
                     }
+                    // A crossing from the last cell overflows the address space and traps; a store
+                    // that stays within the last cell succeeds.
                     check_packed_store(
                         ty.clone(),
                         value,
-                        ptr,
+                        NativePtr::new(u32::MAX, offset as u8),
                         immediate,
-                        &[(16, high), (17, initial[1].1)],
-                        None,
+                        &[(u32::MAX, initial[0].1)],
+                        (!crossing).then_some(&[(u32::MAX, expected[0].1)][..]),
                     );
                 }
             }

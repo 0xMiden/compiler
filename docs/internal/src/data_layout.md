@@ -18,8 +18,13 @@ An integer wider than 32 bits occupies consecutive 32-bit limbs, with the least
 significant limb at the lowest address. An `i64` or `u64` occupies two limbs;
 signed values use the same two's-complement bit pattern as Wasm. Loads and stores
 of smaller integers extract or update the corresponding bytes without replacing
-adjacent bytes. Unaligned accesses may span multiple elements. An alignment
-assertion in a generated access is a promise that callers must satisfy. The Wasm
+adjacent bytes of the element's 32-bit view. An element may still hold a field
+element at or above 2^32 from an earlier store, for example when a stack slot that
+held a `Word` is reused for a struct with narrower fields: a store that merges into
+such an element keeps only its low 32 bits, a sub-word or unaligned load from it
+traps, and an aligned whole-element load returns the field element unchanged.
+Unaligned accesses may span multiple elements. An alignment assertion in a generated
+access is a promise that callers must satisfy. The Wasm
 frontend enforces alignment hints as promises, a deliberate target-specific
 deviation from Wasm semantics. Aligned element-sized accesses can use element
 pointers directly; see [address preparation](https://github.com/0xMiden/compiler/blob/main/dialects/wasm/src/mem.rs).

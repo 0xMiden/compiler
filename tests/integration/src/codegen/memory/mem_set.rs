@@ -1,5 +1,3 @@
-use midenc_hir::AddressSpace;
-
 use super::*;
 
 /// Reproduce the evaluator's native16/count3 example through the production emitter.
@@ -11,7 +9,7 @@ fn native_u16_matches_evaluator() {
         (16, 2, vec![0, (1u64 << 40) + 7], vec![0xabcd_abcd, (1u64 << 40) + 7]),
         (u32::MAX, 2, vec![0], vec![0xabcd_abcd]),
     ] {
-        let ptr = Type::from(PointerType::new_with_address_space(Type::U16, AddressSpace::Element));
+        let ptr = element_ptr(Type::U16);
         let (package, context) = compile_test_module([ptr, Type::U32], [Type::U32], |builder| {
             let block = builder.current_block();
             let args = block.borrow();
@@ -51,6 +49,9 @@ fn native_u16_matches_evaluator() {
     }
 }
 
+/// A `hir.mem_set` of five values through an element-address-space pointer writes them as
+/// contiguous little-endian bytes from the start of the first cell, and a felt value as a full
+/// cell each.
 #[test]
 fn native_fill_uses_contiguous_bytes() {
     setup::enable_compiler_instrumentation();
@@ -70,8 +71,7 @@ fn native_fill_uses_contiguous_bytes() {
             vec![(1u64 << 40) + 7; 5],
         ),
     ] {
-        let ptr =
-            Type::from(PointerType::new_with_address_space(value.ty(), AddressSpace::Element));
+        let ptr = element_ptr(value.ty());
         let (package, context) = compile_test_module([ptr], [Type::U32], |builder| {
             let ptr = builder.current_block().borrow().arguments()[0] as ValueRef;
             let span = SourceSpan::default();
@@ -108,13 +108,7 @@ fn local_fill_preserves_full_field_sentinel() {
         let zero = builder.u32(0, span);
         builder.store(ptr, zero, span).unwrap();
         let whole_ptr = ptr;
-        let ptr = builder
-            .bitcast(
-                ptr,
-                Type::from(PointerType::new_with_address_space(Type::U16, AddressSpace::Element)),
-                span,
-            )
-            .unwrap();
+        let ptr = builder.bitcast(ptr, element_ptr(Type::U16), span).unwrap();
         let value = builder.u16(0xabcd, span);
         let count = builder.u32(2, span);
         builder.memset(ptr, count, value, span).unwrap();
@@ -155,8 +149,7 @@ fn packed_value_parameters_preserve_existing_domain() {
         ),
     ];
     for (ty, value) in types {
-        let ptr =
-            Type::from(PointerType::new_with_address_space(ty.clone(), AddressSpace::Element));
+        let ptr = element_ptr(ty.clone());
         let (package, context) = compile_test_module([ptr, ty.clone()], [Type::U32], |builder| {
             let block = builder.current_block();
             let args = block.borrow();

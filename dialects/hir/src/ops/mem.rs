@@ -39,7 +39,8 @@ impl InferTypeOpInterface for LocalAddress {
 /// Store `value` at `addr` in its declared address space.
 ///
 /// For an element-addressed subword scalar, MASM updates the low bits of that element
-/// and preserves the remaining bits. Incrementing an element address selects the next
+/// and preserves the remaining bits of its 32-bit view (an element holding a felt at or
+/// above 2^32 keeps only its low 32 bits). Incrementing an element address selects the next
 /// element, not the next byte. This differs from the packed byte stride of `hir.mem_set`;
 /// repeated typed stores at consecutive element addresses are not a packed fill.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]

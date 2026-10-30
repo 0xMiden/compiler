@@ -467,7 +467,8 @@ impl HirEvaluator {
         self.current_context().read_memory_elements(addr, len, self.current_span())
     }
 
-    /// Write exactly `len` bytes from an element snapshot, preserving partial boundary cells.
+    /// Write exactly `len` bytes from an element snapshot, preserving the other bytes of a partial
+    /// final cell (a cell holding a felt at or above 2^32 keeps only its low 32 bits).
     pub fn write_memory_elements(
         &mut self,
         addr: MemoryAddress,
