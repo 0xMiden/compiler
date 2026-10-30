@@ -155,7 +155,7 @@ pub(crate) enum Location {
     /// A currently valid symbolic cell, resolved after coloring to an FMP-relative displacement.
     /// All lanes must occupy increasing contiguous cells because the target describes one base.
     Cell(SpillSlotId),
-    /// A literal the lane reconstructs to when no physical copy is resident.
+    /// A literal the lane reconstructs to when it has no accessible physical copy.
     Literal(miden_core::Felt),
     /// No current accessible representation; this never requests a debug-only copy.
     Unavailable,
