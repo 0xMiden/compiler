@@ -277,7 +277,7 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// Emits [Self::checked_mod_u32], with the same requirement on its operands.
     #[inline(always)]
     pub fn checked_mod_uint(&mut self, _n: u32, span: SourceSpan) {
         self.checked_mod_u32(span);
@@ -287,7 +287,7 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// This operation is checked, so if the operand or result are not valid u32, execution traps.
+    /// Emits [Self::checked_mod_imm_u32], with the same requirement on its operand.
     #[inline(always)]
     pub fn checked_mod_imm_uint(&mut self, imm: u32, _n: u32, span: SourceSpan) {
         self.checked_mod_imm_u32(imm, span);
@@ -295,7 +295,8 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// The VM traps if the operands are not valid u32; they are not checked to fit in `n` bits.
+    /// Emits [Self::unchecked_mod_u32], with the same requirement on its operands; not checked to
+    /// fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_mod_uint(&mut self, _n: u32, span: SourceSpan) {
         self.unchecked_mod_u32(span);
@@ -305,7 +306,8 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// The VM traps if the operand is not a valid u32; it is not checked to fit in `n` bits.
+    /// Emits [Self::unchecked_mod_imm_u32], with the same requirement on its operand; not checked
+    /// to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_mod_imm_uint(&mut self, imm: u32, _n: u32, span: SourceSpan) {
         self.unchecked_mod_imm_u32(imm, span);
@@ -314,7 +316,7 @@ impl OpEmitter<'_> {
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// Emits [Self::checked_divmod_u32], with the same requirement on its operands.
     #[inline(always)]
     pub fn checked_divmod_uint(&mut self, _n: u32, span: SourceSpan) {
         self.checked_divmod_u32(span);
@@ -322,7 +324,7 @@ impl OpEmitter<'_> {
 
     /// Pops a u32 value off the stack, `a`, and pushes `a / <imm>`, then `a % <imm>` on the stack.
     ///
-    /// This operation is checked, so if the operands or result are not valid u32, execution traps.
+    /// Emits [Self::checked_divmod_imm_u32], with the same requirement on its operand.
     #[inline(always)]
     pub fn checked_divmod_imm_uint(&mut self, imm: u32, _n: u32, span: SourceSpan) {
         self.checked_divmod_imm_u32(imm, span);
@@ -331,7 +333,8 @@ impl OpEmitter<'_> {
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// The VM traps if the operands are not valid u32; they are not checked to fit in `n` bits.
+    /// Emits [Self::unchecked_divmod_u32], with the same requirement on its operands; not checked
+    /// to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_divmod_uint(&mut self, _n: u32, span: SourceSpan) {
         self.unchecked_divmod_u32(span);
@@ -341,7 +344,8 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// The VM traps if the operand is not a valid u32; it is not checked to fit in `n` bits.
+    /// Emits [Self::unchecked_divmod_imm_u32], with the same requirement on its operand; not
+    /// checked to fit in `n` bits.
     #[inline(always)]
     pub fn unchecked_divmod_imm_uint(&mut self, imm: u32, _n: u32, span: SourceSpan) {
         self.unchecked_divmod_imm_u32(imm, span)

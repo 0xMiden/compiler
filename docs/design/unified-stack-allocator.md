@@ -1245,7 +1245,7 @@ The final ordinary function pipeline retains semantic optimization and control-f
 
 ```text
 Canonicalizer -> CSE -> SCCP -> SinkOperandDefs -> Local2Reg
--> LiftControlFlowToSCF -> Canonicalizer
+-> LiftControlFlowToSCF -> ShareBaseDivmod -> Canonicalizer
 -> LegalizeForMasm -> optional SinkOperandDefs
 -> unified backend selection, allocation, verification, emission
 ```

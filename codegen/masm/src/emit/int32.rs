@@ -763,8 +763,9 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a / b`.
     ///
-    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
-    /// always a valid u32, so no assertion is emitted.
+    /// The operands must be valid u32 values: the executor traps on others, but a proof constrains
+    /// neither operand (it range-checks the quotient, the remainder and `divisor - remainder - 1`).
+    /// The result is always a valid u32, so no assertion is emitted.
     pub fn checked_div_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Div, span);
     }
@@ -780,8 +781,9 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// This operation is checked: the VM traps if the operand is not a valid u32, and the result is
-    /// always a valid u32, so no assertion is emitted.
+    /// The operand must be a valid u32 value: the executor traps on others, but a proof does not
+    /// constrain it (it range-checks the quotient, the remainder and `divisor - remainder - 1`).
+    /// The result is always a valid u32, so no assertion is emitted.
     pub fn checked_div_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32DivImm(imm.into()), span);
@@ -828,8 +830,8 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a / b`.
     ///
-    /// Emits the same instruction as [Self::checked_div_u32]: the VM traps if the operands are not
-    /// valid u32, and the result is always a valid u32.
+    /// Emits the same instruction as [Self::checked_div_u32], with the same requirement on its
+    /// operands.
     pub fn unchecked_div_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Div, span);
     }
@@ -838,8 +840,8 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// Emits the same instruction as [Self::checked_div_imm_u32]: the VM traps if the operand is
-    /// not a valid u32, and the result is always a valid u32.
+    /// Emits the same instruction as [Self::checked_div_imm_u32], with the same requirement on its
+    /// operand.
     pub fn unchecked_div_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32DivImm(imm.into()), span);
@@ -847,8 +849,9 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
-    /// always a valid u32, so no assertion is emitted.
+    /// The operands must be valid u32 values: the executor traps on others, but a proof constrains
+    /// neither operand (it range-checks the quotient, the remainder and `divisor - remainder - 1`).
+    /// The result is always a valid u32, so no assertion is emitted.
     pub fn checked_mod_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Mod, span);
     }
@@ -857,8 +860,9 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// This operation is checked: the VM traps if the operand is not a valid u32, and the result is
-    /// always a valid u32, so no assertion is emitted.
+    /// The operand must be a valid u32 value: the executor traps on others, but a proof does not
+    /// constrain it (it range-checks the quotient, the remainder and `divisor - remainder - 1`).
+    /// The result is always a valid u32, so no assertion is emitted.
     pub fn checked_mod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32ModImm(imm.into()), span);
@@ -866,8 +870,8 @@ impl OpEmitter<'_> {
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
-    /// Emits the same instruction as [Self::checked_mod_u32]: the VM traps if the operands are not
-    /// valid u32, and the result is always a valid u32.
+    /// Emits the same instruction as [Self::checked_mod_u32], with the same requirement on its
+    /// operands.
     pub fn unchecked_mod_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32Mod, span);
     }
@@ -876,8 +880,8 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// Emits the same instruction as [Self::checked_mod_imm_u32]: the VM traps if the operand is
-    /// not a valid u32, and the result is always a valid u32.
+    /// Emits the same instruction as [Self::checked_mod_imm_u32], with the same requirement on its
+    /// operand.
     pub fn unchecked_mod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32ModImm(imm.into()), span);
@@ -886,16 +890,18 @@ impl OpEmitter<'_> {
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
-    /// always a valid u32, so no assertion is emitted.
+    /// The operands must be valid u32 values: the executor traps on others, but a proof constrains
+    /// neither operand (it range-checks the quotient, the remainder and `divisor - remainder - 1`).
+    /// The results are always valid u32, so no assertion is emitted.
     pub fn checked_divmod_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32DivMod, span);
     }
 
     /// Pops a u32 value off the stack, `a`, and pushes `a / <imm>`, then `a % <imm>` on the stack.
     ///
-    /// This operation is checked: the VM traps if the operands are not valid u32, and the result is
-    /// always a valid u32, so no assertion is emitted.
+    /// The operand must be a valid u32 value: the executor traps on others, but a proof does not
+    /// constrain it (it range-checks the quotient, the remainder and `divisor - remainder - 1`).
+    /// The results are always valid u32, so no assertion is emitted.
     pub fn checked_divmod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32DivModImm(imm.into()), span);
@@ -904,8 +910,8 @@ impl OpEmitter<'_> {
     /// Pops two u32 values off the stack, `b` and `a`, and pushes `a / b`, then `a % b` on the
     /// stack.
     ///
-    /// Emits the same instruction as [Self::checked_divmod_u32]: the VM traps if the operands are
-    /// not valid u32, and the results are always valid u32.
+    /// Emits the same instruction as [Self::checked_divmod_u32], with the same requirement on its
+    /// operands.
     pub fn unchecked_divmod_u32(&mut self, span: SourceSpan) {
         self.emit(masm::Instruction::U32DivMod, span);
     }
@@ -914,8 +920,8 @@ impl OpEmitter<'_> {
     ///
     /// This function will panic if the divisor is zero.
     ///
-    /// Emits the same instruction as [Self::checked_divmod_imm_u32]: the VM traps if the operand
-    /// is not a valid u32, and the results are always valid u32.
+    /// Emits the same instruction as [Self::checked_divmod_imm_u32], with the same requirement on
+    /// its operand.
     pub fn unchecked_divmod_imm_u32(&mut self, imm: u32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit(masm::Instruction::U32DivModImm(imm.into()), span);

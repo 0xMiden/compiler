@@ -107,8 +107,10 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   `arith.band(trunc(count), width - 1)` (`mask_movement_count`,
   `frontend/wasm/src/code_translator/mod.rs`). Immediate MASM shift selection
   remains separate work for the unified backend.
-- Never built by the wasm frontend: `min`/`max`, `neg`/`not`/`incr`, checked
-  and overflowing ops, `clo`/`cto`, `ilog2`/`pow2`/`exp`/`is_odd`/`inv`,
+- Never built by the wasm frontend: `min`/`max`, `neg`/`not`/`incr`,
+  overflowing ops, checked ops other than `u32` pointer-offset adds
+  (`prepare_addr`, which `share-base-divmod` relies on, and
+  `miden_abi/transform.rs`), `clo`/`cto`, `ilog2`/`pow2`/`exp`/`is_odd`/`inv`,
   `ext2*`, `sdiv`/`smod`/`sdivmod`, `ashr` (`i32.shr_s` is `arith.shr` on a
   signed type), `bnot` (`!x` is `bxor x, -1`), the i1 `and`/`or`/`xor`,
   `hir.cast`, `builtin.ret_imm`, and `Call`/`Syscall`/`ExecFpi` (SDK only)
@@ -155,20 +157,27 @@ their reproducers are the tagged `#[ignore]` attributes (`KNOWLEDGE.md`,
   cycle check sees direct `exec` edges only (`calls::recursion_indirect`,
   `frames::rec_mutual`).
 
-## Middle end: canonicalizer, CSE, SCCP, Local2Reg
+## Middle end: canonicalizer, CSE, SCCP, Local2Reg, share-base-divmod
 
 - Fixed pipeline at every level, on a function pass manager
   (`midenc-compile/src/pipeline/backend.rs`): Canonicalizer → CSE → SCCP →
-  SinkOperandDefs → Local2Reg → LiftControlFlowToSCF → Canonicalizer →
-  component-level LegalizeForMasm → final SinkOperandDefs. `ControlFlowSink` and
-  DCE are commented out; there is no middle-end knob: `--optimize` sets only
-  the guest LLVM level (`cargo_profile_opt_level`,
-  `midenc-compile/src/pipeline/frontends/rust.rs`). Dead end: middle-end
-  knobs (`Aggressive` simplification, `ControlFlowSink`, DCE, per-pass flags)
-  and the advice-taint and postdominance analyses need a source change or
-  `-Zlint`.
+  SinkOperandDefs → Local2Reg → LiftControlFlowToSCF → ShareBaseDivmod →
+  Canonicalizer → component-level LegalizeForMasm → final SinkOperandDefs.
+  `ControlFlowSink` and DCE are commented out; there is no middle-end knob:
+  `--optimize` sets only the guest LLVM level (`cargo_profile_opt_level`,
+  `midenc-compile/src/pipeline/frontends/rust.rs`). Dead end: middle-end knobs
+  (`Aggressive` simplification, `ControlFlowSink`, DCE, per-pass flags) and the
+  advice-taint and postdominance analyses need a source change or `-Zlint`.
+- ShareBaseDivmod (after the lift): within a block, divisions by one constant
+  of one base plus multiples of it (element-aligned accesses: `u32divmod.4`)
+  share one `add.Kmax` (checked unless the range analysis proves it fits, none
+  when every offset is 0) and one division; other offsets subtract from the
+  quotient. One base = one SSA value, bitcasts of one value, or reloads of one
+  local with no `store_local` of it between (Wasm input; other writes, unlike
+  for CSE, do not matter). A group ends at a call, FPI or region op; at most two
+  groups are open at any op.
 - CSE and SCCP see only pre-lift bodies, which hold zero region ops
-  (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no store
+  (`cse::twin_if`). CSE merges same-block `hir.load_local`s with no Write
   between (the strongest Copy-constraint lever), and heap loads only 1 byte
   wide: for 2+ bytes the second load's alignment `hir.assertz` (a Write) sits
   between them (`memorder::cse_widths`, `cse::reload_write`). Dead end: CSE
