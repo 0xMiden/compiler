@@ -1,0 +1,53 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(cse))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(cse))' | filecheck %s
+
+builtin.module public @cse_nested_debug {
+    // CHECK-LABEL: @nested_captures
+    // CHECK: %[[FIRST:\d+]] = scf.if
+    // CHECK: di.debug_value {{.*}}name = "branch"
+    // CHECK: di.debug_kill {{.*}}name = "branch"
+    // CHECK-NOT: scf.if
+    // CHECK: arith.add %[[FIRST]], %[[FIRST]]
+    builtin.function public extern("C") @nested_captures(%condition: i1, %left: u32, %right: u32) -> u32 {
+        %first = scf.if %condition then {
+            di.debug_value %left <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %left : (u32);
+        } else {
+            di.debug_kill <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }> }>;
+            scf.yield %right : (u32);
+        } : (i1) -> u32;
+        %second = scf.if %condition then {
+            di.debug_value %left <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %left : (u32);
+        } else {
+            di.debug_kill <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }> }>;
+            scf.yield %right : (u32);
+        } : (i1) -> u32;
+        %sum = arith.add %first, %second <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %sum : (u32);
+    };
+
+    // CHECK-LABEL: @nested_declarations
+    // CHECK: %[[FIRST:\d+]] = scf.if
+    // CHECK: di.debug_declare {{.*}}name = "stored"
+    // CHECK-NOT: scf.if
+    // CHECK: arith.add %[[FIRST]], %[[FIRST]]
+    builtin.function public extern("C") @nested_declarations(%condition: i1, %left: u32, %right: u32) -> u32 {
+        hir.store_local %left <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %first = scf.if %condition then {
+            di.debug_declare <{ variable = #di.variable<{ name = "stored", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+            scf.yield %left : (u32);
+        } else {
+            scf.yield %right : (u32);
+        } : (i1) -> u32;
+        hir.store_local %right <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %second = scf.if %condition then {
+            di.debug_declare <{ variable = #di.variable<{ name = "stored", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+            scf.yield %left : (u32);
+        } else {
+            scf.yield %right : (u32);
+        } : (i1) -> u32;
+        %sum = arith.add %first, %second <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %sum : (u32);
+    };
+};

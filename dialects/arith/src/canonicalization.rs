@@ -149,7 +149,11 @@ impl RewritePattern for CanonicalizeI64RotateBy32ToSwap {
             join.borrow().result().as_value_ref()
         };
 
-        guard.replace_op_with_values(operation, &[Some(joined)]);
+        guard.replace_op_with_values_and_debug(
+            operation,
+            &[Some(joined)],
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
         Ok(true)
     }
 }
@@ -275,7 +279,11 @@ impl RewritePattern for SimplifyBoolCompare {
             rewriter.set_insertion_point_before(operation);
             rewriter.not(bool_value, span)?
         };
-        rewriter.replace_op_with_values(operation, &[Some(replacement)]);
+        rewriter.replace_op_with_values_and_debug(
+            operation,
+            &[Some(replacement)],
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
         Ok(true)
     }
 }
@@ -354,7 +362,11 @@ impl RewritePattern for SimplifyNotCompare {
                 scope.eq(lhs, rhs, span)?
             }
         };
-        rewriter.replace_op_with_values(operation, &[Some(replacement)]);
+        rewriter.replace_op_with_values_and_debug(
+            operation,
+            &[Some(replacement)],
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
         Ok(true)
     }
 }
@@ -406,7 +418,11 @@ impl RewritePattern for SimplifyTruncToBool {
         let Some(bool_value) = widened_bool(operand) else {
             return Ok(false);
         };
-        rewriter.replace_op_with_values(operation, &[Some(bool_value)]);
+        rewriter.replace_op_with_values_and_debug(
+            operation,
+            &[Some(bool_value)],
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
         Ok(true)
     }
 }

@@ -114,6 +114,18 @@ impl Eval for debuginfo::DebugValue {
     }
 }
 
+impl Eval for debuginfo::DebugDeclare {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        Ok(ControlFlowEffect::None)
+    }
+}
+
+impl Eval for debuginfo::DebugKill {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        Ok(ControlFlowEffect::None)
+    }
+}
+
 impl Eval for ub::Poison {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let value = match self.value().as_immediate() {

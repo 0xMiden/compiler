@@ -1,22 +1,18 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, Op, OperationName, OperationRef,
-    ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Spanned, Symbol,
-    TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, FxHashMap, Op, OperationName, OperationRef, ProgramPoint,
+    RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Symbol, TraceTarget, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
-        debuginfo::{
-            DIBuilder, DebugDeclare, DebugValue,
-            attributes::{ExpressionOp, FrameBase},
-        },
+        debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
 };
 
-use crate::{LoadLocal, StoreLocal};
+use crate::{LoadLocal, LocalAddress, StoreLocal};
 
 /// The value `store` writes, read from the operation: a promotion earlier in the same run may have
 /// replaced it, and the operation, not a copy taken during the scan, holds the current one.
@@ -29,111 +25,14 @@ fn stored_value(store: OperationRef) -> ValueRef {
         .as_value_ref()
 }
 
-/// Rewrite debug references to `local` so they follow the promoted SSA values.
-///
-/// When a local is promoted to an SSA value (or its dead stores are erased), the memory slot the
-/// debug operation points at is no longer written, so a debugger following it would read stale or
-/// uninitialized memory. Declarations become value records at each store, while existing value
-/// records retain their SSA operand and drop the obsolete local-location expression. This mirrors
-/// LLVM's mem2reg conversion of dbg.declare/dbg.value metadata.
-///
-/// Returns `false` when any debug reference to this local cannot be converted safely. In that case
-/// the caller must preserve the stores.
-fn convert_debug_references_for_local<R: Rewriter>(
-    rewriter: &mut R,
-    function_op: OperationRef,
-    local: &LocalVariable,
-    stores: &[OperationRef],
-) -> bool {
-    let local_index = local.as_usize() as u32;
-    let mut declares = SmallVec::<[OperationRef; 2]>::new();
-    let mut values = SmallVec::<[OperationRef; 2]>::new();
-    function_op.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
-        let operation = op.borrow();
-        let expression = if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
-            Some((declare.expression(), &mut declares))
-        } else {
-            operation
-                .downcast_ref::<DebugValue>()
-                .map(|value| (value.expression(), &mut values))
-        };
-        if let Some((expr, references)) = expression
-            && expr.as_value().operations.iter().any(|op| match op {
-                ExpressionOp::LocalSlot(index) => *index == local_index,
-                ExpressionOp::FrameBase {
-                    base: FrameBase::LocalSlot(index),
-                    ..
-                } => *index == local_index,
-                _ => false,
-            })
-        {
-            references.push(op);
-        }
-    });
+mod debug_info;
 
-    if declares.is_empty() && values.is_empty() {
-        return true;
-    }
-
-    let declares_are_safe = declares.iter().all(|declare_op| {
-        matches!(
-            declare_op
-                .borrow()
-                .downcast_ref::<DebugDeclare>()
-                .unwrap()
-                .expression()
-                .as_value()
-                .operations
-                .as_slice(),
-            [ExpressionOp::LocalSlot(index)] if *index == local_index
-        )
-    });
-    let values_are_safe = values.iter().all(|value_op| {
-        matches!(
-            value_op
-                .borrow()
-                .downcast_ref::<DebugValue>()
-                .unwrap()
-                .expression()
-                .as_value()
-                .operations
-                .as_slice(),
-            [ExpressionOp::LocalSlot(index)] if *index == local_index
-        )
-    });
-    if !declares_are_safe || !values_are_safe {
-        return false;
-    }
-
-    for declare_op in declares {
-        let variable = {
-            let op = declare_op.borrow();
-            op.downcast_ref::<DebugDeclare>().unwrap().variable().as_value().clone()
-        };
-        for store in stores {
-            let span = store.borrow().span();
-            rewriter.set_insertion_point_before(*store);
-            let _ = rewriter.debug_value(stored_value(*store), variable.clone(), span);
-        }
-        rewriter.erase_op(declare_op);
-    }
-
-    for value_op in values {
-        let (value, variable, span) = {
-            let op = value_op.borrow();
-            let debug_value = op.downcast_ref::<DebugValue>().unwrap();
-            (
-                debug_value.value().as_value_ref(),
-                debug_value.variable().as_value().clone(),
-                op.span(),
-            )
-        };
-        rewriter.set_insertion_point_before(value_op);
-        let _ = rewriter.debug_value(value, variable, span);
-        rewriter.erase_op(value_op);
-    }
-
-    true
+/// Executable eligibility is fixed before any rewrite. Keep these anchors linked until debug
+/// recovery has consumed the original store and binding stream.
+struct Promotion {
+    local: LocalVariable,
+    stores: SmallVec<[OperationRef; 2]>,
+    load: Option<OperationRef>,
 }
 
 #[derive(Default)]
@@ -202,10 +101,13 @@ impl Pass for Local2Reg {
             .with_listener(TracingRewriterListener);
 
         let mut loaded = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
+        let mut address_taken = SmallVec::<[LocalVariable; 4]>::new();
         let mut stored = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
             let operation = op.borrow();
-            if let Some(load) = operation.downcast_ref::<LoadLocal>() {
+            if let Some(address) = operation.downcast_ref::<LocalAddress>() {
+                address_taken.push(*address.get_local());
+            } else if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
                 log::trace!(
                     target: &trace_target,
@@ -246,8 +148,12 @@ impl Pass for Local2Reg {
             return Ok(());
         }
 
-        let mut changed = PostPassStatus::Unchanged;
+        let mut promotions = Vec::new();
         'next_local: for local in locals {
+            // Indirect accesses and callees can observe or modify an address-taken slot.
+            if address_taken.contains(&local) {
+                continue;
+            }
             if let Some(loads) = loaded.get(&local) {
                 if loads.len() > 1 {
                     // Ignore locals that are loaded multiple times for now
@@ -349,48 +255,22 @@ impl Pass for Local2Reg {
                     sym = trace_target.relevant_symbol();
                     "found promotable local {local}: erasing store and replacing load with stored value",
                 );
-                // If we reach here, then there is no control flow between the load and store, so
-                // remove the store, and replace the load with the stored value.
-                //
-                // Any debug declaration pointing at the promoted slot must follow the value into
-                // its SSA register, since the slot will no longer be written.
-                if !convert_debug_references_for_local(&mut rewriter, op, &local, &[store]) {
-                    log::trace!(
-                        target: &trace_target,
-                        sym = trace_target.relevant_symbol();
-                        "ignoring {local}: debug declarations cannot all be converted safely",
-                    );
-                    continue;
-                }
-                // Read before erasing: erasing an operation clears its operands
-                let value = stored_value(store);
-                rewriter.erase_op(store);
-                rewriter.replace_all_op_uses_with_values(load, &[Some(value)]);
-                rewriter.erase_op(load);
-                changed = PostPassStatus::Changed;
+                promotions.push(Promotion {
+                    local,
+                    stores: SmallVec::from_slice(&[store]),
+                    load: Some(load),
+                });
             } else if let Some(stores) = stored.get(&local) {
                 // We've found a local which is stored to, but never loaded - these stores are all
                 // dead, and can be removed.
                 //
                 // We rely on region simplification/canonicalization to remove any ops/values made
                 // dead by erasing these stores.
-                if !convert_debug_references_for_local(&mut rewriter, op, &local, stores) {
-                    log::trace!(
-                        target: &trace_target,
-                        sym = trace_target.relevant_symbol();
-                        "preserving dead stores for {local}: debug declarations cannot all be converted safely",
-                    );
-                    continue;
-                }
-                for store in stores.iter() {
-                    changed = PostPassStatus::Changed;
-                    log::trace!(
-                        target: &trace_target,
-                        sym = trace_target.relevant_symbol();
-                        "found dead store for local {local}: erasing it",
-                    );
-                    rewriter.erase_op(*store);
-                }
+                promotions.push(Promotion {
+                    local,
+                    stores: stores.clone(),
+                    load: None,
+                });
             } else {
                 // This local is never loaded or stored - we should probably remove it, but this
                 // will require visiting all of the local load/store ops and rewriting them. For
@@ -398,7 +278,31 @@ impl Pass for Local2Reg {
             }
         }
 
-        state.set_post_pass_status(changed);
+        // Resolve all executable uses first, while retaining the original recovery anchors.
+        // A replacement can itself be another selected load: later RAUW follows the real SSA
+        // uses, regardless of local index order. SCCP then sees the final branch conditions.
+        for promotion in &promotions {
+            if let Some(load) = promotion.load {
+                let value = stored_value(promotion.stores[0]);
+                let _debug_update = DebugInfoMutation::new(load, DebugInfoUpdate::Equivalent);
+                rewriter.replace_all_op_uses_with_values(load, &[Some(value)]);
+            }
+        }
+        debug_info::convert(&mut rewriter, op, &promotions, state.analysis_manager().clone())?;
+        for promotion in &promotions {
+            for store in &promotion.stores {
+                rewriter.erase_op(*store);
+            }
+            if let Some(load) = promotion.load {
+                let _debug_update = DebugInfoMutation::new(load, DebugInfoUpdate::Equivalent);
+                rewriter.erase_op(load);
+            }
+        }
+        state.set_post_pass_status(if promotions.is_empty() {
+            PostPassStatus::Unchanged
+        } else {
+            PostPassStatus::Changed
+        });
 
         Ok(())
     }
@@ -411,14 +315,201 @@ mod tests {
     use litcheck_filecheck::{filecheck, litcheck};
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        Op, SourceSpan, Type, ValueRef,
+        Op, OpPrinter, RegionBranchOpInterface, RegionBranchPoint, RegionSuccessorInfo,
+        RegionSuccessorIter, SourceSpan, SuccessorOperandRange, Type, ValueRef,
+        derive::{OpPrinter, operation},
         dialects::builtin::{BuiltinOpBuilder, Function},
         print::AsmPrinter,
         testing::Test,
+        traits::{NoTerminator, ReturnLike, SingleBlock, Terminator},
     };
 
     use super::Local2Reg;
-    use crate::HirOpBuilder;
+    use crate::{HirDialect, HirOpBuilder};
+
+    // A test-only region owner without a control-flow interface exercises the pessimistic
+    // dense transfer without adding unsupported executable behavior to the interpreter.
+    #[derive(OpPrinter)]
+    #[operation(
+        dialect = HirDialect,
+        traits(SingleBlock, NoTerminator),
+        implements(OpPrinter)
+    )]
+    pub struct OpaqueRegion {
+        #[region]
+        body: midenc_hir::RegionRef,
+    }
+
+    // The parent exposes the loop's control flow, while its terminator deliberately omits the
+    // optional operand-mapping interface. Analyses must not guess its loop-carried values.
+    #[derive(OpPrinter)]
+    #[operation(
+        dialect = HirDialect,
+        traits(SingleBlock),
+        implements(RegionBranchOpInterface, OpPrinter)
+    )]
+    pub struct UnmappedLoop {
+        #[operand]
+        init: midenc_hir::traits::AnyType,
+        #[region]
+        body: midenc_hir::RegionRef,
+    }
+
+    impl RegionBranchOpInterface for UnmappedLoop {
+        fn get_entry_successor_operands(&self, _: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+            SuccessorOperandRange::forward(self.operands().all())
+        }
+
+        fn get_successor_regions(&self, _: RegionBranchPoint) -> RegionSuccessorIter<'_> {
+            RegionSuccessorIter::new(
+                self.as_operation(),
+                [RegionSuccessorInfo::Entering(self.body().as_region_ref())],
+            )
+        }
+    }
+
+    #[derive(OpPrinter)]
+    #[operation(dialect = HirDialect, traits(Terminator, ReturnLike), implements(OpPrinter))]
+    pub struct UnmappedContinue {
+        #[operand]
+        next: midenc_hir::traits::AnyType,
+    }
+
+    #[test]
+    fn unmapped_region_backedge_invalidates_previous_iteration_alias() {
+        use midenc_hir::{
+            Builder, BuilderExt,
+            dialects::debuginfo::{
+                DIBuilder, DebugKill,
+                attributes::{Expression, ExpressionOp, Variable},
+            },
+        };
+        let mut test = Test::new("unmapped_loop", &[Type::U32], &[Type::U32]);
+        let body;
+        {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let input = entry.borrow().arguments()[0] as ValueRef;
+            let local = builder.alloc_local(Type::U32);
+            builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            let owner = builder.builder_mut().create::<UnmappedLoop, _>(SourceSpan::UNKNOWN)(input)
+                .unwrap();
+            let region = owner.borrow().body().as_region_ref();
+            body = builder.builder_mut().create_block(region, None, &[Type::U32]);
+            builder.switch_to_block(body);
+            let argument = body.borrow().arguments()[0] as ValueRef;
+            builder
+                .builder_mut()
+                .debug_declare(
+                    Variable::default(),
+                    Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]),
+                    SourceSpan::UNKNOWN,
+                )
+                .unwrap();
+            builder.store_local(local, argument, SourceSpan::UNKNOWN).unwrap();
+            let next = builder.u32(7, SourceSpan::UNKNOWN);
+            builder.builder_mut().create::<UnmappedContinue, _>(SourceSpan::UNKNOWN)(next).unwrap();
+            builder.switch_to_block(entry);
+            builder.ret([input], SourceSpan::UNKNOWN).unwrap();
+        }
+        test.apply_pass::<Local2Reg>(true).unwrap();
+        assert!(
+            body.borrow().body().iter().next().unwrap().is::<DebugKill>(),
+            "the previous iteration's local must not be described by the new region argument"
+        );
+        assert!(body.borrow().body().iter().all(|op| !op.is::<crate::StoreLocal>()));
+    }
+
+    #[test]
+    fn unknown_region_invalidates_incoming_and_outgoing_local_recovery() {
+        use midenc_hir::{
+            Builder, BuilderExt,
+            dialects::debuginfo::{
+                DIBuilder, DebugKill,
+                attributes::{Expression, ExpressionOp, Variable},
+            },
+        };
+        let mut test = Test::new("opaque_region", &[Type::U32], &[Type::U32]);
+        let owner;
+        {
+            let mut builder = test.function_builder();
+            let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let local = builder.alloc_local(Type::U32);
+            let variable = Variable::default();
+            let expression = Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]);
+            builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            builder
+                .builder_mut()
+                .debug_declare(variable.clone(), expression.clone(), SourceSpan::UNKNOWN)
+                .unwrap();
+            owner =
+                builder.builder_mut().create::<OpaqueRegion, ()>(SourceSpan::UNKNOWN)().unwrap();
+            let entry = builder.entry_block();
+            let region = owner.borrow().body().as_region_ref();
+            let body = builder.builder_mut().create_block(region, None, &[]);
+            builder.switch_to_block(body);
+            builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+            builder.switch_to_block(entry);
+            builder
+                .builder_mut()
+                .debug_declare(variable, expression, SourceSpan::UNKNOWN)
+                .unwrap();
+            builder.ret([input], SourceSpan::UNKNOWN).unwrap();
+        }
+        test.apply_pass::<Local2Reg>(true).unwrap();
+        assert!(
+            owner.borrow().body().entry().body().iter().any(|op| op.is::<DebugKill>()),
+            "an erased nested store must invalidate a possibly active incoming binding"
+        );
+        assert!(
+            owner.as_operation_ref().next().unwrap().borrow().is::<DebugKill>(),
+            "the unknown owner cannot preserve the incoming SSA recovery"
+        );
+    }
+
+    #[test]
+    fn preserves_address_taken_local_stores() {
+        use midenc_hir::dialects::debuginfo::{
+            DIBuilder, DebugDeclare,
+            attributes::{Expression, ExpressionOp, Variable},
+        };
+        for with_debug in [false, true] {
+            for with_direct_load in [false, true] {
+                let mut test = Test::new("address_taken", &[Type::U32], &[Type::U32]);
+                {
+                    let mut builder = test.function_builder();
+                    let input = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                    let local = builder.alloc_local(Type::U32);
+                    builder.store_local(local, input, SourceSpan::UNKNOWN).unwrap();
+                    if with_debug {
+                        builder
+                            .builder_mut()
+                            .debug_declare(
+                                Variable::default(),
+                                Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]),
+                                SourceSpan::UNKNOWN,
+                            )
+                            .unwrap();
+                    }
+                    if with_direct_load {
+                        builder.load_local(local, SourceSpan::UNKNOWN).unwrap();
+                    }
+                    let address = builder.local_address(local, SourceSpan::UNKNOWN).unwrap();
+                    let value = builder.load(address, SourceSpan::UNKNOWN).unwrap();
+                    builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+                }
+                test.apply_pass::<Local2Reg>(true).unwrap();
+                let mut stores = 0;
+                let mut declarations = 0;
+                test.function().borrow().as_operation().postwalk_all(|op| {
+                    stores += usize::from(op.is::<crate::StoreLocal>());
+                    declarations += usize::from(op.is::<DebugDeclare>());
+                });
+                assert_eq!(stores, 1, "an indirect read still depends on the store");
+                assert_eq!(declarations, usize::from(with_debug));
+            }
+        }
+    }
 
     #[test]
     fn promotes_fpi_inputs_and_preserves_semantic_operand_order() {
@@ -723,7 +814,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
     }
 
     #[test]
-    fn preserves_stores_for_transformed_debug_values() {
+    fn kills_unrecoverable_debug_values_when_promoting() {
         use midenc_hir::{
             dialects::debuginfo::{
                 DIBuilder, DebugInfoDialect,
@@ -732,7 +823,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             interner::Symbol,
         };
 
-        let mut test = Test::new("preserves_transformed_debug_value", &[Type::I32], &[Type::I32]);
+        let mut test = Test::new("kills_transformed_debug_value", &[Type::I32], &[Type::I32]);
         test.context().get_or_register_dialect::<DebugInfoDialect>();
 
         {
@@ -755,9 +846,9 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
         filecheck!(
             output,
             r#"
-// CHECK-LABEL: builtin.function public extern("C") @preserves_transformed_debug_value
-// CHECK-NEXT: hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }> : (i32);
+// CHECK-LABEL: builtin.function public extern("C") @kills_transformed_debug_value
+// CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+// CHECK-NEXT: builtin.ret %0
             "#
         );
     }

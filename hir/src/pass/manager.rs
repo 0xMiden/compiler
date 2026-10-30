@@ -956,6 +956,8 @@ impl OpToOpPassAdaptor {
                         .into_report());
                 }
                 assert!(pipeline.can_schedule_on(&root_op.name()));
+                drop(root_op);
+                drop(op);
                 // Before running, finalize the passes held by the pipeline
                 pipeline.finalize_pass_list()?;
 
@@ -967,6 +969,9 @@ impl OpToOpPassAdaptor {
                 } else {
                     callback_analysis_manager.nest(root)
                 };
+                crate::dialects::debuginfo::transform::capture_invalidation_barrier(
+                    &root.borrow().context_rc(),
+                )?;
                 Self::run_pipeline(pipeline, root, nested_am, verify, pi, Some(&parent_info))
             },
         );
@@ -978,10 +983,14 @@ impl OpToOpPassAdaptor {
             Some(pipeline_callback),
         );
 
+        crate::dialects::debuginfo::transform::capture_invalidation_barrier(&context)?;
         // Instrument before the pass has run
         if let Some(instrumentor) = pi.as_deref() {
             instrumentor.run_before_pass(pass, &op);
         }
+
+        let debug_audit = (!pass.as_any().is::<OpToOpPassAdaptor>())
+            .then(|| crate::dialects::debuginfo::mutation::DebugInfoAudit::begin(op));
 
         let mut result =
             if let Some(adaptor) = pass.as_any_mut().downcast_mut::<OpToOpPassAdaptor>() {
@@ -989,6 +998,42 @@ impl OpToOpPassAdaptor {
             } else {
                 pass.run_on_operation(op, &mut execution_state)
             };
+
+        let completion =
+            crate::dialects::debuginfo::transform::capture_invalidation_barrier(&context);
+        result = match (result, completion) {
+            (Ok(()), Ok(changed)) => {
+                if changed {
+                    execution_state.set_post_pass_status(super::PostPassStatus::Changed);
+                    *execution_state.preserved_analyses_mut() = Default::default();
+                }
+                Ok(())
+            }
+            (Err(body), Err(finish)) => {
+                Err(crate::dialects::debuginfo::transform::combine_capture_errors(body, finish))
+            }
+            (Err(error), _) | (_, Err(error)) => Err(error),
+        };
+        if let Some(audit) = debug_audit {
+            let completion = if result.is_ok() {
+                audit.finish()
+            } else {
+                audit.abort()
+            };
+            if let Err(error) = completion {
+                let error = match result {
+                    Ok(()) => error,
+                    Err(body) => {
+                        crate::dialects::debuginfo::transform::combine_capture_errors(body, error)
+                    }
+                };
+                result =
+                    Err(crate::dialects::debuginfo::capture_invalidation::capture_error_in_pass(
+                        error,
+                        pass.name(),
+                    ));
+            }
+        }
 
         // Invalidate any non-preserved analyses
         analysis_manager.invalidate(execution_state.preserved_analyses_mut());

@@ -141,7 +141,11 @@ impl RewritePattern for IndexSwitchRemoveUnusedResults {
                     Some(new_switch_op.results()[index] as ValueRef);
             }
         }
-        rewriter.replace_op_with_values(operation, &replaced_results);
+        rewriter.replace_op_with_values_and_debug(
+            operation,
+            &replaced_results,
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Salvage,
+        );
 
         Ok(true)
     }

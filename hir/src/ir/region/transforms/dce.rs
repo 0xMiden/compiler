@@ -7,6 +7,7 @@ use crate::{
     OpOperandImpl, OpResult, Operation, OperationRef, PostOrderBlockIter, Region, RegionRef,
     Rewriter, SuccessorOperands, ValueRef,
     adt::SmallSet,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     traits::{BranchOpInterface, Terminator, Transparent},
 };
 
@@ -300,6 +301,8 @@ impl Region {
 
                 // The block is unreachable, erase it
                 log::trace!(target: "region-simplify", "{block} is unreachable - erasing block");
+                let _debug_update =
+                    DebugInfoMutation::for_blocks(&[block], DebugInfoUpdate::DiscardUnreachable);
                 block.borrow_mut().drop_all_defined_value_uses();
                 rewriter.erase_block(block);
                 erased_dead_blocks = true;

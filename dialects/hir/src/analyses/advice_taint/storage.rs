@@ -2,8 +2,9 @@ use alloc::collections::BTreeMap;
 
 use midenc_dialect_arith as arith;
 use midenc_hir::{
-    CallOpInterface, Forward, Operation, ProgramPoint, Report, Spanned, Symbol, SymbolName,
-    ValueRef, dialects::builtin::attributes::LocalVariable,
+    CallOpInterface, Forward, FxHashMap, Operation, OperationRef, ProgramPoint, Report, Spanned,
+    ValueRef,
+    dialects::builtin::{Function, attributes::LocalVariable},
 };
 use midenc_hir_analysis::{
     AnalysisState, AnalysisStateGuardMut, BuildableDataFlowAnalysis, CallControlFlowAction,
@@ -118,11 +119,11 @@ impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub(super) struct StorageState {
-    locals: BTreeMap<LocalKey, ContextualAdviceTaintValue>,
+    locals: FxHashMap<LocalKey, ContextualAdviceTaintValue>,
     memory: MemoryState,
 }
 
-type LocalKey = (SymbolName, usize);
+type LocalKey = (OperationRef, usize);
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 struct MemoryState {
@@ -132,11 +133,10 @@ struct MemoryState {
 
 /// Returns the storage state immediately before `operation`.
 ///
-/// Dense forward analysis passes `ProgramPoint::before(operation)` as the `before` lattice for an
-/// operation transfer, but the solver stores straight-line dense state at concrete CFG anchors:
-/// either after the previous operation or at the start of the block. Storage transfer needs that
-/// concrete state because it both reads storage and writes load-result taint back into sparse
-/// value state during the same solver iteration.
+/// Read the caller's sequential predecessor with a dependency on the receiving state. This
+/// also serves call exits, whose supplied `before` lattice belongs to the callee: caller locals
+/// must survive while memory is replaced by the callee's returned memory state. The dense
+/// framework separately connects these sequential anchors to operation entry and region entry.
 fn storage_state_before_operation(
     operation: &Operation,
     dependent: ProgramPoint,
@@ -168,12 +168,12 @@ fn transfer_storage_operation(
     let dependent = ProgramPoint::after(operation.as_operation_ref());
     if let Some(store) = operation.downcast_ref::<StoreLocal>() {
         let taint = required_value_taint(store.value().as_value_ref(), dependent, solver);
-        state.store_local(local_key(*store.get_local()), taint);
+        state.store_local(local_key(*store.get_local(), operation), taint);
         return Ok(());
     }
 
     if let Some(load) = operation.downcast_ref::<LoadLocal>() {
-        let taint = state.load_local(&local_key(*load.get_local()));
+        let taint = state.load_local(&local_key(*load.get_local(), operation));
         join_value_taint(load.result().as_value_ref(), &taint, solver);
         return Ok(());
     }
@@ -243,7 +243,7 @@ impl StorageState {
 
     fn memory_only(&self) -> Self {
         Self {
-            locals: BTreeMap::new(),
+            locals: FxHashMap::default(),
             memory: self.memory.clone(),
         }
     }
@@ -341,10 +341,13 @@ impl LatticeLike for StorageState {
     }
 }
 
-fn local_key(local: LocalVariable) -> LocalKey {
-    let function = local.function();
-    let function = function.borrow();
-    (Symbol::name(&*function), local.as_usize())
+fn local_key(local: LocalVariable, operation: &Operation) -> LocalKey {
+    // Parsed locals have no bound function handle. Use the actual owning function for both
+    // parsed and builder-created locals; short symbol names can repeat in different modules.
+    let function = operation
+        .nearest_parent_op::<Function>()
+        .expect("local storage operations must belong to a function");
+    (function.as_operation_ref(), local.as_usize())
 }
 
 fn memory_address(value: ValueRef) -> Option<u32> {
@@ -381,6 +384,120 @@ mod tests {
         define_table, felt_ptr, module_advice_taint_findings, sink_names,
     };
     use crate::HirOpBuilder;
+
+    #[test]
+    fn parsed_local_storage_is_scoped_by_function_identity() -> Result<(), midenc_hir::Report> {
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::builtin::Function,
+            parse::{self, ParserConfig},
+        };
+
+        let test = Test::named("local_scope");
+        let source = r#"builtin.function public extern("C") @same_name() -> felt {
+            %v = hir.load_local <{ local = #builtin.local_variable<0, felt> }>;
+            builtin.ret %v : (felt);
+        };"#;
+        let mut keys = alloc::vec::Vec::new();
+        for name in ["first.hir", "second.hir"] {
+            let function = parse::parse::<Function>(
+                ParserConfig::new(test.context_rc()),
+                Uri::new(name),
+                source,
+            )?;
+            let entry = function.borrow().entry_block();
+            let load = entry.borrow().body().front().as_pointer().unwrap();
+            let operation = load.borrow();
+            let local = *operation.downcast_ref::<crate::LoadLocal>().unwrap().get_local();
+            assert!(!local.is_bound());
+            keys.push(super::local_key(local, &operation));
+        }
+        let mut storage = super::StorageState::default();
+        let raw = super::ContextualAdviceTaintValue::raw(SourceSpan::UNKNOWN);
+        storage.store_local(keys[0], raw.clone());
+        assert_eq!(storage.load_local(&keys[0]), raw);
+        assert_eq!(storage.load_local(&keys[1]), super::ContextualAdviceTaintValue::default());
+        Ok(())
+    }
+
+    /// The first operation in the child region must inherit the parent's storage state.
+    /// No raw SSA value enters the region, so sparse propagation cannot mask a missing edge.
+    #[test]
+    fn parent_storage_taint_reaches_first_load_in_if() -> Result<(), midenc_hir::Report> {
+        use midenc_dialect_scf::StructuredControlFlowOpBuilder;
+        use midenc_hir::Op;
+
+        for (memory, overwrite, unreachable) in [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (true, true, false),
+            (false, false, true),
+            (true, false, true),
+        ] {
+            let span = SourceSpan::UNKNOWN;
+            let mut test = Test::named("parent_storage_if").in_module("m");
+            let function = test.define_function("probe", &[Type::I1], &[Type::U32]);
+            {
+                let mut builder = FunctionBuilder::new(function, test.builder_mut());
+                let condition = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                let advice = builder.advice_pop(span)?;
+                let local = builder.alloc_local(Type::Felt);
+                let pointer = felt_ptr(&mut builder, 64, span);
+                if memory {
+                    builder.store(pointer, advice, span)?;
+                } else {
+                    builder.store_local(local, advice, span)?;
+                }
+                if overwrite {
+                    let clean = builder.felt(midenc_hir::Felt::ZERO, span);
+                    if memory {
+                        builder.store(pointer, clean, span)?;
+                    } else {
+                        builder.store_local(local, clean, span)?;
+                    }
+                }
+                let condition = if unreachable {
+                    builder.i1(false, span)
+                } else {
+                    condition
+                };
+                let if_op = builder.r#if(condition, &[Type::U32], span)?;
+                let result = if_op.borrow().results()[0] as ValueRef;
+                let entry = builder.current_block();
+                let then_region = if_op.borrow().then_body().as_region_ref();
+                let then_block = builder.create_block_in_region(then_region);
+                builder.switch_to_block(then_block);
+                let loaded = if memory {
+                    builder.load(pointer, span)?
+                } else {
+                    builder.load_local(local, span)?
+                };
+                let cast = builder.unrealized_conversion_cast(loaded, Type::U32, span)?;
+                let one = builder.u32(1, span);
+                let sum = builder.add(cast, one, span)?;
+                builder.r#yield([sum], span)?;
+                let else_region = if_op.borrow().else_body().as_region_ref();
+                let else_block = builder.create_block_in_region(else_region);
+                builder.switch_to_block(else_block);
+                let zero = builder.u32(0, span);
+                builder.r#yield([zero], span)?;
+                builder.switch_to_block(entry);
+                builder.ret([result], span)?;
+            }
+            let findings = module_advice_taint_findings(&test)?;
+            if overwrite || unreachable {
+                assert!(
+                    findings.is_empty(),
+                    "memory: {memory}, overwrite: {overwrite}, unreachable: {unreachable}"
+                );
+            } else {
+                assert_eq!(sink_names(&findings), ["arith.add"], "memory: {memory}");
+                assert_eq!(findings[0].origin, super::super::AdviceTaintOrigin::advice(span));
+            }
+        }
+        Ok(())
+    }
 
     /// The callee runs in the caller's memory context: raw advice it stores to memory is flagged
     /// when the caller loads and sinks it.

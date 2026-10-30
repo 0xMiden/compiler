@@ -80,6 +80,74 @@ fn context_windows_all_widths_include_syscall_and_dynamic_root() {
 }
 
 #[test]
+fn same_context_call_padding_survives_a_synthetic_flag_roundtrip() {
+    use crate::verify::{replay, stack};
+
+    for arguments in 0..=16 {
+        for results in [0, 1, arguments, 16] {
+            for retained in [0, 3, 17] {
+                let owned = arguments + retained;
+                let mut fixture = Fixture::new(owned, results);
+                fixture.proof.calls.push(CallSite {
+                    path: vec![],
+                    instruction: invocation(Invocation::Exec),
+                    abi: ProcedureAbi::new(CallingConvention::SameContext, arguments, results)
+                        .unwrap(),
+                    inputs: (0..arguments)
+                        .map(|index| CallArgument::Exact(StoredValue::Atom(Fixture::input(index))))
+                        .collect(),
+                    truncate: false,
+                    outputs: vec![],
+                    publications: (0..results)
+                        .map(|index| (Fixture::output(index), index))
+                        .collect(),
+                    selector: None,
+                });
+                let plan = fixture.plan();
+                let frame = fixture.frame();
+                let mut verifier = replay::Verifier::new(&plan, &frame).unwrap();
+                let lanes = (0..owned).map(|_| verifier.tokens.fresh()).collect::<Vec<_>>();
+                let names = lanes
+                    .iter()
+                    .enumerate()
+                    .map(|(index, token)| (Fixture::input(index as u32), *token))
+                    .collect();
+                let initial = stack::State::new(lanes.clone(), names);
+                let code = ops(vec![
+                    AnnotatedOp::Boundary(Boundary::Segment(SegmentId(0))),
+                    AnnotatedOp::Boundary(Boundary::UnitStart(SelectedStepId(0))),
+                    inst(invocation(Invocation::Exec)),
+                ]);
+                let state = verifier
+                    .execute(&code, initial, &mut replay::Cursor::default())
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(state.stack.len(), (retained + results) as usize);
+                assert_eq!(&state.stack[results as usize..], &lanes[arguments as usize..]);
+                for (suffix, padding) in state.padding.0.iter().enumerate() {
+                    for amount in 0..=16 {
+                        assert!(
+                            padding & (1 << amount) == 0
+                                || state.stack.len() + suffix + amount >= 16,
+                            "arguments={arguments}, results={results}, retained={retained}, \
+                             suffix={suffix}, padding={amount}"
+                        );
+                    }
+                }
+                for flag in [Felt::ZERO, Felt::ONE] {
+                    let mut with_flag = state.clone();
+                    let token = verifier.tokens.literal(flag);
+                    with_flag.replace(0, vec![token], &[FloorStep::Push(1)]).unwrap();
+                    assert_eq!(with_flag.pop().unwrap(), token);
+                    assert_eq!(with_flag.stack, state.stack);
+                    assert_eq!(with_flag.padding, state.padding);
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn wrong_invocation_family_is_rejected() {
     let (fixture, mut code) = context_fixture(Invocation::Call, 0, 0);
     let index = code

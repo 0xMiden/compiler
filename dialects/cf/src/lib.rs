@@ -27,3 +27,6 @@ pub struct ControlFlowDialect {
     #[dialect(info)]
     info: DialectInfo,
 }
+
+#[cfg(test)]
+mod capture_invalidation_tests;

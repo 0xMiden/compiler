@@ -191,7 +191,29 @@ impl EntityWithParent for Block {
     type Parent = Region;
 }
 
-impl EntityListItem for Block {}
+impl EntityListItem for Block {
+    fn on_inserted(this: BlockRef, _list: &mut BlockCursorMut<'_>) {
+        this.context_ref().debug_info_mutations.borrow_mut().inserted_block(this);
+    }
+
+    fn on_removed(this: BlockRef, _list: &mut BlockCursorMut<'_>) {
+        this.context_ref().debug_info_mutations.borrow_mut().removed_block(this);
+    }
+
+    fn on_transfer(this: BlockRef, _from: &mut BlockList, _to: &mut BlockList) {
+        let mut state = this.context_ref().debug_info_mutations.borrow_mut();
+        state.removed_block(this);
+        state.inserted_block(this);
+    }
+}
+
+impl BlockRef {
+    pub(crate) fn context_ref(&self) -> &Context {
+        // SAFETY: The context pointer is immutable after allocation, even while the block is
+        // mutably borrowed, and the context outlives the block.
+        unsafe { (*core::ptr::addr_of!((*BlockRef::as_ptr(self)).context)).as_ref() }
+    }
+}
 
 impl EntityParent<Operation> for Block {
     fn offset() -> usize {

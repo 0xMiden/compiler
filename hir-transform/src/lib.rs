@@ -7,6 +7,8 @@ extern crate alloc;
 extern crate std;
 
 mod canonicalization;
+#[cfg(test)]
+mod capture_invalidation_tests;
 mod cfg_to_scf;
 mod cse;
 mod dce;

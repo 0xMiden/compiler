@@ -1,0 +1,16 @@
+# RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_local_if.hir 2>&1 | filecheck %s
+# RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_local_if.hir
+# RUN: not midenc -Zlint -Werror -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_local_if.hir 2>&1 | filecheck %s --check-prefix ERROR
+# RUN: not midenc -Zlint -Werror -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_local_if.hir
+# RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_storage_if.hir 2>&1 | filecheck %s
+# Check the compiler's exit status independently of FileCheck.
+# RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_storage_if.hir
+# RUN: not midenc -Zlint -Werror -Canalyze-only %S/../../fixtures/hir/unconstrained_advice_storage_if.hir
+
+CHECK: unconstrained advice
+CHECK: advice data is obtained here which is later used unconstrained
+CHECK: arith.add
+CHECK: unconstrained advice data is consumed here as a constrained value
+
+ERROR: this warning was promoted to an error
+ERROR: aborting due to errors reported by lint analysis

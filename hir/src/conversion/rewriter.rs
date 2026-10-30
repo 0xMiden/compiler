@@ -319,6 +319,17 @@ impl ConversionPatternRewriter {
         Ok(())
     }
 
+    /// Replace an operation with an explicitly declared debug-info recovery contract.
+    pub fn replace_op_with_debug(
+        &mut self,
+        op: OperationRef,
+        replacements: &[ValueRef],
+        update: crate::dialects::debuginfo::DebugInfoUpdate,
+    ) -> Result<(), Report> {
+        let _debug_update = crate::dialects::debuginfo::DebugInfoMutation::new(op, update);
+        self.replace_op(op, replacements)
+    }
+
     /// Create a new operation before `op`, then replace `op` with the new operation's results.
     ///
     /// This is a convenience for the common single-operation legalization case. It uses
@@ -349,11 +360,22 @@ impl ConversionPatternRewriter {
     /// Erase an operation with no remaining uses.
     ///
     /// Callers are responsible for ensuring the operation can be erased without leaving dangling
-    /// uses or invalid control-flow edges.
+    /// uses or invalid control-flow edges. Debug value users become `di.debug_kill` operations;
+    /// patterns that can erase such users must include that operation in their generated metadata.
     #[inline]
     pub fn erase_op(&mut self, op: OperationRef) -> Result<(), Report> {
         self.inner.erase_op(op);
         Ok(())
+    }
+
+    /// Erase an operation while explicitly accounting for its debug-only users.
+    pub fn erase_op_with_debug(
+        &mut self,
+        op: OperationRef,
+        update: crate::dialects::debuginfo::DebugInfoUpdate,
+    ) -> Result<(), Report> {
+        let _debug_update = crate::dialects::debuginfo::DebugInfoMutation::new(op, update);
+        self.erase_op(op)
     }
 
     /// Record a non-fatal reason why the current pattern did not match `op`.

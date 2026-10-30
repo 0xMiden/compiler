@@ -39,6 +39,17 @@ When determining how to test your changes, or add tests to cover previously-unte
 * Testing specific compiler passes/rewrites, or subsets of the pipeline, should almost always be written as a lit test which matches on the specific parts of the output that are relevant. Not only are such tests much more readable, but they are much easier to write and experiment with, since you do not need to tediously construct the IR by hand using builders. The tests are also much less fragile for that same reason. If you find that there is some specific blocker to writing a particular test as a lit test, you should consider filing an issue reporting it, or even fix the blocker as part of your change (so long as it is relatively trivial).
 * Changes to Rust code of the compiler should almost always have accompanying unit tests, unless it is at such a high-level that a unit test essentially amounts to an integration test (i.e. requires a real input), in which case you should write it as an explicit integration test instead, in the appropriate test crate. Not only will it be easier, since you will benefit from being able to use our robust set of integration test helpers to more concisely express the test, but it avoids duplicating a lot of tedious test setup boilerplate that has already been defined in the integration test crates.
 
+### Debug-info rewrites
+
+Pair HIR/FileCheck checks with a semantic case in `eval/src/evaluator/debug_semantics.rs` when a
+rewrite changes variable tracking. The test harness executes the HIR before and after each pass and
+compares typed variable values at matching checkpoints, including inline ownership and call frames.
+It rejects no-op rewrites and unexpected unavailable values; intentional losses need explicit
+binding-specific expectations. Unsupported expressions fail the test rather than being skipped.
+These tests cover concrete inputs, not a proof of equivalence for every input.
+
+Run them with `cargo test -p midenc-hir-eval --lib debug_semantics`.
+
 ## Best Practices
 
 * DO test using multiple methodologies, when doing so tests unique properties that any single methodology would fail to capture (e.g. a transformation pass might have unit tests for helper functions used by the pass internally, as well as lit tests that exercise the pass against specific IR shapes).

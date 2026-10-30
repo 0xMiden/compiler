@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     OperationName, OperationRef, Report, Spanned, ValueRef, WalkResult,
-    dialects::builtin::UnrealizedConversionCast,
+    dialects::{builtin::UnrealizedConversionCast, debuginfo::DebugInfoUpdate},
 };
 
 /// Dialect conversion mode.
@@ -376,7 +376,7 @@ impl FullConversionDriver<'_> {
                 let input_ty = input.borrow().ty().clone();
                 let result_ty = result.borrow().ty().clone();
                 if input_ty == result_ty {
-                    rewriter.replace_op(cast, &[input])?;
+                    rewriter.replace_op_with_debug(cast, &[input], DebugInfoUpdate::Equivalent)?;
                     reconciled = true;
                     changed = true;
                     continue;
@@ -394,7 +394,11 @@ impl FullConversionDriver<'_> {
                     continue;
                 };
                 if *previous_input.borrow().ty() == result_ty {
-                    rewriter.replace_op(cast, &[previous_input])?;
+                    rewriter.replace_op_with_debug(
+                        cast,
+                        &[previous_input],
+                        DebugInfoUpdate::Equivalent,
+                    )?;
                     if self.is_live(previous_cast) && !previous_cast.borrow().is_used() {
                         rewriter.erase_op(previous_cast)?;
                     }

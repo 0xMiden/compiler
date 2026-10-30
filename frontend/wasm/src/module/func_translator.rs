@@ -147,6 +147,7 @@ impl FuncTranslator {
             config,
         )?;
 
+        builder.reconcile_debug_locations()?;
         builder.finalize();
         Ok(())
     }
@@ -303,6 +304,11 @@ fn parse_function_body<B: ?Sized + Builder>(
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
         builder.set_inline_calls(Vec::new());
+        builder.apply_location_schedule(
+            module.wasm_file.dwarf_offset(reader.original_position()),
+            end_span,
+            &state.stack,
+        );
         // The function frame starts with an empty operand stack. Its final End replaces
         // that stack with the typed exit-block arguments, including all function results.
         assert_eq!(

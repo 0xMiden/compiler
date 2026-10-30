@@ -6,6 +6,7 @@ use crate::{
     AttributeRef, BlockRef, Builder, Context, Dialect, FoldResult, FxHashMap, OpFoldResult,
     OperationRef, ProgramPoint, RegionRef, Rewriter, SourceSpan, Type, Value, ValueRef,
     adt::SmallDenseMap,
+    dialects::debuginfo::{DebugInfoMutation, DebugInfoUpdate},
     matchers::Matcher,
     patterns::{RewriterImpl, RewriterListener},
     traits::{ConstantLike, Foldable, IsolatedFromAbove},
@@ -84,6 +85,7 @@ impl OperationFolder {
     /// If successful, replaces uses of `op`'s results with the folded results, and returns
     /// a [FoldResult].
     pub fn try_fold(&mut self, mut op: OperationRef) -> FoldResult {
+        let _debug_update = DebugInfoMutation::new(op, DebugInfoUpdate::Equivalent);
         // If this is a uniqued constant, return failure as we know that it has already been
         // folded.
         if self.is_folder_owned_constant(&op) {
@@ -250,6 +252,7 @@ impl OperationFolder {
         mut op: OperationRef,
         value: Option<AttributeRef>,
     ) -> bool {
+        let _debug_update = DebugInfoMutation::new(op, DebugInfoUpdate::Equivalent);
         let block = op.parent().unwrap();
 
         // If this is a constant we uniqued, we don't need to insert, but we can check to see if

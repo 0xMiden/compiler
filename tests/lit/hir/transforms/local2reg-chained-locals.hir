@@ -15,4 +15,18 @@ builtin.function public extern("C") @l2r_chain(%0: u32) -> u32 {
 // CHECK: builtin.function public extern("C") @l2r_chain(%0: u32) -> u32 {
 // CHECK-NEXT:     builtin.ret %0 : (u32);
 // CHECK-NEXT: };
+
+// CHECK: @l2r_chain_debug(%[[INPUT:\d+]]: u32)
+// CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "first"
+// CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "second"
+// CHECK-NEXT: builtin.ret %[[INPUT]]
+builtin.function public extern("C") @l2r_chain_debug(%0: u32) -> u32 {
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "first", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+ %1 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store_local %1 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "second", file = "test.rs", line = 2, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(1)]> }>;
+ %2 = hir.load_local <{ local = #builtin.local_variable<1, u32> }>;
+ builtin.ret %2 : (u32);
+};
 };

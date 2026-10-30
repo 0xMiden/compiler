@@ -1,0 +1,30 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-record}))' | filecheck %s --check-prefix=RECORD
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=insert-local-store-preserve}))' 2>&1 | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=insert-local-store-salvage}))' | filecheck %s --check-prefix=SALVAGE
+// SALVAGE: hir.store_local
+// SALVAGE: hir.store_local
+// SALVAGE: di.debug_declare
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=erase-local-store}))' 2>&1 | filecheck %s
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=rewrite-local-store}))' 2>&1 | filecheck %s
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=insert-local-store}))' 2>&1 | filecheck %s
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=invalidate-local-store-without-kills}))' 2>&1 | filecheck %s --check-prefix=CONTRACT
+// CHECK: pass 'test-debug-info-mutation': unhandled debug-info
+// CHECK: hir.store_local
+// CONTRACT: debug-info Invalidate contract
+// CONTRACT: variable 'x'
+// CONTRACT: debug-info Invalidate contract
+// CONTRACT: variable 'y'
+
+// RECORD: hir.store_local
+// RECORD-NEXT: di.debug_kill {{.*}}name = "x"
+// RECORD-NEXT: di.debug_declare {{.*}}name = "y"
+// RECORD-NEXT: builtin.ret
+
+builtin.module public @debug_storage_contract {
+    builtin.function public extern("C") @entrypoint(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        di.debug_declare <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 2 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        builtin.ret %1 : (u32);
+    };
+};

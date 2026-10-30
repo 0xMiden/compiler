@@ -1,0 +1,72 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(sink-operand-defs))' | filecheck %s --check-prefix=OPERAND
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(control-flow-sink))' | filecheck %s --check-prefix=REGION
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,canonicalizer,sink-operand-defs))' | filecheck %s --check-prefix=PIPELINE
+
+builtin.module public @sink_debug_lifetimes {
+    // OPERAND-LABEL: @after_kill(
+    // OPERAND: di.debug_kill {{.*}}name = "x"
+    // OPERAND-NEXT: di.debug_kill {{.*}}name = "x"
+    // OPERAND-NEXT: [[VALUE:%\d+]] = arith.bxor
+    // OPERAND-NEXT: builtin.ret [[VALUE]]
+    // PIPELINE-LABEL: @after_kill(
+    // PIPELINE: di.debug_kill {{.*}}name = "x"
+    // PIPELINE-NEXT: di.debug_kill {{.*}}name = "x"
+    // PIPELINE-NEXT: [[RESULT:%\d+]] = arith.bxor
+    // PIPELINE-NEXT: builtin.ret [[RESULT]]
+    builtin.function public extern("C") @after_kill(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+        builtin.ret %2 : (u32);
+    };
+
+    // OPERAND: @after_reassignment(%[[ARG:\d+]]: u32,
+    // OPERAND: di.debug_kill {{.*}}name = "x"
+    // OPERAND-NEXT: di.debug_value %[[ARG]] {{.*}}name = "x"
+    // OPERAND-NEXT: [[RETURNED:%\d+]] = arith.bxor
+    // OPERAND-NEXT: builtin.ret [[RETURNED]]
+    builtin.function public extern("C") @after_reassignment(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %2 : (u32);
+    };
+
+    // OPERAND-LABEL: @still_dominated(
+    // OPERAND: [[STORED:%\d+]] = arith.bxor
+    // OPERAND-NEXT: hir.store {{%\d+}}, [[STORED]] :
+    // OPERAND-NEXT: di.debug_value [[STORED]] {{.*}}name = "x"
+    // OPERAND-NEXT: di.debug_kill {{.*}}name = "x"
+    // OPERAND-NEXT: builtin.ret
+    builtin.function public extern("C") @still_dominated(%0: u32, %1: u32, %2: ptr<u32, byte>) -> u32 {
+        %3 = arith.bxor %0, %1;
+        hir.store %2, %3 : (ptr<u32, byte>, u32);
+        di.debug_value %3 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 20 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 20 }> }>;
+        builtin.ret %0 : (u32);
+    };
+
+    // OPERAND-LABEL: @cross_region(
+    // OPERAND: di.debug_kill {{.*}}name = "x"
+    // OPERAND-NEXT: di.debug_kill {{.*}}name = "x"
+    // OPERAND-NEXT: {{%\d+}} = scf.if
+    // OPERAND-NEXT: [[INNER:%\d+]] = arith.bxor
+    // OPERAND-NEXT: scf.yield [[INNER]]
+    // REGION-LABEL: @cross_region(
+    // REGION: di.debug_kill {{.*}}name = "x"
+    // REGION-NEXT: di.debug_kill {{.*}}name = "x"
+    // REGION-NEXT: {{%\d+}} = scf.if
+    // REGION-NEXT: [[SUNK:%\d+]] = arith.bxor
+    // REGION-NEXT: scf.yield [[SUNK]]
+    builtin.function public extern("C") @cross_region(%0: u32, %1: u32, %2: i1) -> u32 {
+        %3 = arith.bxor %0, %1;
+        di.debug_value %3 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30 }>, expression = #di.expression<[]> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30 }> }>;
+        %4 = scf.if %2 then {
+            scf.yield %3 : (u32);
+        } else {
+            scf.yield %0 : (u32);
+        } : (i1) -> (u32);
+        builtin.ret %4 : (u32);
+    };
+};

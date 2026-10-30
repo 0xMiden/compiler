@@ -126,7 +126,11 @@ impl dyn Attribute {
     ///
     /// Returns `None` if this value is not a `bool` or `Immediate` that can be cast to `bool`.
     pub fn as_bool(&self) -> Option<bool> {
-        self.value().as_any().downcast_ref::<bool>().copied()
+        self.value()
+            .as_any()
+            .downcast_ref::<bool>()
+            .copied()
+            .or_else(|| self.as_immediate().and_then(Immediate::as_bool))
     }
 
     /// A convenience function for downcasting a `u32` attribute value to the concrete value.
@@ -463,6 +467,27 @@ mod tests {
         Immediate, ImmediateAttr, Type, attributes::IntegerLikeAttr,
         dialects::builtin::attributes::U32Attr, testing::Test,
     };
+
+    #[test]
+    fn erased_boolean_attributes_accept_native_and_immediate_values() {
+        use crate::dialects::builtin::attributes::BoolAttr;
+        let test = Test::default();
+        for value in [false, true] {
+            let native =
+                test.context_rc().create_attribute::<BoolAttr, _>(value).as_attribute_ref();
+            let immediate = test
+                .context_rc()
+                .create_attribute::<ImmediateAttr, _>(Immediate::I1(value))
+                .as_attribute_ref();
+            assert_eq!(native.borrow().as_bool(), Some(value));
+            assert_eq!(immediate.borrow().as_bool(), Some(value));
+        }
+        for (value, expected) in [(0u32, false), (7, true)] {
+            let immediate =
+                test.context_rc().create_attribute::<ImmediateAttr, _>(value).as_attribute_ref();
+            assert_eq!(immediate.borrow().as_bool(), Some(expected));
+        }
+    }
 
     #[test]
     fn attribute_dyn_hash() {

@@ -54,7 +54,9 @@ fn is_prime() {
             .unwrap();
         let result = evaluator
             .eval(&op.borrow(), [midenc_hir_eval::Value::Immediate((a as i32).into())])
-            .unwrap_or_else(|err| panic!("{err}"));
+            .unwrap_or_else(|err| {
+                panic!("HIR is_prime({a}) failed:\n{}", crate::testing::format_report(err));
+            });
         let midenc_hir_eval::Value::Immediate(Immediate::I32(result)) = result[0] else {
             panic!("expected i32 immediate for input {a}, got {:?}", result[0]);
         };

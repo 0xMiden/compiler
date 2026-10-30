@@ -1,4 +1,8 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+    vec::Vec,
+};
 use core::cell::RefCell;
 use std::path::Path;
 
@@ -11,7 +15,7 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Spanned, Type,
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, Report, SmallVec, SourceSpan, Spanned, Type,
     ValueRef,
     diagnostics::{SourceContent, Uri},
     dialects::{
@@ -26,6 +30,7 @@ use midenc_hir::{
                 InlineCallChain, InlineCallChainAttr, InlineCallFrame, SubprogramAttr,
                 Variable as DebugVariable,
             },
+            is_debug_record,
         },
     },
     interner::Symbol,
@@ -34,7 +39,7 @@ use midenc_hir::{
 
 use crate::{
     error::WasmResult,
-    module::debug_info::{FunctionDebugInfo, LocationScheduleEntry},
+    module::debug_info::{FunctionDebugInfo, LocationIndex, LocationScheduleEntry},
     ssa::{SSABuilder, SideEffects, Variable},
 };
 
@@ -44,6 +49,18 @@ pub struct FunctionBuilderContext {
     status: FxHashMap<BlockRef, BlockStatus>,
     types: SecondaryMap<Variable, Type>,
     locals: FxHashMap<Variable, LocalVariable>,
+    debug_offset: Option<u64>,
+    debug_blocks: FxHashMap<BlockRef, DebugBlockOffsets>,
+}
+
+#[derive(Clone)]
+struct DebugBlockOffsets {
+    entry: u64,
+    exit: u64,
+    span: SourceSpan,
+    has_instructions: bool,
+    /// Bindings already overwritten by scheduled records before the first instruction.
+    entry_bindings: BTreeSet<usize>,
 }
 
 impl FunctionBuilderContext {
@@ -53,6 +70,8 @@ impl FunctionBuilderContext {
             status: Default::default(),
             types: SecondaryMap::with_default(Type::Unknown),
             locals: Default::default(),
+            debug_offset: None,
+            debug_blocks: Default::default(),
         }
     }
 
@@ -65,6 +84,8 @@ impl FunctionBuilderContext {
         self.status.clear();
         self.types.clear();
         self.locals.clear();
+        self.debug_offset = None;
+        self.debug_blocks.clear();
     }
 
     /// Returns `true` if and only if no instructions have been added and the block is empty.
@@ -122,6 +143,27 @@ impl Listener for SSABuilderListener {
         let mut builder = self.builder.borrow_mut();
 
         let block = op.parent().expect("inserted operation has no parent block");
+        if let Some(offset) = builder.debug_offset {
+            let is_record = is_debug_record(op.as_operation_ref());
+            builder
+                .debug_blocks
+                .entry(block)
+                .and_modify(|block| {
+                    if !block.has_instructions {
+                        block.entry = offset;
+                        block.span = op.span();
+                    }
+                    block.exit = offset;
+                    block.has_instructions |= !is_record;
+                })
+                .or_insert(DebugBlockOffsets {
+                    entry: offset,
+                    exit: offset,
+                    span: op.span(),
+                    has_instructions: !is_record,
+                    entry_bindings: BTreeSet::new(),
+                });
+        }
         if builder.is_pristine(&block) {
             builder.status.insert(block, BlockStatus::Partial);
         } else {
@@ -199,7 +241,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         &self,
         index: usize,
         span: SourceSpan,
-    ) -> Option<(DebugVariable, Option<Expression>, bool)> {
+    ) -> Option<(DebugVariable, Option<Expression>, bool, Vec<InlineCallFrame>)> {
         let fallback = self.span_to_location(span);
         let info = self.debug_info.as_ref()?;
         let mut info = info.borrow_mut();
@@ -207,7 +249,23 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         if let Some((file, _directory, line, column)) = fallback {
             fill_debug_attr_location(&mut local.attr, file, line, column);
         }
-        Some((local.attr.clone(), local.expression.clone(), !local.locations.is_empty()))
+        Some((
+            local.attr.clone(),
+            local.expression.clone(),
+            local.scope.is_some() || !local.locations.is_empty(),
+            local.inline_calls.clone(),
+        ))
+    }
+
+    fn with_debug_binding_owner<T>(
+        &mut self,
+        owner: Vec<InlineCallFrame>,
+        emit: impl FnOnce(&mut Self) -> T,
+    ) -> T {
+        let instruction_context = self.active_inline_calls.replace(owner);
+        let result = emit(self);
+        self.active_inline_calls.replace(instruction_context);
+        result
     }
 
     pub fn set_inline_calls(&mut self, inline_calls: Vec<InlineCallFrame>) {
@@ -216,7 +274,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
 
     pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
         let idx = var.index();
-        let Some((attr, expr_opt, schedule_only)) = self.local_debug_metadata(idx, span) else {
+        let Some((attr, expr_opt, schedule_only, owner)) = self.local_debug_metadata(idx, span)
+        else {
             return;
         };
         if schedule_only {
@@ -231,9 +290,9 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             Some(Expression::with_ops(ops))
         });
 
-        if let Err(err) =
-            DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
-        {
+        if let Err(err) = self.with_debug_binding_owner(owner, |builder| {
+            DIBuilder::builder_mut(builder).debug_value_with_expr(value, attr, expr, span)
+        }) {
             warn!("failed to emit dbg.value for local {idx}: {err:?}");
         }
     }
@@ -297,6 +356,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         };
 
+        self.func_ctx.borrow_mut().debug_offset = Some(offset);
+
         let updates = {
             let mut info = info_rc.borrow_mut();
             let mut pending = Vec::new();
@@ -312,7 +373,15 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         };
 
         for entry in updates {
-            self.emit_scheduled_dbg_value(entry, span, wasm_stack);
+            let var_index = entry.var_index;
+            if self.emit_scheduled_dbg_value(entry, span, wasm_stack) {
+                let block = self.current_block();
+                if let Some(offsets) = self.func_ctx.borrow_mut().debug_blocks.get_mut(&block)
+                    && !offsets.has_instructions
+                {
+                    offsets.entry_bindings.insert(var_index);
+                }
+            }
         }
     }
 
@@ -321,44 +390,102 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         entry: LocationScheduleEntry,
         span: SourceSpan,
         wasm_stack: &[ValueRef],
-    ) {
+    ) -> bool {
         let idx = entry.var_index;
-        let Some((attr, ..)) = self.local_debug_metadata(idx, span) else {
-            return;
+        let Some((attr, _, _, owner)) = self.local_debug_metadata(idx, span) else {
+            return false;
         };
-
-        let Some(storage) = entry.storage else {
-            if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
-                warn!("failed to emit scheduled dbg.kill for local {idx}: {err:?}");
-            }
-            return;
-        };
-        if storage.is_empty() {
-            return;
+        if entry.storage.as_ref().is_some_and(Expression::is_empty) {
+            return false;
         }
-
-        if let Some(value) = operand_stack_value_from_expression(&storage, wasm_stack) {
-            if let Err(err) =
-                DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, None, span)
-            {
-                warn!("failed to emit scheduled stack dbg.value for local {idx}: {err:?}");
+        let result = self.with_debug_binding_owner(owner, |builder| {
+            let builder = DIBuilder::builder_mut(builder);
+            match entry.storage {
+                None => builder.debug_kill(attr, span).map(|op| op.as_operation_ref()),
+                Some(storage) => {
+                    if let Some(value) = operand_stack_value_from_expression(&storage, wasm_stack) {
+                        builder
+                            .debug_value_with_expr(value, attr, None, span)
+                            .map(|op| op.as_operation_ref())
+                    } else {
+                        builder.debug_declare(attr, storage, span).map(|op| op.as_operation_ref())
+                    }
+                }
             }
-            return;
+        });
+        if let Err(err) = result {
+            warn!("failed to emit scheduled debug record for local {idx}: {err:?}");
+            false
+        } else {
+            true
         }
-
-        self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
     }
 
-    fn emit_scheduled_dbg_declare_with_attr(
-        &mut self,
-        idx: usize,
-        attr: midenc_hir::dialects::debuginfo::attributes::Variable,
-        expression: Expression,
-        span: SourceSpan,
-    ) {
-        if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, expression, span) {
-            warn!("failed to emit scheduled dbg.declare for local {idx}: {err:?}");
+    pub fn reconcile_debug_locations(&mut self) -> Result<(), Report> {
+        let Some(info) = &self.debug_info else {
+            return Ok(());
+        };
+        let plans = {
+            let info = info.borrow();
+            let context = self.func_ctx.borrow();
+            let index = LocationIndex::new(&info.location_schedule, &info.locals);
+            let region = self.inner.body_region();
+            let region = region.borrow();
+            let mut plans = Vec::new();
+            for block in region.body() {
+                let block_ref = block.as_block_ref();
+                let Some(offsets) = context.debug_blocks.get(&block_ref) else {
+                    continue;
+                };
+                let mut repairs = BTreeMap::new();
+                for predecessor in block.predecessors() {
+                    let source = context
+                        .debug_blocks
+                        .get(&predecessor.predecessor())
+                        .map(|block| block.exit);
+                    for repair in
+                        index.repairs(source, offsets.entry, &info.location_schedule, &info.locals)
+                    {
+                        // Every entry-prefix record overwrites this binding before any
+                        // instruction executes, including events flushed after a skipped range.
+                        if !offsets.entry_bindings.contains(&repair.var_index) {
+                            repairs.insert((repair.storage.is_some(), repair.var_index), repair);
+                        }
+                    }
+                }
+                if !repairs.is_empty() {
+                    plans.push((
+                        block_ref,
+                        offsets.span,
+                        repairs.into_values().collect::<Vec<_>>(),
+                    ));
+                }
+            }
+            plans
+        };
+        for (block, span, repairs) in plans {
+            let mut builder = OpBuilder::new(self.inner.builder().context_rc());
+            builder.set_insertion_point_to_start(block);
+            for repair in repairs {
+                let Some((attr, _, _, owner)) = self.local_debug_metadata(repair.var_index, span)
+                else {
+                    continue;
+                };
+                let mut operation = match repair.storage {
+                    Some(storage) => builder.debug_declare(attr, storage, span)?.as_operation_ref(),
+                    None => builder.debug_kill(attr, span)?.as_operation_ref(),
+                };
+                builder.set_insertion_point_after(operation);
+                if !owner.is_empty() {
+                    let inline_calls = builder
+                        .context_rc()
+                        .create_attribute::<InlineCallChainAttr, _>(InlineCallChain::new(owner))
+                        .as_attribute_ref();
+                    operation.borrow_mut().set_attribute(INLINE_CALL_CHAIN_ATTR_NAME, inline_calls);
+                }
+            }
         }
+        Ok(())
     }
 
     pub fn name(&self) -> Ident {
@@ -925,3 +1052,6 @@ pub enum DefVariableError {
     )]
     DefinedBeforeDeclared(Variable),
 }
+
+#[cfg(test)]
+mod tests;

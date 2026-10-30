@@ -1,0 +1,23 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(legalize-for-masm))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(legalize-for-masm))' | filecheck %s
+
+builtin.module public @debug_cast_reconciliation {
+    // CHECK: @identity(%[[INPUT:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "identity"
+    // CHECK-NEXT: builtin.ret %[[INPUT]]
+    builtin.function public extern("C") @identity(%input: u32) -> u32 {
+        %cast = builtin.unrealized_conversion_cast %input <{ ty = #builtin.type<u32> }>;
+        di.debug_value %cast <{ variable = #di.variable<{ name = "identity", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %cast : (u32);
+    };
+
+    // CHECK: @roundtrip(%[[INPUT:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "roundtrip"
+    // CHECK-NEXT: builtin.ret %[[INPUT]]
+    builtin.function public extern("C") @roundtrip(%input: u32) -> u32 {
+        %cast = builtin.unrealized_conversion_cast %input <{ ty = #builtin.type<i32> }>;
+        %result = builtin.unrealized_conversion_cast %cast <{ ty = #builtin.type<u32> }>;
+        di.debug_value %result <{ variable = #di.variable<{ name = "roundtrip", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %result : (u32);
+    };
+};

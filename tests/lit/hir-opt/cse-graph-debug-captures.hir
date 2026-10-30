@@ -1,0 +1,29 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(cse)' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline='builtin.module(cse)' | filecheck %s
+// CHECK: scf.if
+// CHECK: di.debug_value
+// CHECK: di.debug_kill
+// CHECK: di.debug_kill
+// CHECK-NOT: scf.if
+// CHECK: hir.assert_eq
+builtin.module public @graph_captures {
+    %left = arith.constant 7 : u32;
+    %right = arith.constant 19 : u32;
+    %condition = arith.eq %left, %right;
+        %first = scf.if %condition then {
+            di.debug_value %left <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %left : (u32);
+        } else {
+            di.debug_kill <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }> }>;
+            scf.yield %right : (u32);
+        } : (i1) -> u32;
+        %second = scf.if %condition then {
+            di.debug_value %left <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+            scf.yield %left : (u32);
+        } else {
+            di.debug_kill <{ variable = #di.variable<{ name = "branch", file = "test.rs", line = 1 }> }>;
+            scf.yield %right : (u32);
+        } : (i1) -> u32;
+        %sum = arith.add %first, %second <{ overflow = #builtin.overflow<wrapping> }>;
+    hir.assert_eq %sum, %left <{ code = #builtin.u32<0>, message = "graph result" }> : (u32, u32);
+};

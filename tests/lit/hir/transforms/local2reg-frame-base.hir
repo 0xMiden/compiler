@@ -1,0 +1,129 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(local2reg))' | filecheck %s
+builtin.module public @frame_recovery {
+// CHECK-LABEL: @zero(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @zero(%0: u32) -> u32 {
+ %1 = arith.constant 16 : u32;
+ %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ %3 = arith.constant 7 : u32;
+ hir.store %2, %3 : (ptr<u32, byte>, u32);
+ %4 = arith.constant 8 : u32;
+ %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store %5, %1 : (ptr<u32, byte>, u32);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0+0)]> }>;
+ %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %7 = arith.constant 99 : u32;
+ hir.store %2, %7 : (ptr<u32, byte>, u32);
+ builtin.ret %6 : (u32);
+};
+// CHECK-LABEL: @positive(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @positive(%0: u32) -> u32 {
+ %1 = arith.constant 16 : u32;
+ %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ %3 = arith.constant 7 : u32;
+ hir.store %2, %3 : (ptr<u32, byte>, u32);
+ %4 = arith.constant 8 : u32;
+ %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store %5, %1 : (ptr<u32, byte>, u32);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0+4)]> }>;
+ %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %7 = arith.constant 99 : u32;
+ hir.store %2, %7 : (ptr<u32, byte>, u32);
+ builtin.ret %6 : (u32);
+};
+// CHECK-LABEL: @negative(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @negative(%0: u32) -> u32 {
+ %1 = arith.constant 16 : u32;
+ %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ %3 = arith.constant 7 : u32;
+ hir.store %2, %3 : (ptr<u32, byte>, u32);
+ %4 = arith.constant 8 : u32;
+ %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store %5, %1 : (ptr<u32, byte>, u32);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0-4)]> }>;
+ %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %7 = arith.constant 99 : u32;
+ hir.store %2, %7 : (ptr<u32, byte>, u32);
+ builtin.ret %6 : (u32);
+};
+// CHECK-LABEL: @address(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @address(%0: u32) -> u32 {
+ %1 = arith.constant 16 : u32;
+ %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ %3 = arith.constant 7 : u32;
+ hir.store %2, %3 : (ptr<u32, byte>, u32);
+ %4 = arith.constant 8 : u32;
+ %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store %5, %1 : (ptr<u32, byte>, u32);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0+4), DW_OP_stack_value]> }>;
+ %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %7 = arith.constant 99 : u32;
+ hir.store %2, %7 : (ptr<u32, byte>, u32);
+ builtin.ret %6 : (u32);
+};
+// CHECK-LABEL: @indirect(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @indirect(%0: u32) -> u32 {
+ %1 = arith.constant 16 : u32;
+ %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ %3 = arith.constant 7 : u32;
+ hir.store %2, %3 : (ptr<u32, byte>, u32);
+ %4 = arith.constant 8 : u32;
+ %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store %5, %1 : (ptr<u32, byte>, u32);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0+0), DW_OP_deref]> }>;
+ %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %7 = arith.constant 99 : u32;
+ hir.store %2, %7 : (ptr<u32, byte>, u32);
+ builtin.ret %6 : (u32);
+};
+// CHECK-LABEL: @indirect_value(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @indirect_value(%0: u32) -> u32 {
+ %1 = arith.constant 16 : u32;
+ %2 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ %3 = arith.constant 7 : u32;
+ hir.store %2, %3 : (ptr<u32, byte>, u32);
+ %4 = arith.constant 8 : u32;
+ %5 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<u32, byte>> }>;
+ hir.store %5, %1 : (ptr<u32, byte>, u32);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1, ty = u32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0+0), DW_OP_deref, DW_OP_stack_value]> }>;
+ %6 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ hir.store %2, %3 attributes { test.debug_checkpoint = #builtin.u32<1> } : (ptr<u32, byte>, u32);
+ %7 = arith.constant 99 : u32;
+ hir.store %2, %7 : (ptr<u32, byte>, u32);
+ builtin.ret %6 : (u32);
+};
+
+// CHECK-LABEL: @wide(
+// CHECK: di.debug_value
+// CHECK-NOT: di.debug_kill
+builtin.function public extern("C") @wide(%0: u32, %1: u64) -> u32 {
+ %2 = hir.int_to_ptr %0 <{ ty = #builtin.type<ptr<u64, byte>> }>;
+ hir.store %2, %1 : (ptr<u64, byte>, u64);
+ hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+ di.debug_declare <{ variable = #di.variable<{ name = "wide", file = "test.rs", line = 1, ty = u64 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 0+0)]> }>;
+ %3 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+ builtin.ret %3 : (u32);
+};
+};

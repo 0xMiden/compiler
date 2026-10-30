@@ -28,8 +28,7 @@ use super::ops::*;
 pub trait DIBuilder<'f, B: ?Sized + Builder> {
     /// Emit a `di.debug_value` operation that records the current value of a source-level variable.
     ///
-    /// This creates an SSA use of `value`, ensuring that transforms cannot silently drop the value
-    /// without updating the debug info.
+    /// This creates an SSA use of `value` and registers the record with the active pass audit.
     fn debug_value(
         &mut self,
         value: ValueRef,
@@ -54,7 +53,9 @@ pub trait DIBuilder<'f, B: ?Sized + Builder> {
     ) -> Result<DebugValueRef, Report> {
         let expr = expression.unwrap_or_default();
         let op_builder = self.builder_mut().create::<DebugValue, (_, _, _)>(span);
-        op_builder(value, variable, expr)
+        let op = op_builder(value, variable, expr)?;
+        super::mutation::register_debug_record(op.as_operation_ref());
+        Ok(op)
     }
 
     /// Emit a `di.debug_declare` operation that records the storage location of a source-level
@@ -66,7 +67,9 @@ pub trait DIBuilder<'f, B: ?Sized + Builder> {
         span: SourceSpan,
     ) -> Result<DebugDeclareRef, Report> {
         let op_builder = self.builder_mut().create::<DebugDeclare, (_, _)>(span);
-        op_builder(variable, expression)
+        let op = op_builder(variable, expression)?;
+        super::mutation::register_debug_record(op.as_operation_ref());
+        Ok(op)
     }
 
     /// Emit a `di.debug_kill` operation that marks a variable as dead.
@@ -75,7 +78,9 @@ pub trait DIBuilder<'f, B: ?Sized + Builder> {
     /// `debug_value` or `debug_declare` for the same variable.
     fn debug_kill(&mut self, variable: Variable, span: SourceSpan) -> Result<DebugKillRef, Report> {
         let op_builder = self.builder_mut().create::<DebugKill, (_,)>(span);
-        op_builder(variable)
+        let op = op_builder(variable)?;
+        super::mutation::register_debug_record(op.as_operation_ref());
+        Ok(op)
     }
 
     fn builder(&self) -> &B;

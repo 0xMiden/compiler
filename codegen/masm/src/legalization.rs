@@ -765,6 +765,7 @@ struct SplitWideStore {
 impl SplitWideStore {
     fn new(context: Rc<Context>) -> Self {
         let hir = context.get_or_register_dialect::<hir::HirDialect>();
+        let debug = context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
         let mut info = PatternInfo::new(
             context.clone(),
             "split-wide-store",
@@ -772,9 +773,12 @@ impl SplitWideStore {
             PatternBenefit::new(1),
         );
         info.with_generated_ops(
-            [hir.expect_registered_name::<hir::Store>()]
-                .into_iter()
-                .chain(half_address_ops(&context)),
+            [
+                hir.expect_registered_name::<hir::Store>(),
+                debug.expect_registered_name::<debuginfo::DebugKill>(),
+            ]
+            .into_iter()
+            .chain(half_address_ops(&context)),
         );
         Self { info }
     }
@@ -936,6 +940,7 @@ struct JoinShiftedHalf {
 impl JoinShiftedHalf {
     fn new(context: Rc<Context>) -> Self {
         let arith = context.get_or_register_dialect::<arith::ArithDialect>();
+        let debug = context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
         let mut info = PatternInfo::new(
             context.clone(),
             "join-shifted-half",
@@ -945,6 +950,7 @@ impl JoinShiftedHalf {
         info.with_generated_ops([
             arith.expect_registered_name::<arith::Join>(),
             arith.expect_registered_name::<arith::Constant>(),
+            debug.expect_registered_name::<debuginfo::DebugKill>(),
         ]);
         Self { info }
     }
@@ -976,7 +982,7 @@ impl ConversionPattern for JoinShiftedHalf {
         let lo = HalfValue::Constant(0).materialize(rewriter, span)?;
         let join = rewriter.create_op::<arith::Join, _>(span, ([hi, lo], ty))?;
         let join = join.borrow().result().as_value_ref();
-        rewriter.replace_op(op, &[join])?;
+        rewriter.replace_op_with_debug(op, &[join], debuginfo::DebugInfoUpdate::Equivalent)?;
         erase_dead_defs(rewriter, operands)?;
         Ok(true)
     }
@@ -1030,6 +1036,7 @@ struct JoinAssembledHalves {
 impl JoinAssembledHalves {
     fn new(context: Rc<Context>) -> Self {
         let arith = context.get_or_register_dialect::<arith::ArithDialect>();
+        let debug = context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
         let mut info = PatternInfo::new(
             context.clone(),
             "join-assembled-halves",
@@ -1039,6 +1046,7 @@ impl JoinAssembledHalves {
         info.with_generated_ops([
             arith.expect_registered_name::<arith::Join>(),
             arith.expect_registered_name::<arith::Constant>(),
+            debug.expect_registered_name::<debuginfo::DebugKill>(),
         ]);
         Self { info }
     }
@@ -1071,7 +1079,7 @@ impl ConversionPattern for JoinAssembledHalves {
         let lo = halves.lo.materialize(rewriter, span)?;
         let join = rewriter.create_op::<arith::Join, _>(span, ([hi, lo], ty))?;
         let join = join.borrow().result().as_value_ref();
-        rewriter.replace_op(op, &[join])?;
+        rewriter.replace_op_with_debug(op, &[join], debuginfo::DebugInfoUpdate::Equivalent)?;
         erase_dead_defs(rewriter, operands)?;
         Ok(true)
     }
@@ -1097,6 +1105,7 @@ struct SplitWideLoad {
 impl SplitWideLoad {
     fn new(context: Rc<Context>) -> Self {
         let hir = context.get_or_register_dialect::<hir::HirDialect>();
+        let debug = context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
         let mut info = PatternInfo::new(
             context.clone(),
             "split-wide-load",
@@ -1104,9 +1113,12 @@ impl SplitWideLoad {
             PatternBenefit::new(1),
         );
         info.with_generated_ops(
-            [hir.expect_registered_name::<hir::Load>()]
-                .into_iter()
-                .chain(half_address_ops(&context)),
+            [
+                hir.expect_registered_name::<hir::Load>(),
+                debug.expect_registered_name::<debuginfo::DebugKill>(),
+            ]
+            .into_iter()
+            .chain(half_address_ops(&context)),
         );
         Self { info }
     }
@@ -1153,7 +1165,11 @@ impl ConversionPattern for SplitWideLoad {
                     cast.borrow().result().as_value_ref()
                 };
                 truncated.push(trunc.borrow().operands()[0].borrow().as_value_ref());
-                rewriter.replace_op(trunc, &[replacement])?;
+                rewriter.replace_op_with_debug(
+                    trunc,
+                    &[replacement],
+                    debuginfo::DebugInfoUpdate::Equivalent,
+                )?;
             }
         }
         // The `shr` and casts of the high half, and the 64-bit load itself, are dead now
@@ -1258,6 +1274,7 @@ impl SplitTakenHalves {
     fn new(context: Rc<Context>) -> Self {
         let arith = context.get_or_register_dialect::<arith::ArithDialect>();
         let hir = context.get_or_register_dialect::<hir::HirDialect>();
+        let debug = context.get_or_register_dialect::<debuginfo::DebugInfoDialect>();
         let mut info = PatternInfo::new(
             context.clone(),
             "split-taken-halves",
@@ -1267,6 +1284,7 @@ impl SplitTakenHalves {
         info.with_generated_ops([
             arith.expect_registered_name::<arith::Split>(),
             hir.expect_registered_name::<hir::Bitcast>(),
+            debug.expect_registered_name::<debuginfo::DebugKill>(),
         ]);
         Self { info }
     }
@@ -1330,7 +1348,11 @@ impl ConversionPattern for SplitTakenHalves {
         let mut truncated = SmallVec::<[ValueRef; 4]>::new();
         for (trunc, replacement) in replacements {
             truncated.push(trunc.borrow().operands()[0].borrow().as_value_ref());
-            rewriter.replace_op(trunc, &[replacement])?;
+            rewriter.replace_op_with_debug(
+                trunc,
+                &[replacement],
+                debuginfo::DebugInfoUpdate::Equivalent,
+            )?;
         }
         // The `shr` and casts of the high half are dead now; the integer is the split's operand
         erase_dead_defs(rewriter, truncated)?;
@@ -1471,7 +1493,7 @@ fn erase_dead_defs(
                 .collect::<SmallVec<[ValueRef; 2]>>()
         };
         // `erase_op` erases the debug users with it
-        rewriter.erase_op(def)?;
+        rewriter.erase_op_with_debug(def, debuginfo::DebugInfoUpdate::Invalidate)?;
         worklist.extend(operands);
     }
     Ok(())
@@ -2219,7 +2241,7 @@ mod tests {
         );
     }
 
-    /// Debug info does not keep a 64-bit value the splits leave dead; it goes with the value.
+    /// Debug info does not keep a 64-bit value the splits leave dead; its location becomes unavailable.
     #[test]
     fn debug_uses_go_with_the_values_a_split_leaves_dead() {
         use midenc_hir::{
@@ -2277,6 +2299,7 @@ mod tests {
             };"#]],
             expect![[r#"
                 builtin.function public extern("C") @debug_uses_go_with_the_values_a_split_leaves_dead(%0: ptr<u64, element>, %1: u32, %2: u32) -> u32 {
+                    di.debug_kill <{ variable = #di.variable<{ name = "pair", file = "test.rs", line = 1 }> }>;
                     %13 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
                     hir.store %13, %1 : (ptr<u32, element>, u32);
                     %14 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
@@ -2286,6 +2309,7 @@ mod tests {
                     hir.store %17, %2 : (ptr<u32, element>, u32);
                     %18 = hir.bitcast %0 <{ ty = #builtin.type<ptr<u32, element>> }>;
                     %19 = hir.load %18;
+                    di.debug_kill <{ variable = #di.variable<{ name = "reloaded", file = "test.rs", line = 2 }> }>;
                     builtin.ret %19 : (u32);
                 };"#]],
         );

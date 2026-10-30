@@ -104,7 +104,7 @@ impl BranchOpInterface for CondBr {
         operands: &[Option<AttributeRef>],
     ) -> Option<SuccessorInfo> {
         let value = operands[0].as_ref()?.borrow();
-        let cond = value.value().downcast_ref::<bool>().copied().unwrap_or_else(|| {
+        let cond = value.as_bool().unwrap_or_else(|| {
             panic!("expected boolean for '{}' condition, got: {:?}", self.name(), value)
         });
 
@@ -375,10 +375,7 @@ impl Foldable for Select {
         if self.fold_degenerate_arms(&operands[1], &operands[2], results).is_ok() {
             return FoldResult::Ok(());
         }
-        if let Some(cond) = operands[0]
-            .as_ref()
-            .and_then(|o| o.borrow().value().downcast_ref::<bool>().copied())
-        {
+        if let Some(cond) = operands[0].as_ref().and_then(|o| o.borrow().as_bool()) {
             let maybe_folded = if cond {
                 operands[1]
                     .map(OpFoldResult::Attribute)

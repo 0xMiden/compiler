@@ -1,0 +1,19 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-dependency-preserve}))' | filecheck %s
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-dependency-rewrite}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-dependency-erase}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-dependency-move}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// RUN: not hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(test-debug-info-mutation{action=discard-dependency-roundtrip}))' 2>&1 | filecheck %s --check-prefix=ERROR
+// ERROR: debug-info DiscardUnreachable contract
+// ERROR: failed for variable 'x' in 'di.debug_declare'
+
+builtin.module public @debug_discard_dependencies {
+    // CHECK-LABEL: @entrypoint
+    // CHECK: di.debug_declare {{.*}}name = "x"{{.*}}DI_OP_local_slot(0)
+    // CHECK: hir.store_local
+    builtin.function public extern("C") @entrypoint(%input: u32, %other: u32) -> u32 {
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        hir.store_local %input <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+        builtin.ret %other : (u32);
+    };
+};

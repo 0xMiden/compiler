@@ -192,7 +192,11 @@ pub(super) fn rebuild_while(
 
     rewriter.merge_blocks(before_block, new_before_block, &before_args);
     rewriter.merge_blocks(after_block, new_after_block, &after_args);
-    rewriter.replace_op_with_values(operation, &result_values);
+    rewriter.replace_op_with_values_and_debug(
+        operation,
+        &result_values,
+        midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+    );
 
     Ok(true)
 }

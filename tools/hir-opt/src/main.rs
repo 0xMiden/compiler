@@ -3,6 +3,7 @@
 mod driver;
 mod opt;
 mod pipeline;
+mod test_debug_info;
 
 use std::env;
 

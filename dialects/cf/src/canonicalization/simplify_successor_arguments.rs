@@ -85,7 +85,11 @@ impl RewritePattern for RemoveUnusedSinglePredBlockArgs {
 
             // Rewrite uses of the successor block arguments with the successor operands
             for (block_arg, operand) in replacements {
-                rewriter.replace_all_uses_of_value_with(block_arg, operand);
+                rewriter.replace_value_with_debug(
+                    block_arg,
+                    operand,
+                    midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+                );
             }
 
             // Remove the dead successor block arguments

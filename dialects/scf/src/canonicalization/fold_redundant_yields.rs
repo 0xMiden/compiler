@@ -89,8 +89,10 @@ impl RewritePattern for FoldRedundantYields {
             .reduce(|acc, region_yield_vals| acc.intersection(&region_yield_vals))
             .expect("Have already checked region_yields is non-empty.");
 
-        if redundant_yield_vals.is_empty() {
-            // No redundant values found.
+        let all_results_are_redundant = redundant_yield_vals.len() == op.num_results();
+        let can_erase_owner = all_results_are_redundant && op.is_memory_effect_free();
+        if redundant_yield_vals.is_empty() && !can_erase_owner {
+            // A zero-result owner is redundant only when it has no executable effects.
             return Ok(false);
         }
 
@@ -98,9 +100,7 @@ impl RewritePattern for FoldRedundantYields {
         let mut redundant_result_positions =
             redundant_yield_vals.iter().map(|(pos, _)| *pos).collect::<SmallVec<[_; 4]>>();
 
-        let all_results_are_redundant = redundant_yield_vals.len() == op.num_results();
-
-        if all_results_are_redundant && op.is_memory_effect_free() {
+        if can_erase_owner {
             // The entire operation is actually redundant; just remove it.  Make sure the yield
             // vals are sorted first.
             let mut sorted_vals = redundant_yield_vals.into_vec();
@@ -112,14 +112,32 @@ impl RewritePattern for FoldRedundantYields {
 
             // Replace the operation.
             drop(op);
-            rewriter.replace_op_with_values(op_ref, &some_vals);
+            midenc_hir::dialects::debuginfo::transform::invalidate_debug_captures(
+                op_ref, rewriter,
+            )?;
+            // Nested captures have already been resolved by their own explicit kill mappings.
+            // Keep equivalent result replacement and producer disappearance in one scope so
+            // surviving records outside this owner retain their equivalent SSA locations.
+            rewriter.replace_op_with_values_and_debug(
+                op_ref,
+                &some_vals,
+                midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+            );
         } else {
+            let _debug_update = midenc_hir::dialects::debuginfo::DebugInfoMutation::new(
+                op_ref,
+                midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+            );
             // Replace all uses of the redundant results.
             for (redundant_opand_pos, redundant_yield_val) in redundant_yield_vals {
                 let result_val_ref =
                     op.results().index(redundant_opand_pos).borrow().as_value_ref();
                 if result_val_ref.borrow().is_used() {
-                    rewriter.replace_all_uses_of_value_with(result_val_ref, redundant_yield_val);
+                    rewriter.replace_value_with_debug(
+                        result_val_ref,
+                        redundant_yield_val,
+                        midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+                    );
                 }
             }
 
@@ -179,6 +197,7 @@ mod tests {
     struct SingleCanonicalizerPass {
         rewrites: Rc<FrozenRewritePatternSet>,
         should_modify: bool,
+        top_down: bool,
     }
 
     impl SingleCanonicalizerPass {
@@ -193,6 +212,7 @@ mod tests {
             Self {
                 rewrites,
                 should_modify,
+                top_down: false,
             }
         }
     }
@@ -216,11 +236,10 @@ mod tests {
             let op_ref = op.as_operation_ref();
             drop(op);
 
-            let converged = patterns::apply_patterns_and_fold_greedily(
-                op_ref,
-                self.rewrites.clone(),
-                GreedyRewriteConfig::default(),
-            );
+            let mut config = GreedyRewriteConfig::default();
+            config.with_top_down_traversal(self.top_down);
+            let converged =
+                patterns::apply_patterns_and_fold_greedily(op_ref, self.rewrites.clone(), config);
 
             let changed = match converged {
                 Ok(b) => b,
@@ -797,6 +816,111 @@ mod tests {
         )
     }
     }}} */
+    #[test]
+    fn redundant_yield_clears_bindings_authored_during_the_phase() -> Result<(), Report> {
+        use core::cell::Cell;
+
+        use midenc_hir::{
+            diagnostics::Uri,
+            dialects::{
+                builtin::Function,
+                debuginfo::{
+                    DIBuilder, DebugKill, DebugValue, attributes::Variable, debug_record_variable,
+                },
+            },
+            parse::{self, ParserConfig},
+            pass::{Nesting, PassManager},
+        };
+        struct AuthorShadow {
+            info: PatternInfo,
+            authored: Cell<bool>,
+        }
+        impl Pattern for AuthorShadow {
+            fn info(&self) -> &PatternInfo {
+                &self.info
+            }
+        }
+        impl RewritePattern for AuthorShadow {
+            fn match_and_rewrite(
+                &self,
+                op: OperationRef,
+                rewriter: &mut dyn Rewriter,
+            ) -> Result<bool, Report> {
+                if self.authored.get()
+                    || !debug_record_variable(&op.borrow())
+                        .is_some_and(|variable| variable.name.as_str() == "marker")
+                {
+                    return Ok(false);
+                }
+                let value =
+                    op.borrow().downcast_ref::<DebugValue>().unwrap().value().as_value_ref();
+                rewriter.set_insertion_point_before(op);
+                rewriter.debug_value(
+                    value,
+                    Variable::new("x".into(), "test.rs".into(), 2, None),
+                    SourceSpan::UNKNOWN,
+                )?;
+                self.authored.set(true);
+                Ok(true)
+            }
+        }
+        let context = Rc::new(Context::default());
+        let function = parse::parse::<Function>(
+            ParserConfig::new(context.clone()),
+            Uri::new("capture-phase.hir"),
+            r#"
+            builtin.function public extern("C") @capture_phase(%c: i1, %v: u32) -> (u32, u32) {
+                %first = scf.if %c then {
+                    di.debug_value %v <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+                    scf.yield %v : (u32);
+                } else { scf.yield %v : (u32); } : (i1) -> u32;
+                di.debug_value %v <{ variable = #di.variable<{ name = "marker", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+                %second = scf.if %c then {
+                    di.debug_value %v <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (u32);
+                    scf.yield %v : (u32);
+                } else { scf.yield %v : (u32); } : (i1) -> u32;
+                builtin.ret %first, %second : (u32, u32);
+            };
+        "#,
+        )?;
+        let author = Box::new(AuthorShadow {
+            info: PatternInfo::new(
+                context.clone(),
+                "author-shadow",
+                PatternKind::Any,
+                PatternBenefit::MAX,
+            ),
+            authored: Cell::new(false),
+        });
+        let patterns = RewritePatternSet::from_iter(
+            context.clone(),
+            [
+                author as Box<dyn RewritePattern>,
+                Box::new(FoldRedundantYields::new(context.clone())),
+            ],
+        );
+        // The intervening pattern introduces a surviving binding after the first clear.
+        // Fresh phase flow must kill it immediately before the second mandatory kill.
+        let rewrites = Rc::new(FrozenRewritePatternSet::new(patterns));
+        let mut passes = PassManager::on::<Function>(context, Nesting::Implicit);
+        passes.add_pass(Box::new(SingleCanonicalizerPass {
+            rewrites,
+            should_modify: true,
+            top_down: true,
+        }));
+        passes.run(function.as_operation_ref())?;
+        let records = midenc_hir::dialects::debuginfo::transform::collect_debug_ops(
+            &function.as_operation_ref(),
+        );
+        let kills = records
+            .into_iter()
+            .filter(|op| op.borrow().is::<DebugKill>())
+            .map(|op| debug_record_variable(&op.borrow()).unwrap().line)
+            .collect::<Vec<_>>();
+        assert_eq!(kills, [1, 2, 1], "the later fold must invalidate the newly authored shadow");
+        assert!(!format!("{}", function.borrow().as_operation()).contains("scf.if"));
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -911,7 +1035,7 @@ mod terminal_region_tests {
                         rewriter.set_insertion_point_before(op);
                         let changed = FoldRedundantYields::new(test.context_rc())
                             .match_and_rewrite(op, &mut *rewriter)?;
-                        assert_eq!(changed, terminal_count == 0 && shape != ResultShape::Zero);
+                        assert_eq!(changed, terminal_count == 0);
                         if !changed {
                             assert_eq!(before, alloc::format!("{}", function.borrow()));
                         }

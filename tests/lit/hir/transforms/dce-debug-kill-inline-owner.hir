@@ -1,0 +1,22 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(dce))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(canonicalizer))' | filecheck %s
+
+builtin.module public @dce_debug_kill_inline_owner {
+    // CHECK-LABEL: @own_chain(
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @own_chain(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 1, column = 1, call_file = "test.rs", call_line = 5, call_column = 1 }]> } : (u32);
+        builtin.ret %0 : (u32);
+    };
+
+    // CHECK-LABEL: @no_inherited_chain(
+    // CHECK-NEXT: di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10 }> }>;
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @no_inherited_chain(%0: u32, %1: u32) -> u32 {
+        %2 = arith.bxor %0, %1 attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "other", linkage = "", file = "test.rs", line = 10, column = 1, call_file = "test.rs", call_line = 15, call_column = 1 }]> };
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10 }>, expression = #di.expression<[]> }> : (u32);
+        builtin.ret %0 : (u32);
+    };
+};

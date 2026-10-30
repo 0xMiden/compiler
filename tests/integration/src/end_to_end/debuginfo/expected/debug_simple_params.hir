@@ -6,6 +6,7 @@ builtin.component private @test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274
             builtin.ret;
         } attributes { di.compile_unit = #di.compile_unit<{ language = "wasm", file = "unknown", producer = "midenc-frontend-wasm", optimized = false }>, di.subprogram = #di.subprogram<{ name = "__wasm_call_ctors", file = "unknown", line = 0, definition = true, local = false }> };
         builtin.function public extern("C") @_initialize() {
+            di.debug_kill <{ variable = #di.variable<{ name = "initialized", file = "wasisdk://v34.0/build/sysroot/wasi-libc-wasm32-wasip1-lto-build-prefix/src/wasi-libc-wasm32-wasip1-lto-build-build/wasisdk://v34.0/src/wasi-libc/libc-bottom-half/crt/crt1-reactor.c", line = 16 }> }>;
             %0 = builtin.global_symbol ::@test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537::@test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537::@__memory_base : ptr<u8, byte>;
             %1 = hir.bitcast %0 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %2 = hir.load %1;
@@ -25,6 +26,7 @@ builtin.component private @test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274
             %17 = arith.neq %15, %16;
             cf.cond_br %17 ^block9, ^block10 : (i1);
         ^block8:
+            di.debug_kill <{ variable = #di.variable<{ name = "initialized", file = "wasisdk://v34.0/build/sysroot/wasi-libc-wasm32-wasip1-lto-build-prefix/src/wasi-libc-wasm32-wasip1-lto-build-build/wasisdk://v34.0/src/wasi-libc/libc-bottom-half/crt/crt1-reactor.c", line = 16 }> }>;
             builtin.ret;
         ^block9:
             %18 = builtin.global_symbol ::@test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537::@test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537::@__memory_base : ptr<u8, byte>;

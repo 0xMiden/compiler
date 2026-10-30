@@ -8,6 +8,7 @@ mod tests;
 mod transforms;
 
 use alloc::rc::Rc;
+use core::ptr::NonNull;
 
 use smallvec::SmallVec;
 
@@ -48,8 +49,9 @@ pub type RegionCursorMut<'a> = EntityListCursorMut<'a, Region>;
 ///
 /// A region is only valid when it is attached to an [Operation], whereas the inverse is not true,
 /// i.e. an operation without a parent region is a top-level operation, e.g. `Module`.
-#[derive(Default)]
 pub struct Region {
+    /// The [Context] in which this region was allocated.
+    context: NonNull<Context>,
     /// The list of [Block]s that comprise this region
     body: BlockList,
 }
@@ -60,7 +62,38 @@ impl EntityWithParent for Region {
     type Parent = Operation;
 }
 
-impl EntityListItem for Region {}
+impl EntityListItem for Region {
+    fn on_inserted(this: RegionRef, _list: &mut RegionCursorMut<'_>) {
+        this.context_ref().debug_info_mutations.borrow_mut().inserted_region(this);
+    }
+
+    fn on_removed(this: RegionRef, _list: &mut RegionCursorMut<'_>) {
+        this.context_ref().debug_info_mutations.borrow_mut().removed_region(this);
+    }
+
+    fn on_transfer(this: RegionRef, _from: &mut RegionList, _to: &mut RegionList) {
+        let mut state = this.context_ref().debug_info_mutations.borrow_mut();
+        state.removed_region(this);
+        state.inserted_region(this);
+    }
+}
+
+impl RegionRef {
+    pub(crate) fn context_ref(&self) -> &Context {
+        // SAFETY: The context pointer is immutable after allocation, even while the region is
+        // mutably borrowed, and the context outlives the region.
+        unsafe { (*core::ptr::addr_of!((*RegionRef::as_ptr(self)).context)).as_ref() }
+    }
+}
+
+impl Region {
+    pub(super) fn new(context: &Context) -> Self {
+        Self {
+            context: NonNull::from(context),
+            body: BlockList::default(),
+        }
+    }
+}
 
 impl EntityParent<Block> for Region {
     fn offset() -> usize {

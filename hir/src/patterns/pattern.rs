@@ -234,7 +234,7 @@ pub trait RewritePattern: Pattern {
 mod tests {
     use alloc::{rc::Rc, string::ToString};
 
-    use pretty_assertions::{assert_eq, assert_str_eq};
+    use pretty_assertions::assert_str_eq;
 
     use super::*;
     use crate::{
@@ -359,7 +359,7 @@ mod tests {
             apply_patterns_and_fold_greedily(test.function().as_operation_ref(), rewrites, config);
 
         // The rewrite should converge and modify the IR
-        assert_eq!(result, Ok(true));
+        assert!(matches!(result, Ok(true)));
 
         // Confirm that the expected rewrite occurred
         let func = test.function().borrow();

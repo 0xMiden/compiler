@@ -1,0 +1,166 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(local2reg))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(local2reg))' | hir-opt --verify - | filecheck %s
+
+builtin.module public @local2reg_debug_lifetimes {
+    // CHECK: @after_kill(%[[FIRST:\d+]]: u32, %[[LAST:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[FIRST]] {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret %[[LAST]]
+    builtin.function public extern("C") @after_kill(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK: @declaration_point(%[[INPUT:\d+]]: u32)
+    // CHECK-NEXT: [[OTHER:%\d+]] = arith.bnot %[[INPUT]]
+    // CHECK-NEXT: di.debug_value %[[INPUT]] {{.*}}name = "x"
+    // CHECK-NEXT: {{%\d+}} = arith.bxor %[[INPUT]], [[OTHER]]
+    builtin.function public extern("C") @declaration_point(%0: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        %1 = arith.bnot %0;
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        %2 = hir.load_local <{ local = #builtin.local_variable<0, u32> }>;
+        %3 = arith.bxor %2, %1;
+        builtin.ret %3 : (u32);
+    };
+
+    // CHECK: @reused_slot(%[[EARLIER:\d+]]: u32, %[[LATER:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[EARLIER]] {{.*}}name = "earlier"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "earlier"
+    // CHECK-NEXT: di.debug_value %[[LATER]] {{.*}}name = "later"
+    // CHECK-NEXT: builtin.ret %[[LATER]]
+    builtin.function public extern("C") @reused_slot(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "earlier", file = "test.rs", line = 20 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        di.debug_kill <{ variable = #di.variable<{ name = "earlier", file = "test.rs", line = 20 }> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "later", file = "test.rs", line = 21 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK: @value_reassignment(%[[BEFORE:\d+]]: u32, %[[AFTER:\d+]]: u32, %[[CAPTURED:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[BEFORE]] {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_value %[[CAPTURED]] {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret %[[AFTER]]
+    builtin.function public extern("C") @value_reassignment(%0: u32, %1: u32, %2: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30 }>, expression = #di.expression<[]> }> : (u32);
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK-LABEL: @cross_block(
+    // CHECK-NEXT: cf.cond_br
+    // CHECK: di.debug_value {{.*}}name = "x"
+    builtin.function public extern("C") @cross_block(%0: u32, %1: i1) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        cf.cond_br %1 ^left, ^right : (i1);
+    ^left:
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 40 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        builtin.ret %0 : (u32);
+    ^right:
+        builtin.ret %0 : (u32);
+    };
+
+    // CHECK: @updates_while_active(%[[INITIAL:\d+]]: u32, %[[UPDATED:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[INITIAL]] {{.*}}name = "x"{{.*}}ty = u32
+    // CHECK-NEXT: di.debug_value %[[UPDATED]] {{.*}}name = "x"{{.*}}ty = u32
+    // CHECK-NEXT: builtin.ret %[[UPDATED]]
+    builtin.function public extern("C") @updates_while_active(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 50, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_stack_value]> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK: @uninitialized(%[[KNOWN:\d+]]: u32)
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_value %[[KNOWN]] {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret %[[KNOWN]]
+    builtin.function public extern("C") @uninitialized(%0: u32) -> u32 {
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 60 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %0 : (u32);
+    };
+
+    // CHECK-LABEL: @unrecoverable_inline_location(
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @unrecoverable_inline_location(%0: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 70 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 70, column = 1, call_file = "test.rs", call_line = 75, call_column = 1 }]> };
+        builtin.ret %0 : (u32);
+    };
+
+    // CHECK: @changes_storage(%[[ORIGINAL:\d+]]: u32, %[[NEW_STORAGE:\d+]]: u32, %[[UNRELATED:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[ORIGINAL]] {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_value %[[NEW_STORAGE]] {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret %[[UNRELATED]]
+    builtin.function public extern("C") @changes_storage(%0: u32, %1: u32, %2: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 80 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<1, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 80 }>, expression = #di.expression<[DI_OP_local_slot(1)]> }>;
+        hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %2 : (u32);
+    };
+
+    // CHECK: @value_uses_slot_contents(%[[STORED:\d+]]: u32, %[[UNRELATED:\d+]]: u32, %[[UPDATED:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[STORED]] {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_value %[[UPDATED]] {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret %[[UNRELATED]]
+    builtin.function public extern("C") @value_uses_slot_contents(%0: u32, %1: u32, %2: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_value %1 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 90 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }> : (u32);
+        hir.store_local %2 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 90 }> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK-LABEL: @value_cross_block(
+    // CHECK-NEXT: cf.cond_br
+    // CHECK: di.debug_value {{.*}}name = "x"
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @value_cross_block(%0: u32, %1: i1) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        cf.cond_br %1 ^left, ^right : (i1);
+    ^left:
+        di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 100 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }> : (u32);
+        builtin.ret %0 : (u32);
+    ^right:
+        builtin.ret %0 : (u32);
+    };
+
+    // CHECK: @inline_bindings(%[[FIRST:\d+]]: u32, %[[SECOND:\d+]]: u32)
+    // CHECK-NEXT: di.debug_value %[[FIRST]] {{.*}}name = "x"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"
+    // CHECK-NEXT: di.debug_value %[[SECOND]] {{.*}}name = "x"{{.*}}di.inline_call_chain{{.*}}name = "inner"
+    // CHECK-NEXT: builtin.ret %[[SECOND]]
+    builtin.function public extern("C") @inline_bindings(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 110 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }> attributes { di.inline_call_chain = #di.inline_call_chain<[{ name = "inner", linkage = "", file = "test.rs", line = 110, column = 1, call_file = "test.rs", call_line = 115, call_column = 1 }]> };
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 112 }> }>;
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+
+    // CHECK-LABEL: @shadow_bindings(
+    // CHECK: di.debug_value {{.*}}name = "x"{{.*}}line = 120
+    // CHECK-NEXT: di.debug_kill {{.*}}name = "x"{{.*}}line = 120
+    // CHECK-NEXT: di.debug_value {{.*}}name = "x"{{.*}}line = 121
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @shadow_bindings(%0: u32, %1: u32) -> u32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 120, ty = u32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+        di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 120, ty = u32 }> }>;
+        di.debug_value %1 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 121, ty = u32 }>, expression = #di.expression<[]> }> : (u32);
+        hir.store_local %1 <{ local = #builtin.local_variable<0, u32> }> : (u32);
+        builtin.ret %1 : (u32);
+    };
+};

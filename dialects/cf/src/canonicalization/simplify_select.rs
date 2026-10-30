@@ -82,7 +82,11 @@ impl RewritePattern for SimplifySelectOfBools {
             // arms are the same value.
             _ => return Ok(false),
         };
-        rewriter.replace_op_with_values(operation, &[Some(replacement)]);
+        rewriter.replace_op_with_values_and_debug(
+            operation,
+            &[Some(replacement)],
+            midenc_hir::dialects::debuginfo::DebugInfoUpdate::Equivalent,
+        );
         Ok(true)
     }
 }

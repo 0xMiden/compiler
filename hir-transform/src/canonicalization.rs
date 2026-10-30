@@ -231,9 +231,16 @@ impl Pass for Canonicalizer {
             log::debug!(target: Self::NAME, "  require_convergence = {}", self.require_convergence);
             ptr
         };
-        let converged =
-            patterns::apply_patterns_and_fold_greedily(op, rewrites.clone(), self.config.clone());
-        if self.require_convergence && converged.is_err() {
+        let (changed, converged) = match patterns::apply_patterns_and_fold_greedily(
+            op,
+            rewrites.clone(),
+            self.config.clone(),
+        ) {
+            Ok(changed) => (changed, true),
+            Err(patterns::GreedyRewriteError::NonConverged(changed)) => (changed, false),
+            Err(patterns::GreedyRewriteError::Failed(error)) => return Err(error),
+        };
+        if self.require_convergence && !converged {
             log::debug!(target: Self::NAME, "canonicalization could not converge");
             let span = op.borrow().span();
             return Err(state
@@ -255,20 +262,11 @@ impl Pass for Canonicalizer {
         }
 
         let op = op.borrow();
-        let changed = match converged {
-            Ok(changed) => {
-                log::debug!(target: Self::NAME, "canonicalization converged for '{}', changed={changed}", op.name());
-                changed
-            }
-            Err(changed) => {
-                log::warn!(
-                    target: Self::NAME,
-                    "canonicalization failed to converge for '{}', changed={changed}",
-                    op.name()
-                );
-                changed
-            }
-        };
+        if converged {
+            log::debug!(target: Self::NAME, "canonicalization converged for '{}', changed={changed}", op.name());
+        } else {
+            log::warn!(target: Self::NAME, "canonicalization failed to converge for '{}', changed={changed}", op.name());
+        }
         let ir_changed = changed.into();
         state.set_post_pass_status(ir_changed);
 
@@ -324,5 +322,104 @@ mod tests {
                 "expected '{options}' to be rejected"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod capture_failure_tests {
+    use midenc_hir::{
+        OperationRef, SourceSpan, Type, ValueRef,
+        dialects::{
+            builtin::BuiltinOpBuilder,
+            debuginfo::{
+                DIBuilder, DebugValue,
+                attributes::Variable,
+                transform::{collect_debug_ops, invalidate_debug_captures},
+            },
+        },
+        patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind, RewritePattern, Rewriter},
+        testing::Test,
+    };
+
+    use super::*;
+
+    struct CorruptCapture(PatternInfo);
+    impl Pattern for CorruptCapture {
+        fn info(&self) -> &PatternInfo {
+            &self.0
+        }
+    }
+    impl RewritePattern for CorruptCapture {
+        fn match_and_rewrite(
+            &self,
+            op: OperationRef,
+            rewriter: &mut dyn Rewriter,
+        ) -> Result<bool, Report> {
+            if !op.name().is::<DebugValue>() {
+                return Ok(false);
+            }
+            let next = op.next().unwrap();
+            invalidate_debug_captures(op, rewriter)?;
+            next.prev().unwrap().borrow_mut().erase();
+            Ok(true)
+        }
+    }
+    struct Run;
+    impl Pass for Run {
+        type Target = Operation;
+
+        fn name(&self) -> &'static str {
+            "failed-capture-canonicalizer"
+        }
+
+        fn can_schedule_on(&self, _: &OperationName) -> bool {
+            true
+        }
+
+        fn run_on_operation(
+            &mut self,
+            op: EntityMut<'_, Operation>,
+            state: &mut PassExecutionState,
+        ) -> Result<(), Report> {
+            let context = state.context();
+            let pattern = CorruptCapture(PatternInfo::new(
+                context.clone(),
+                "corrupt-capture",
+                PatternKind::Any,
+                PatternBenefit::MIN,
+            ));
+            let patterns = RewritePatternSet::from_iter(
+                context,
+                [Box::new(pattern) as Box<dyn RewritePattern>],
+            );
+            let mut pass = Canonicalizer {
+                rewrites: Some(Rc::new(FrozenRewritePatternSet::new(patterns))),
+                require_convergence: false,
+                ..Default::default()
+            };
+            Pass::run_on_operation(&mut pass, op, state)
+        }
+    }
+    #[test]
+    fn optional_convergence_never_swallows_capture_failure() -> Result<(), Report> {
+        let mut test = Test::new("hard_capture_failure", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = test.function_builder();
+            let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            BuiltinOpBuilder::builder_mut(&mut builder).debug_value(
+                value,
+                Variable::new("x".into(), "test.rs".into(), 1, None),
+                SourceSpan::UNKNOWN,
+            )?;
+            builder.ret([value], SourceSpan::UNKNOWN)?;
+        }
+        let error = test.apply_boxed_pass(Box::new(Run), false).unwrap_err();
+        assert_eq!(
+            alloc::format!("{error}").matches("pending capture anchor").count(),
+            1,
+            "{error}"
+        );
+        assert!(collect_debug_ops(&test.function().as_operation_ref()).is_empty());
+        Ok(())
     }
 }
