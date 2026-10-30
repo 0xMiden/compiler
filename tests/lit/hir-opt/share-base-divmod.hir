@@ -67,7 +67,7 @@ builtin.module private @share_base_divmod {
         builtin.ret %6, %10 : (u32, u32);
     };
 
-    // One past the limit, the shared addition keeps its check.
+    // One element past the limit, the shared addition keeps its check.
     // CHECK-LABEL: @unproven_past_the_limit(
     // CHECK: %[[S:\d+]] = arith.add %{{\d+}}, %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
     // CHECK-NEXT: arith.divmod %[[S]], %{{\d+}};
@@ -102,8 +102,9 @@ builtin.module private @share_base_divmod {
         builtin.ret %8 : (i32);
     };
 
-    // A wrapping addition may wrap around, an offset that is not a multiple of the divisor changes
-    // the remainder, and an addition with other uses would stay: none is split off the base.
+    // A wrapping addition may wrap around, an unchecked one promises no overflow but does not check
+    // it, an offset that is not a multiple of the divisor changes the remainder, and an addition with
+    // other uses would stay: none is split off the base.
     // CHECK: @not_offsets(%[[B:\d+]]: u32)
     // CHECK: %[[W:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<wrapping> }>;
     // CHECK-NEXT: arith.divmod %[[W]]
@@ -111,6 +112,8 @@ builtin.module private @share_base_divmod {
     // CHECK-NEXT: arith.divmod %[[M]]
     // CHECK: %[[U:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
     // CHECK-NEXT: arith.divmod %[[U]]
+    // CHECK: %[[N:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<unchecked> }>;
+    // CHECK-NEXT: arith.divmod %[[N]]
     builtin.function public extern("C") @not_offsets(%0: u32) -> (u32, u32, u32) {
         %1 = arith.constant 4 : u32;
         %2, %3 = arith.divmod %0, %1;
@@ -123,9 +126,13 @@ builtin.module private @share_base_divmod {
         %12 = arith.constant 12 : u32;
         %13 = arith.add %0, %12 <{ overflow = #builtin.overflow<checked> }>;
         %14, %15 = arith.divmod %13, %1;
+        %18 = arith.constant 16 : u32;
+        %19 = arith.add %0, %18 <{ overflow = #builtin.overflow<unchecked> }>;
+        %20, %21 = arith.divmod %19, %1;
         %16 = arith.add %7, %11 <{ overflow = #builtin.overflow<checked> }>;
         %17 = arith.add %16, %15 <{ overflow = #builtin.overflow<checked> }>;
-        builtin.ret %3, %17, %13 : (u32, u32, u32);
+        %22 = arith.add %17, %21 <{ overflow = #builtin.overflow<checked> }>;
+        builtin.ret %3, %22, %13 : (u32, u32, u32);
     };
 
     // Divisions in different blocks are not shared: an addition in one branch must not trap on a
@@ -237,7 +244,8 @@ builtin.module private @share_base_divmod {
         builtin.ret %18, %26 : (i32, i32);
     };
 
-    // A store to the local nested in a region between the loads also separates them.
+    // A region with a store to the local between the loads ends the group; the store epoch alone is
+    // pinned by `@store_in_region_after_load`.
     // CHECK-LABEL: @store_in_region(
     // CHECK: %[[L:\d+]] = hir.load_local
     // CHECK-NEXT: arith.add %[[L]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
@@ -415,7 +423,8 @@ builtin.module private @share_base_divmod {
         builtin.ret %5, %7 : (u32, u32);
     };
 
-    // At most two groups overlap: the third base, whose accesses overlap those of the first two,
+    // At most two groups are open at any operation: the third base, whose accesses overlap those of
+    // the first two,
     // keeps its own divisions.
     // CHECK: @open_groups_are_bounded(%[[A:\d+]]: u32, %[[B:\d+]]: u32, %[[C:\d+]]: u32)
     // CHECK: %[[SA:\d+]] = arith.add %[[A]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
@@ -630,6 +639,41 @@ builtin.module private @share_base_divmod {
         builtin.ret %3, %4 : (u32, u32);
     };
 
+    // The shared operations go before the group's earliest operation, here the addition of the
+    // second division, so that its overflow check does not move past the division of another base
+    // between them.
+    // CHECK: @shared_ops_at_the_earliest_operation(%[[X:\d+]]: u32, %[[Y:\d+]]: u32)
+    // CHECK: %[[S:\d+]] = arith.add %[[X]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: %{{\d+}}, %[[Q:\d+]] = arith.divmod %[[S]], %{{\d+}};
+    // CHECK-NEXT: arith.divmod %[[Y]], %{{\d+}};
+    // CHECK-NEXT: arith.sub %[[Q]]
+    builtin.function public extern("C") @shared_ops_at_the_earliest_operation(%0: u32, %1: u32) -> (u32, u32, u32) {
+        %2 = arith.constant 4 : u32;
+        %3 = arith.constant 8 : u32;
+        %4 = arith.add %0, %3 <{ overflow = #builtin.overflow<checked> }>;
+        %5, %6 = arith.divmod %1, %2;
+        %7, %8 = arith.divmod %0, %2;
+        %9, %10 = arith.divmod %4, %2;
+        builtin.ret %6, %8, %10 : (u32, u32, u32);
+    };
+
+    // A division with unused results joins no group: its checked addition, which the canonicalizer
+    // deletes otherwise, would become the shared one.
+    // CHECK: @dead_division(%[[B:\d+]]: u32)
+    // CHECK-NOT: arith.add
+    // CHECK: arith.divmod %[[B]], %{{\d+}};
+    // CHECK-NOT: arith.add
+    // CHECK: builtin.ret
+    builtin.function public extern("C") @dead_division(%0: u32) -> u32 {
+        %1 = arith.constant 4 : u32;
+        %2, %3 = arith.divmod %0, %1;
+        %4 = arith.constant 1000000 : u32;
+        %5 = arith.add %0, %4 <{ overflow = #builtin.overflow<checked> }>;
+        %6, %7 = arith.divmod %5, %1;
+        builtin.ret %3 : (u32);
+    };
+
+    // A callee for the call boundary cases.
     builtin.function private extern("C") @sink(%0: u32) -> u32 {
         builtin.ret %0 : (u32);
     };

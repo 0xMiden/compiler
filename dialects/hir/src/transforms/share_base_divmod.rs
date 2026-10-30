@@ -129,8 +129,8 @@ impl Group {
     }
 
     /// Returns false if there is nothing for the range analysis to prove (no offset), or it cannot
-    /// prove that the base plus the largest offset fits in 32 bits (the base is a bitcast or a load
-    /// from a local in the block, whose ranges only follow from their types).
+    /// prove that the base plus the largest offset fits in 32 bits (the analysis follows no range
+    /// through a bitcast or a load from a local).
     fn may_be_proven(&self) -> bool {
         matches!(self.key, BaseKey::Value(_)) && self.max_offset() != 0
     }
@@ -141,6 +141,9 @@ impl Group {
     }
 
     /// The first operation of the group in block order, and the candidate it belongs to.
+    ///
+    /// The shared operations go there, so that no overflow check runs later than the addition it
+    /// replaces, and no operation between them runs before the check.
     fn first_op(&self) -> (OperationRef, &Candidate) {
         // A candidate's addition precedes its division in the same block (see `match_candidate`),
         // and may precede the divisions of the earlier candidates too.
@@ -274,7 +277,7 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
         let mut group_index = FxHashMap::<(BaseKey, u32, u32), usize>::default();
         let mut epochs = FxHashMap::<LocalVariable, u32>::default();
         let mut load_epochs = FxHashMap::<OperationRef, (LocalVariable, u32)>::default();
-        // The segment (counted in boundaries) and position of every addition seen.
+        // The segment (counted in operations ending a group) and position of every addition seen.
         let mut add_positions = FxHashMap::<OperationRef, (u32, u32)>::default();
         // The number of operations ending a group so far: calls, foreign procedure invocations and
         // operations with regions.
@@ -400,9 +403,9 @@ fn base_key(
 
 /// Matches a `u32` `arith.divmod` by a non-zero constant, returning its divisor and the candidate.
 ///
-/// The dividend is split into a base and an offset when it is a checked addition of a non-zero
-/// constant that is a multiple of the divisor, defined in the same block and used only by the
-/// division.
+/// The division must have a used result. The dividend is split into a base and an offset when it
+/// is a checked addition of a non-zero constant that is a multiple of the divisor, defined in the
+/// same block and used only by the division.
 fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
     let operation = op.borrow();
     let divmod = operation.downcast_ref::<Divmod>()?;
@@ -412,6 +415,11 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
         return None;
     }
     let divisor = constant_u32(divmod.rhs().as_value_ref()).filter(|divisor| *divisor != 0)?;
+    // A dead division would bring its checked addition, which the canonicalizer deletes otherwise,
+    // into the shared one.
+    if !operation.is_used() {
+        return None;
+    }
 
     let offset_add = dividend.borrow().get_defining_op().and_then(|add_op| {
         let add = add_op.borrow();
@@ -421,9 +429,9 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
         }
         let add_ref = add.downcast_ref::<Add>()?;
         // Only a checked addition never wraps, so only then do the quotients of the sums with the
-        // offsets differ by the offsets in divisor units. The shared addition is placed before the
-        // group's first operation in this block, which must stay on the paths through the original
-        // addition.
+        // offsets differ by the offsets in divisor units. The shared addition is placed in this
+        // block, so the original addition must be in it too: on a path through an addition
+        // elsewhere that skips this block, its overflow check would be lost.
         if *add_ref.get_overflow() != Overflow::Checked || add.parent() != Some(block) {
             return None;
         }
@@ -500,11 +508,7 @@ fn rewrite_group(
     };
 
     for candidate in &group.candidates {
-        let (old_remainder, old_quotient, span) = {
-            let op = candidate.divmod.borrow();
-            let divmod = op.downcast_ref::<Divmod>().expect("candidates are divmods");
-            (divmod.remainder().as_value_ref(), divmod.quotient().as_value_ref(), op.span())
-        };
+        let span = candidate.divmod.borrow().span();
         let new_quotient = if candidate.offset == max_offset {
             quotient
         } else {
@@ -516,9 +520,8 @@ fn rewrite_group(
             let difference = rewriter.imm(Immediate::U32(difference), span);
             rewriter.sub_unchecked(quotient, difference, span)?
         };
-        rewriter.replace_all_uses_of_value_with(old_remainder, remainder);
-        rewriter.replace_all_uses_of_value_with(old_quotient, new_quotient);
-        rewriter.erase_op(candidate.divmod);
+        // The results of `arith.divmod` are the remainder, then the quotient.
+        rewriter.replace_op_with_values(candidate.divmod, &[Some(remainder), Some(new_quotient)]);
         if let Some(add) = candidate.add {
             rewriter.erase_op(add);
         }
