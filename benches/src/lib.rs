@@ -15,6 +15,7 @@ use miden_debug::{ExecutionConfig, Executor, flamegraph::FlamegraphProfile};
 use miden_mast_package::Package;
 use serde::{Deserialize, Serialize};
 
+mod batch_kernel;
 mod mockchain;
 
 pub const RESULTS_FILE: &str = "results.json";
@@ -144,6 +145,13 @@ impl BenchmarkRunner {
             Err(err) => return Err(err),
         };
         merge_transaction_benchmarks(&mut benchmarks, transactions)?;
+        match self.run_batch_kernel() {
+            Ok(rows) => benchmarks.extend(rows),
+            Err(err) if self.skip_failed_builds && err.is::<BuildFailure>() => {
+                eprintln!("Skipping {}: {err:#}", batch_kernel::NAME);
+            }
+            Err(err) => return Err(err),
+        }
         if !self.skip_failed_builds {
             ensure!(
                 benchmarks
@@ -215,7 +223,7 @@ impl BenchmarkRunner {
         );
 
         let optimized = self
-            .compile(&project_dir, "none")
+            .compile(&project_dir, "none", &[])
             .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
         let optimized_package = if self.write_artifacts {
             let saved_package = self.output_dir.join("packages").join(format!(
@@ -238,17 +246,20 @@ impl BenchmarkRunner {
 
         let (cycles, flamegraph) = if case.execute {
             let inputs = project_dir.join("inputs.toml");
-            let optimized_profile = self.profile(optimized_package, &inputs, &project_dir, None)?;
+            let config = ExecutionConfig::parse_file(&inputs)
+                .with_context(|| format!("failed to parse {}", inputs.display()))?;
+            let optimized_profile =
+                self.profile(optimized_package, config.clone(), &project_dir, None)?;
 
             let flamegraph = if self.write_artifacts {
                 let debuggable = self
-                    .compile(&project_dir, "full")
+                    .compile(&project_dir, "full", &[])
                     .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
                 let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
                 let flamegraph_path = self.output_dir.join(&relative_flamegraph);
                 self.profile(
                     load_package(&debuggable)?,
-                    &inputs,
+                    config,
                     &project_dir,
                     Some(&flamegraph_path),
                 )?;
@@ -271,6 +282,66 @@ impl BenchmarkRunner {
         })
     }
 
+    /// Measures the batch kernel fixture: one row per [`batch_kernel::scenarios`] entry, each
+    /// with the kernel's MAST size and the scenario's cycles.
+    fn run_batch_kernel(&self) -> Result<Vec<BenchmarkResult>> {
+        let project_dir = self.workspace_root.join(batch_kernel::PROJECT_DIR);
+        let build = |debug| {
+            self.compile(&project_dir, debug, batch_kernel::COMPILE_ARGS)
+                .map_err(|err| anyhow::Error::new(BuildFailure(err)))
+        };
+        let optimized = build("none")?;
+        if self.write_artifacts {
+            let saved_package = self.output_dir.join("packages").join(format!(
+                "{}.{}",
+                batch_kernel::NAME,
+                Package::EXTENSION
+            ));
+            fs::copy(&optimized, &saved_package).with_context(|| {
+                format!("failed to copy optimized package to {}", saved_package.display())
+            })?;
+        }
+        let optimized = load_package(&optimized)?;
+        let mast_size = serialized_mast_size(&optimized);
+
+        let scenarios = batch_kernel::scenarios();
+        let mut rows = Vec::with_capacity(scenarios.len());
+        for scenario in &scenarios {
+            let name = format!("{} ({})", batch_kernel::NAME, scenario.label);
+            if self.write_artifacts {
+                eprintln!("Benchmarking {name}");
+            }
+            let cycles = self
+                .profile(optimized.clone(), scenario.config.clone(), &project_dir, None)
+                .with_context(|| format!("{name} failed"))?
+                .total_cycles();
+            rows.push(BenchmarkResult {
+                name,
+                mast_size,
+                cycles: Some(cycles),
+                flamegraph: None,
+                replay: None,
+            });
+        }
+
+        // Built after the optimized runs: compiling replaces the dependency packages they load.
+        if self.write_artifacts {
+            let debuggable = load_package(&build("full")?)?;
+            for (row, scenario) in rows.iter_mut().zip(scenarios) {
+                let relative = format!("flamegraphs/{}-{}.svg", batch_kernel::NAME, scenario.slug);
+                self.profile(
+                    debuggable.clone(),
+                    scenario.config,
+                    &project_dir,
+                    Some(&self.output_dir.join(&relative)),
+                )
+                .with_context(|| format!("{} failed in the debuggable build", row.name))?;
+                row.flamegraph = Some(relative);
+            }
+        }
+        Ok(rows)
+    }
+
     /// Compiles an example, keeping its dependency packages readable for [`Self::profile`].
     ///
     /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
@@ -278,7 +349,9 @@ impl BenchmarkRunner {
     /// in place after it exits. Old compiler versions — one runner binary drives both
     /// during a benchmark comparison — ignore the inherited variable and persist their
     /// packages in the project cache instead, which the legacy scan picks up.
-    fn compile(&self, project_dir: &Path, debug: &str) -> Result<PathBuf> {
+    ///
+    /// `extra_args` are appended to the runner's standard build flags.
+    fn compile(&self, project_dir: &Path, debug: &str, extra_args: &[&str]) -> Result<PathBuf> {
         // The export directory is runner-owned and stable across invocations; recreate it so
         // this compile's output is the only content. Without the clear, an old compiler that
         // ignores the variable would leave the previous invocation's export in place, and
@@ -306,6 +379,7 @@ impl BenchmarkRunner {
             .arg("max")
             .arg("--color")
             .arg("never")
+            .args(extra_args)
             .env("CARGO_TARGET_DIR", self.build_dir.join("cargo-target"))
             .env("MIDENC_PACKAGE_CACHE", self.package_cache_dir(project_dir))
             .current_dir(project_dir);
@@ -329,14 +403,12 @@ impl BenchmarkRunner {
     fn profile(
         &self,
         package: Arc<Package>,
-        inputs_path: &Path,
+        config: ExecutionConfig,
         project_dir: &Path,
         flamegraph_path: Option<&Path>,
     ) -> Result<FlamegraphProfile> {
         ensure!(package.is_program(), "{} is not executable", package.name);
 
-        let config = ExecutionConfig::parse_file(inputs_path)
-            .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
         let mut executor = Executor::from_config(config);
         // Load exactly one package generation. The current compiler adopts the runner-owned
         // cache directory (see `Self::compile`), so when that directory holds packages it is

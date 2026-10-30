@@ -249,7 +249,7 @@ impl BenchmarkRunner {
 
         let project_dir = self.workspace_root.join("examples").join(name);
         let compiled = self
-            .compile(&project_dir, debug)
+            .compile(&project_dir, debug, &[])
             .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
         if persist {
             std::fs::copy(&compiled, &saved).with_context(|| {

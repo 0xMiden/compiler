@@ -10,6 +10,13 @@ unchanged, and no additional storage transaction fixture is needed. The optimize
 execution provides the cycle metric, while a debug build produces a replay snapshot and SVG
 flamegraph. Package metadata and instrumented debug builds are not measured.
 
+The suite also measures the Rust batch kernel fixture (`tests/fixtures/batch-kernel`), built with
+the same flags and executed with in-memory inputs mirroring its integration test
+(`tests/integration/src/end_to_end/batch_kernel.rs`). It reports one row per scenario, each with
+the kernel's MAST size: `batch-kernel (two transactions)` is the protocol's two-transaction batch
+with three output notes, and `batch-kernel (eight transactions, 64 notes)` is a batch of eight
+transactions with four input and four output notes each.
+
 The `dex-note` scenario consumes a funded note into a basic wallet with target-account storage and
 a limit price of `3/2`, encoded using the SDK's felt representation.
 
