@@ -112,9 +112,9 @@ package is now `miden:base@2.0.0` (the `core-types` interface is
 - a dependency package built with the previous SDK, whose embedded WIT `use`s
   `miden:base/core-types@1.0.0`, now fails to resolve: rebuild it;
 - in the interface derived from a Rust-built component package without embedded WIT that was
-  built with the previous SDK, the types named `miden:base/core-types@1.0.0/<item>` are local to
-  that interface rather than the SDK's core types (its `account-id` is not `miden::AccountId`):
-  rebuild the package;
+  built with the previous SDK, every procedure using a type named
+  `miden:base/core-types@1.0.0/<item>` is left out, with the reason in the interface's doc
+  comment: rebuild the package;
 - a note package built with the previous SDK whose storage schema uses a core type (`felt`,
   `word`, `account-id`, ...) is not readable by the new note schema tooling: rebuild it.
 
