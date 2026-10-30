@@ -470,3 +470,67 @@ fn element_accesses_through_a_constant_base() {
     });
     assert_eq!(result, SHARED_BASE_VALUES[2]);
 }
+
+/// Evaluates the entrypoint of `test` with `args`, returning its result and the cycles it took.
+fn eval_wat_cycles(test: &mut CompilerTest, args: &[u32]) -> (u32, usize) {
+    let package = test.compile_package();
+    let cycles = std::cell::Cell::new(0);
+    let result =
+        eval_package::<u32, _, _>(package, None, &felt_args(args), &test.session, |trace| {
+            cycles.set(trace.current_clock().as_usize());
+            Ok(())
+        })
+        .unwrap();
+    (result, cycles.get())
+}
+
+/// Verifies the cost of six bases, each accessed at offsets 0 and 4 with the accesses of different
+/// bases interleaved: shared quotients of all of them would crowd the operand stack.
+#[test]
+fn interleaved_bases_share_a_bounded_number_of_conversions() {
+    let mut test = compile_wat(
+        r#"(module
+  (memory 1)
+  (func (export "entrypoint") (param i32 i32 i32 i32 i32 i32) (result i32)
+    local.get 0 i32.load offset=0 align=4
+    local.get 1 i32.load offset=0 align=4 i32.add
+    local.get 2 i32.load offset=0 align=4 i32.add
+    local.get 3 i32.load offset=0 align=4 i32.add
+    local.get 0 i32.load offset=4 align=4 i32.add
+    local.get 1 i32.load offset=4 align=4 i32.add
+    local.get 2 i32.load offset=4 align=4 i32.add
+    local.get 3 i32.load offset=4 align=4 i32.add
+    local.get 4 i32.load offset=0 align=4 i32.add
+    local.get 5 i32.load offset=0 align=4 i32.add
+    local.get 4 i32.load offset=4 align=4 i32.add
+    local.get 5 i32.load offset=4 align=4 i32.add))"#,
+    );
+    let args = core::array::from_fn::<u32, 6, _>(|index| MEMORY_ADDR + 64 * index as u32);
+    let (result, cycles) = eval_wat_cycles(&mut test, &args);
+    assert_eq!(result, 0);
+    midenc_expect_test::expect!["451"].assert_eq(&cycles.to_string());
+}
+
+/// Verifies that two accesses through one base separated by calls whose results stay live do not
+/// share a conversion, whose quotient would have to be carried below the call results.
+#[test]
+fn calls_between_accesses_end_the_shared_conversion() {
+    let calls = "i32.const 1 call $f ".repeat(16);
+    let sums = "i32.add ".repeat(17);
+    let mut test = compile_wat(&format!(
+        r#"(module
+  (memory 1)
+  (func $f (param i32) (result i32) local.get 0 i32.const 1 i32.add)
+  (func (export "entrypoint") (param i32) (result i32)
+    local.get 0 i32.load offset=0 align=4
+    {calls}
+    local.get 0 i32.load offset=4 align=4
+    {sums}))"#
+    ));
+    let masm = test.masm_src();
+    let entry = masm_procedure(&masm, "entrypoint");
+    assert_eq!(entry.matches("u32divmod").count(), 2, "{entry}");
+    let (result, cycles) = eval_wat_cycles(&mut test, &[MEMORY_ADDR]);
+    assert_eq!(result, 32);
+    midenc_expect_test::expect!["695"].assert_eq(&cycles.to_string());
+}

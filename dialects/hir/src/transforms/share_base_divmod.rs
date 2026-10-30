@@ -4,8 +4,8 @@ use alloc::{rc::Rc, vec::Vec};
 
 use midenc_dialect_arith::{Add, ArithOpBuilder, Divmod};
 use midenc_hir::{
-    BlockRef, Builder, ConstantIntRange, EntityMut, Forward, FxHashMap, Immediate, Op,
-    OperationName, OperationRef, RawWalk, Report, Rewriter, Spanned, Symbol, TraceTarget, Type,
+    BlockRef, Builder, CallOpInterface, ConstantIntRange, EntityMut, Forward, FxHashMap, Immediate,
+    Op, OperationName, OperationRef, RawWalk, Report, Rewriter, Spanned, Symbol, TraceTarget, Type,
     ValueRef,
     dialects::builtin::{
         Function,
@@ -38,6 +38,10 @@ use crate::{Bitcast, LoadLocal, LocalAddress, StoreLocal};
 /// operation of the group and then the access still fails, but with the overflow instead of a
 /// failure between them, and without the host events emitted between them.
 ///
+/// A group ends at a call or an operation with regions, which are allocation boundaries the shared
+/// quotient would have to be carried across, and at most [MAX_OPEN_GROUPS] groups of a block may
+/// overlap, so that the shared quotients do not crowd the operand stack.
+///
 /// Bases are the same when they are the same SSA value, or when they are loaded from the same
 /// procedure local in the block, all directly or all through a `hir.bitcast`, with no store to that
 /// local between the loads, including stores nested in regions. A local is assumed to be written
@@ -55,6 +59,9 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Sha
     "share one divmod of a base value among divmods of that base plus constant offsets"
 ));
 
+/// The largest number of groups of a block whose shared quotients may be live at the same time.
+const MAX_OPEN_GROUPS: usize = 2;
+
 /// A `divmod` of `base + offset` by the divisor of its group.
 struct Candidate {
     /// The division.
@@ -67,9 +74,23 @@ struct Candidate {
     base_operand: (OperationRef, usize),
     /// The constant added to the base, a multiple of the divisor.
     offset: u32,
+    /// The positions in the block of the first operation (the addition, or the division) and of
+    /// the division.
+    span: (u32, u32),
 }
 
 impl Candidate {
+    /// The candidate dividing the whole dividend of the division `divmod` at `position`.
+    fn unsplit(divmod: OperationRef, position: u32) -> Self {
+        Self {
+            divmod,
+            add: None,
+            base_operand: (divmod, 0),
+            offset: 0,
+            span: (position, position),
+        }
+    }
+
     /// The base of this candidate.
     fn base(&self) -> ValueRef {
         let (op, index) = self.base_operand;
@@ -125,23 +146,19 @@ impl Group {
     fn first_op(&self) -> (OperationRef, &Candidate) {
         // A candidate's addition precedes its division in the same block (see `match_candidate`),
         // and may precede the divisions of the earlier candidates too.
-        self.candidates
+        let candidate = self
+            .candidates
             .iter()
-            .flat_map(|candidate| {
-                candidate
-                    .add
-                    .into_iter()
-                    .chain([candidate.divmod])
-                    .map(move |op| (op, candidate))
-            })
-            .reduce(|first, next| {
-                if next.0.borrow().is_before_in_block(&first.0) {
-                    next
-                } else {
-                    first
-                }
-            })
-            .expect("groups are never empty")
+            .min_by_key(|candidate| candidate.span.0)
+            .expect("groups are never empty");
+        (candidate.add.unwrap_or(candidate.divmod), candidate)
+    }
+
+    /// The positions in the block of the first and the last operation of the group.
+    fn span(&self) -> (u32, u32) {
+        let start = self.candidates.iter().map(|candidate| candidate.span.0).min();
+        let end = self.candidates.iter().map(|candidate| candidate.span.1).max();
+        (start.unwrap_or(0), end.unwrap_or(0))
     }
 
     /// Returns true if the range analysis proves that the base plus the largest offset fits in 32
@@ -198,7 +215,6 @@ impl Pass for ShareBaseDivmod {
         } else {
             collect_groups(function.as_operation_ref())
         };
-        let groups = groups.into_iter().filter(Group::is_profitable).collect::<Vec<_>>();
         if groups.is_empty() {
             state.preserved_analyses_mut().preserve_all();
             state.set_post_pass_status(PostPassStatus::Unchanged);
@@ -256,13 +272,26 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
 
     let mut groups = Vec::<Group>::new();
     for block in blocks {
-        let mut group_index = FxHashMap::<(BaseKey, u32), usize>::default();
+        let mut block_groups = Vec::<Group>::new();
+        let mut group_index = FxHashMap::<(BaseKey, u32, u32), usize>::default();
         let mut epochs = FxHashMap::<LocalVariable, u32>::default();
         let mut load_epochs = FxHashMap::<OperationRef, (LocalVariable, u32)>::default();
+        // The segment (counted in boundaries) and position of every checked addition seen.
+        let mut add_positions = FxHashMap::<OperationRef, (u32, u32)>::default();
+        // The number of calls and operations with regions so far, which no group spans.
+        let mut segment = 0u32;
+        let mut position = 0u32;
         let mut next_op = block.borrow().body().front().as_pointer();
         while let Some(op) = next_op.take() {
             next_op = op.next();
+            position += 1;
             let operation = op.borrow();
+            if operation.is::<Add>() {
+                add_positions.insert(op, (segment, position));
+            }
+            if operation.has_regions() || operation.implements::<dyn CallOpInterface>() {
+                segment += 1;
+            }
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
                 if !takes_local_address {
@@ -278,22 +307,49 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
             }
             drop(operation);
 
-            let Some((divisor, candidate)) = match_candidate(op) else {
+            let Some((divisor, mut candidate)) = match_candidate(op) else {
                 continue;
             };
+            candidate.span = (position, position);
+            if let Some(add) = candidate.add {
+                match add_positions.get(&add) {
+                    Some(&(add_segment, add_position)) if add_segment == segment => {
+                        candidate.span.0 = add_position;
+                    }
+                    // A boundary between the addition and the division: the addition stays.
+                    _ => candidate = Candidate::unsplit(op, position),
+                }
+            }
             let key = base_key(candidate.base(), &load_epochs);
-            let index = *group_index.entry((key, divisor)).or_insert_with(|| {
-                groups.push(Group {
+            let index = *group_index.entry((key, divisor, segment)).or_insert_with(|| {
+                block_groups.push(Group {
                     key,
                     divisor,
                     candidates: Vec::new(),
                 });
-                groups.len() - 1
+                block_groups.len() - 1
             });
-            groups[index].candidates.push(candidate);
+            block_groups[index].candidates.push(candidate);
         }
+        groups.extend(limit_open_groups(block_groups));
     }
     groups
+}
+
+/// Returns the profitable groups among `groups` of one block, dropping a group that would overlap
+/// [MAX_OPEN_GROUPS] groups already kept.
+fn limit_open_groups(mut groups: Vec<Group>) -> Vec<Group> {
+    groups.retain(Group::is_profitable);
+    groups.sort_by_key(|group| group.span().0);
+    let mut kept = Vec::<Group>::with_capacity(groups.len());
+    for group in groups {
+        let start = group.span().0;
+        let open = kept.iter().filter(|kept| kept.span().1 > start).count();
+        if open < MAX_OPEN_GROUPS {
+            kept.push(group);
+        }
+    }
+    kept
 }
 
 /// Returns the key of `base`: the local and epoch of the load in the block that produces it,
@@ -373,6 +429,7 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
             add,
             base_operand,
             offset,
+            span: (0, 0),
         },
     ))
 }

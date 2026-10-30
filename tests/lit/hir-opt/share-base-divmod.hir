@@ -365,4 +365,70 @@ builtin.module private @share_base_divmod {
         %11, %12 = arith.divmod %10, %4;
         builtin.ret %7, %12 : (u32, u32);
     };
+
+    // A call ends a group: the shared quotient would have to be carried below the call.
+    // CHECK: @call_ends_the_group(%[[B:\d+]]: u32)
+    // CHECK: arith.divmod %[[B]], %{{\d+}};
+    // CHECK-NEXT: hir.exec
+    // CHECK-NEXT: %[[S:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: arith.divmod %[[S]], %{{\d+}};
+    builtin.function public extern("C") @call_ends_the_group(%0: u32) -> (u32, u32, u32) {
+        %1 = arith.constant 4 : u32;
+        %2, %3 = arith.divmod %0, %1;
+        %4 = hir.exec @sink(%0) : extern("C") (u32) -> u32;
+        %5 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }>;
+        %6, %7 = arith.divmod %5, %1;
+        builtin.ret %3, %7, %4 : (u32, u32, u32);
+    };
+
+    // So does an operation with regions, and an addition before it is not split off from a
+    // division after it.
+    // CHECK: @region_ends_the_group(%{{\d+}}: i1, %[[B:\d+]]: u32)
+    // CHECK: %[[S:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: arith.divmod %[[B]], %{{\d+}};
+    // CHECK-NEXT: scf.if
+    // CHECK: arith.divmod %[[S]], %{{\d+}};
+    builtin.function public extern("C") @region_ends_the_group(%0: i1, %1: u32) -> (u32, u32) {
+        %2 = arith.constant 4 : u32;
+        %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<checked> }>;
+        %4, %5 = arith.divmod %1, %2;
+        scf.if %0 then {
+            scf.yield : ();
+        } else {
+            scf.yield : ();
+        } : (i1) -> ();
+        %6, %7 = arith.divmod %3, %2;
+        builtin.ret %5, %7 : (u32, u32);
+    };
+
+    // At most two groups overlap: the third base, whose accesses span those of the first two, keeps
+    // its own divisions.
+    // CHECK: @open_groups_are_bounded(%[[A:\d+]]: u32, %[[B:\d+]]: u32, %[[C:\d+]]: u32)
+    // CHECK: %[[SA:\d+]] = arith.add %[[A]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: %{{\d+}}, %[[QA:\d+]] = arith.divmod %[[SA]], %{{\d+}};
+    // CHECK-NEXT: arith.sub %[[QA]]
+    // CHECK-NEXT: %[[SB:\d+]] = arith.add %[[B]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: %{{\d+}}, %[[QB:\d+]] = arith.divmod %[[SB]], %{{\d+}};
+    // CHECK-NEXT: arith.sub %[[QB]]
+    // CHECK-NEXT: arith.divmod %[[C]], %{{\d+}};
+    // CHECK-NEXT: %[[SC:\d+]] = arith.add %[[C]], %{{\d+}} <{ overflow = #builtin.overflow<checked> }>;
+    // CHECK-NEXT: arith.divmod %[[SC]], %{{\d+}};
+    // CHECK-NEXT: builtin.ret
+    builtin.function public extern("C") @open_groups_are_bounded(%0: u32, %1: u32, %2: u32) -> (u32, u32, u32, u32, u32, u32) {
+        %3 = arith.constant 4 : u32;
+        %4, %5 = arith.divmod %0, %3;
+        %6, %7 = arith.divmod %1, %3;
+        %8, %9 = arith.divmod %2, %3;
+        %10 = arith.add %0, %3 <{ overflow = #builtin.overflow<checked> }>;
+        %11, %12 = arith.divmod %10, %3;
+        %13 = arith.add %1, %3 <{ overflow = #builtin.overflow<checked> }>;
+        %14, %15 = arith.divmod %13, %3;
+        %16 = arith.add %2, %3 <{ overflow = #builtin.overflow<checked> }>;
+        %17, %18 = arith.divmod %16, %3;
+        builtin.ret %5, %7, %9, %12, %15, %18 : (u32, u32, u32, u32, u32, u32);
+    };
+
+    builtin.function private extern("C") @sink(%0: u32) -> u32 {
+        builtin.ret %0 : (u32);
+    };
 };
