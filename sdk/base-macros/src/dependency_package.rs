@@ -282,7 +282,50 @@ pub(crate) fn collect_dependency_wit_sources(
         push_parsed_source(&mut collected, source)?;
     }
 
+    skip_clashing_synthesized_ids(&mut collected);
     Ok(collected)
+}
+
+/// Skips every synthesized WIT source of `collected` whose package id another of its sources
+/// also has: the two would clash in every macro of the crate (`generate::ensure_new_packages`),
+/// while only a macro referencing the dependency needs its WIT. The reason names the other
+/// dependency and the `wit` override that gives this one another id.
+fn skip_clashing_synthesized_ids(collected: &mut DependencyWitSources) {
+    let ids: Vec<Option<String>> =
+        collected.sources.iter().map(|source| wit_package_id(&source.wit)).collect();
+    let names: Vec<String> = collected.sources.iter().map(|source| source.name.clone()).collect();
+    let mut kept = Vec::with_capacity(collected.sources.len());
+    for (index, source) in collected.sources.drain(..).enumerate() {
+        // The first other source with the same id, if any
+        let clash = ids[index].as_deref().and_then(|id| {
+            ids.iter()
+                .enumerate()
+                .find(|(other, candidate)| *other != index && candidate.as_deref() == Some(id))
+                .map(|(other, _)| (id, other))
+        });
+        match clash {
+            Some((id, other)) if source.origin == WitOrigin::Synthesized => {
+                collected.skipped.push(SkippedDependency {
+                    reason: format!(
+                        "its synthesized WIT package id `{id}` is also the package id of \
+                         dependency `{}`; provide a WIT with another id via the override \
+                         package.metadata.miden.dependencies.{}.wit in miden-project.toml",
+                        names[other], source.name
+                    ),
+                    name: source.name,
+                });
+            }
+            _ => kept.push(source),
+        }
+    }
+    collected.sources = kept;
+}
+
+/// The id, without its version, of the package `wit` declares; `None` without a declaration.
+fn wit_package_id(wit: &str) -> Option<String> {
+    let decl = wit.lines().map(str::trim).find_map(|line| line.strip_prefix("package "))?;
+    let id = decl.trim_end_matches([';', '{', ' ']).trim();
+    Some(id.split('@').next().unwrap_or(id).to_owned())
 }
 
 /// Adds `source` to `collected` once its WIT parses.
@@ -1504,6 +1547,90 @@ mod tests {
             miden_project::Linkage::Dynamic,
         );
         miden_project::Package::new("consumer", target).with_dependencies([dependency])
+    }
+
+    /// A consumer in the `empty` namespace with path dependencies on `packages`, by name.
+    fn consumer_with_path_dependencies(packages: &[(&str, &Path)]) -> Box<miden_project::Package> {
+        use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
+
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
+            "default",
+            ast::Path::new("empty"),
+            miden_project::Uri::new("lib/src.rs"),
+        );
+        let dependencies = packages.iter().map(|(name, path)| {
+            miden_project::Dependency::new(
+                MidenSpan::unknown(Arc::<str>::from(*name)),
+                miden_project::DependencyVersionScheme::Path {
+                    path: MidenSpan::unknown(miden_project::Uri::new(path.to_string_lossy())),
+                    version: None,
+                },
+                miden_project::Linkage::Dynamic,
+            )
+        });
+        miden_project::Package::new("consumer", target).with_dependencies(dependencies)
+    }
+
+    /// Two account components whose synthesized WIT package ids coincide are both skipped, each
+    /// naming the other, instead of failing every macro of the crate.
+    #[test]
+    fn components_with_clashing_synthesized_ids_are_skipped() {
+        use midenc_package_interface::testing::{
+            assemble_account_component_fixture, write_package,
+        };
+
+        let temp_root = fixture_root("clashing-synthesized-ids");
+        let cache_dir = temp_root.join("package-cache");
+        // `miden-test-wallet` under `miden::` and `test-wallet` under `miden::` both synthesize
+        // the id `miden:test-wallet`.
+        let first = cache_dir.join("miden-test-wallet.masp");
+        write_package(
+            &first,
+            &assemble_account_component_fixture(
+                "miden-test-wallet",
+                "miden::test::wallet",
+                WALLET_COMPONENT,
+            ),
+        );
+        let second = cache_dir.join("test-wallet.masp");
+        write_package(
+            &second,
+            &assemble_account_component_fixture(
+                "test-wallet",
+                "miden::other::wallet",
+                WALLET_COMPONENT,
+            ),
+        );
+        let consumer = consumer_with_path_dependencies(&[("wallet", &first), ("other", &second)]);
+
+        let collected = with_test_package_cache_dir(None, || {
+            collect_dependency_wit_sources(&temp_root, &consumer)
+        })
+        .expect("clashing synthesized ids skip the dependencies, not the crate");
+
+        let sources: Vec<&str> = collected.sources.iter().map(|s| s.name.as_str()).collect();
+        assert!(sources.is_empty(), "{sources:?}");
+        let skipped: Vec<(&str, &str)> =
+            collected.skipped.iter().map(|s| (s.name.as_str(), s.reason.as_str())).collect();
+        assert_eq!(skipped.len(), 2, "{skipped:?}");
+        assert_eq!(skipped[0].0, "wallet");
+        assert!(
+            skipped[0]
+                .1
+                .contains("`miden:test-wallet` is also the package id of dependency `other`")
+                && skipped[0].1.contains("package.metadata.miden.dependencies.wallet.wit"),
+            "{}",
+            skipped[0].1
+        );
+        assert_eq!(skipped[1].0, "other");
+        assert!(
+            skipped[1].1.contains("is also the package id of dependency `wallet`"),
+            "{}",
+            skipped[1].1
+        );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
     }
 
     /// An account component with one typed role procedure.
