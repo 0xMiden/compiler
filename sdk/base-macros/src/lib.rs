@@ -70,6 +70,7 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
+mod debug;
 mod dependency_package;
 mod dependency_ref;
 mod export_type;
@@ -756,4 +757,36 @@ pub fn tx_script(
 #[proc_macro]
 pub fn generate(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     generate::expand(input)
+}
+
+/// Derives [`core::fmt::Debug`] for structs with named fields.
+///
+/// Use `#[miden_debug(raw_str)]` on `&str` and `String` fields to print their contents without
+/// quotes or escaping. This avoids call graph cycles from standard string debug formatting. Other
+/// fields use their existing `Debug` implementations.
+///
+/// Use this derive instead of standard `Debug` on the same struct. It supports named-field
+/// structs, including generic structs. Enums, unions, tuple structs, and unit structs are not yet
+/// supported. Strings inside containers such as `Option<String>` are not handled automatically.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// extern crate alloc;
+/// use alloc::string::String;
+///
+/// #[derive(miden::debug::MidenDebug)]
+/// struct Input {
+///     value: u32,
+///     #[miden_debug(raw_str)]
+///     label: String,
+/// }
+///
+/// let input = Input { value: 50, label: String::from("input") };
+/// assert!(input.value > 100, "invalid input: {:?}", input);
+/// ```
+#[proc_macro_derive(MidenDebug, attributes(miden_debug))]
+pub fn derive_debug(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = syn::parse_macro_input!(item as syn::DeriveInput);
+    debug::expand(input).unwrap_or_else(syn::Error::into_compile_error).into()
 }

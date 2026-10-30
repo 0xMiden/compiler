@@ -3,6 +3,21 @@ use core::{
     panic::PanicInfo,
 };
 
+#[doc(inline)]
+pub use miden_base_macros::MidenDebug;
+
+/// A borrowed string formatted without allocation, quotes, or escaping.
+///
+/// Its [`core::fmt::Debug`] implementation writes the string directly, bypassing standard
+/// string debug formatting and its string-slicing panic paths.
+pub struct RawString<'a>(pub &'a str);
+
+impl fmt::Debug for RawString<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
 /// Prints a message through Miden's trace-based `PrintLn` functionality.
 ///
 /// # Formatting
