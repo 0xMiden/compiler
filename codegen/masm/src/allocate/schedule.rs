@@ -28,7 +28,9 @@ use crate::{
 /// aliases and transfers describe separate operations, not fallback attempts.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum SchedulingTier {
-    /// Publish complete semantic aliases without moving their physical representations.
+    /// Publish complete semantic aliases without moving their physical representations, or a
+    /// literal publication, which moves nothing and whose outputs are available only through
+    /// reconstruction.
     Aliases,
     /// Establish an edge contract, using incremental repair or its constructive fallback.
     Transfer,
@@ -135,14 +137,15 @@ fn prepare_order(
     context: &AllocationContext<'_>,
 ) -> Result<Preparation, AllocationError> {
     let needs = normalize::requirements(unit, live_after, context)?;
-    if unit.publication == OutputPublication::Aliases {
+    if matches!(unit.publication, OutputPublication::Aliases | OutputPublication::Literal) {
         let mut base = Trial::new(state, context, SlotOwner::Unit(unit.id));
-        // Alias publication consumes nothing. Even forced fallback must not drain a buried
-        // source simply to introduce another semantic name for its existing representation.
+        // Alias and literal publication consume nothing. Even forced fallback must not drain a
+        // buried source simply to introduce another semantic name for its existing
+        // representation.
         if !valid(&base, unit, &needs)? {
             return Err(invariant(
                 DiagnosticCategory::UnavailableValue,
-                "alias publication source is not recoverable",
+                "semantic publication source is not recoverable",
             ));
         }
         normalize::bind_inputs(&mut base, unit, &needs.needed)?;

@@ -637,6 +637,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                 .checked_add(id.0)
                 .ok_or_else(|| super::invalid("lowering kind overflow"))?,
         );
+        // Immediates are consumed without a lane but are still semantic dependencies.
         let semantic_inputs = inputs
             .iter()
             .map(|a| a.value)
@@ -644,6 +645,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                 StoredValue::Atom(a) => Some(a.value),
                 _ => None,
             }))
+            .chain(proof.immediates.iter().map(|(a, _)| a.value))
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
@@ -666,12 +668,16 @@ impl<'a, 'e> Selector<'a, 'e> {
         Ok(id)
     }
 
+    /// Define a literal value. When `folded`, every consumer takes it as an instruction
+    /// immediate, so it is published as a literal reconstruction with no physical copy;
+    /// otherwise it is pushed.
     fn constant(
         &mut self,
         segment: SegmentId,
         source: SourceStepId,
         output: ValueId,
         immediate: Immediate,
+        folded: bool,
     ) -> Result<(), Report> {
         if self.program.values[&output].layout.ty() != &immediate.ty() {
             return Err(super::invalid("literal result type disagrees with immediate type"));
@@ -682,12 +688,30 @@ impl<'a, 'e> Selector<'a, 'e> {
         }
         self.program.values.get_mut(&output).unwrap().reconstruction =
             Some(Reconstruction::Literal(raw.clone()));
-        let body = raw
-            .iter()
-            .rev()
-            .map(|v| Primitive::Push(*v).instruction())
-            .collect::<Result<Vec<_>, _>>()?;
-        self.plain(segment, source, vec![], self.atoms(&[output]), body, LaneAliases::default())?;
+        let body = if folded {
+            vec![]
+        } else {
+            raw.iter()
+                .rev()
+                .map(|v| Primitive::Push(*v).instruction())
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let id = self.plain(
+            segment,
+            source,
+            vec![],
+            self.atoms(&[output]),
+            body,
+            LaneAliases::default(),
+        )?;
+        if folded {
+            let unit = self.program.segments[segment.0 as usize]
+                .units
+                .last_mut()
+                .expect("plain appended the literal unit");
+            debug_assert_eq!(unit.id, id);
+            unit.publication = OutputPublication::Literal;
+        }
         Ok(())
     }
 
@@ -835,7 +859,7 @@ impl<'a, 'e> Selector<'a, 'e> {
                         "immediate return disagrees with declared function signature",
                     )?;
                     let output = self.temporary(source, immediate.ty())?;
-                    self.constant(current, source, output, immediate)?;
+                    self.constant(current, source, output, immediate, false)?;
                     self.returned(current, source, &[output], &mut flow)?;
                     flow.current = None;
                 }
@@ -1007,12 +1031,20 @@ impl<'a, 'e> Selector<'a, 'e> {
                                 .iter()
                                 .flat_map(|i| self.atoms(&[inputs[*i]]))
                                 .collect::<Vec<_>>();
+                            let immediate_atoms = definition
+                                .immediates
+                                .iter()
+                                .map(|(i, _)| match self.atoms(&[inputs[*i]]).as_slice() {
+                                    [atom] => Ok(*atom),
+                                    _ => Err(super::invalid("immediate operand is not one lane")),
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
                             let output_atoms = self.atoms(&outputs);
                             if let Some(immediate) = definition.literal {
                                 self.program.values.get_mut(&outputs[0]).unwrap().reconstruction =
                                     Some(Reconstruction::Literal(literal(immediate)?));
                             }
-                            definition.bind(&input_atoms, &output_atoms);
+                            definition.bind(&input_atoms, &immediate_atoms, &output_atoms);
                             let proof = core::mem::take(&mut definition.proof);
                             let effects = definition.effects.clone();
                             self.add_unit(
@@ -1031,7 +1063,9 @@ impl<'a, 'e> Selector<'a, 'e> {
                             )?;
                         }
                         SelectionRule::Constant(value) if outputs.len() == 1 => {
-                            self.constant(current, source, outputs[0], value)?
+                            let folded =
+                                crate::lower::units::arithmetic::consumed_as_immediate(&op);
+                            self.constant(current, source, outputs[0], value, folded)?
                         }
                         SelectionRule::Alias
                         | SelectionRule::Split
@@ -1689,7 +1723,7 @@ impl<'a, 'e> Selector<'a, 'e> {
             let converted = self.temporary(source, param.ty.clone())?;
             let inputs = self.atoms(&[*argument]);
             let outputs = self.atoms(&[converted]);
-            conversion.bind(&inputs, &outputs);
+            conversion.bind(&inputs, &[], &outputs);
             let proof = core::mem::take(&mut conversion.proof);
             let effects = conversion.effects.clone();
             self.add_unit(

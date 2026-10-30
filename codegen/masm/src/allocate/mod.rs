@@ -480,7 +480,8 @@ fn context_entry_cleanup(arguments: u8) -> Result<Vec<PlanAction>, PlanError> {
 }
 
 /// Snapshot only lanes mentioned by source markers at this exact completed program point.
-/// Existing aliases and valid cells may describe a value, but observations never request storage.
+/// Existing aliases and valid cells may describe a value, and a literal lane with neither falls
+/// back to its value; observations never request storage.
 fn observe(
     program: &CheckedSelectedProgram,
     segment: SegmentId,
@@ -513,6 +514,12 @@ fn observe(
                         break;
                     }
                 }
+            }
+            // A literal with no resident copy is still describable by its value.
+            if found == Location::Unavailable
+                && let StoredValue::Literal(value) = context.source(state, *atom)?
+            {
+                found = Location::Literal(value);
             }
             locations.push(found);
         }

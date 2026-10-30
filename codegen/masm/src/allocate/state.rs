@@ -289,7 +289,7 @@ impl AllocationState {
                     self.push(*atom)?;
                 }
             }
-            OutputPublication::Aliases => {
+            OutputPublication::Aliases | OutputPublication::Literal => {
                 // Forget stale semantic facts above, but preserve occurrences and storage.
                 // Checked reconstructions now make these complete output names available.
                 self.available_values.extend(definitions);
@@ -409,6 +409,10 @@ pub(crate) struct AllocationContext<'a> {
     pub options: AllocationOptions,
     /// Reconstructible definitions that dominate an entry before its first unit executes.
     pub(super) entry_reconstructions: BTreeMap<SegmentId, BTreeSet<ValueId>>,
+    /// Values published without a physical copy, sealed by the selection checker; entry
+    /// layouts never name or request a lane for them, since every consumer takes them as an
+    /// instruction immediate.
+    pub(super) unpublished: &'a BTreeSet<ValueId>,
 }
 
 impl<'a> AllocationContext<'a> {
@@ -463,10 +467,12 @@ impl<'a> AllocationContext<'a> {
                 (segment.id, eligible)
             })
             .collect();
+        let unpublished = program.unpublished();
         Self {
             values: &program.values,
             next_use: &analysis.next_use,
             options: AllocationOptions::default(),
+            unpublished,
             input_symmetries: program
                 .segments
                 .iter()

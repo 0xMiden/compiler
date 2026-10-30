@@ -125,7 +125,9 @@ pub(crate) fn ready(
     for definition in &evidence.definitions {
         registry.register(definition).unwrap();
     }
-    let mut body = expand_procedure(&plan, &frame, &registry, &ExpansionEnv::default()).unwrap();
+    let mut expansion = ExpansionEnv::default();
+    expansion.resolve_debug(&plan, &frame);
+    let mut body = expand_procedure(&plan, &frame, &registry, &expansion).unwrap();
     crate::opt::peephole::simplify_annotated(&mut body);
     (plan, frame, body)
 }

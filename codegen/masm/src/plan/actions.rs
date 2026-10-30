@@ -185,6 +185,20 @@ impl fmt::Display for ProcedurePlan {
                     "    stack={:?} stored={:?} outputs={:?}",
                     unit.stack_inputs, unit.stored_inputs, unit.outputs
                 )?;
+                // Dependencies without a lane are invisible in the input lists above.
+                let lane_free = unit
+                    .semantic_inputs
+                    .iter()
+                    .filter(|value| {
+                        !unit.stack_inputs.iter().any(|atom| atom.value == **value)
+                            && !unit.stored_inputs.iter().any(|stored| {
+                                matches!(stored.value, StoredValue::Atom(atom) if atom.value == **value)
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                if unit.publication != OutputPublication::Stack || !lane_free.is_empty() {
+                    writeln!(f, "    publication={:?} semantic={:?}", unit.publication, lane_free)?;
+                }
             }
             if let Some(actions) = self.segment_actions.get(&segment.id) {
                 let control = self.decisions.controls.get(&segment.id);

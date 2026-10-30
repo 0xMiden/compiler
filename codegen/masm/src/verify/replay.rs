@@ -208,6 +208,98 @@ impl<'a> Verifier<'a> {
         Ok(())
     }
 
+    /// A unit whose evidence names immediates must carry exactly those literals, in order, as
+    /// the operands of its immediate-form instructions. Units without such evidence make no
+    /// claim about their immediates. A literal publication must expand to no instruction at
+    /// all: its value exists only as a reconstruction.
+    fn check_immediates(&self, body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
+        /// What the expanded body attributes to one unit, across its nested control bodies.
+        #[derive(Default)]
+        struct Found {
+            /// Operands of the immediate-form movement instructions, in body order.
+            immediates: Vec<u64>,
+            /// How many instructions the body attributes to the unit, immediate-form or not.
+            instructions: usize,
+        }
+        /// Collect per-unit instruction facts, descending into structured control bodies.
+        fn scan(body: &AnnotatedMasmBody, found: &mut BTreeMap<SelectedStepId, Found>) {
+            for op in body.ops() {
+                match op {
+                    AnnotatedOp::Instruction { instruction, unit } => {
+                        let found = found.entry(*unit).or_default();
+                        found.instructions += 1;
+                        if let Instruction::U32ShlImm(value)
+                        | Instruction::U32ShrImm(value)
+                        | Instruction::U32RotlImm(value)
+                        | Instruction::U32RotrImm(value) = instruction
+                            && let crate::masm::Immediate::Value(value) = value
+                        {
+                            found.immediates.push(u64::from(*value.inner()));
+                        }
+                    }
+                    AnnotatedOp::If {
+                        then_body,
+                        else_body,
+                        ..
+                    } => {
+                        scan(then_body, found);
+                        scan(else_body, found);
+                    }
+                    AnnotatedOp::While { body, .. } | AnnotatedOp::Repeat { body, .. } => {
+                        scan(body, found)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // Gather every claim first: the registered immediates per unit and the literal
+        // publications, which must expand to nothing. A body without claims needs no scan.
+        let mut claims = vec![];
+        for unit in self.plan.selected.segments.iter().flat_map(|segment| &segment.units) {
+            let expected = self
+                .plan
+                .selected
+                .evidence(unit.id)?
+                .immediates
+                .iter()
+                .map(|(_, literal)| literal.as_canonical_u64())
+                .collect::<Vec<_>>();
+            if unit.publication == OutputPublication::Literal || !expected.is_empty() {
+                claims.push((unit, expected));
+            }
+        }
+        if claims.is_empty() {
+            return Ok(());
+        }
+        let mut found = BTreeMap::new();
+        scan(body, &mut found);
+        for (unit, expected) in claims {
+            if unit.publication == OutputPublication::Literal
+                && found.get(&unit.id).is_some_and(|found| found.instructions > 0)
+            {
+                return Err(self.context(
+                    fail(
+                        DiagnosticCategory::InvalidSelectedLowering,
+                        "literal publication expands to instructions",
+                    ),
+                    Some(unit.id),
+                ));
+            }
+            if !expected.is_empty()
+                && found.get(&unit.id).map(|found| &found.immediates) != Some(&expected)
+            {
+                return Err(self.context(
+                    fail(
+                        DiagnosticCategory::InvalidSelectedLowering,
+                        "actual body immediates differ from registered evidence",
+                    ),
+                    Some(unit.id),
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// Validate plan/frame domains, source layout, entry-contract references, and lowering
     /// bindings before replay can use them as hypotheses. This does not yet prove the body.
     pub fn new(
@@ -309,6 +401,7 @@ impl<'a> Verifier<'a> {
     pub fn verify(mut self, body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
         control::check_projection(&self.plan.selected.structure, body)?;
         self.check_call_sites(body)?;
+        self.check_immediates(body)?;
         self.verify_graph(body)
     }
 
@@ -693,7 +786,7 @@ impl<'a> Verifier<'a> {
                 }
                 state.stack[..unit.outputs.len()].to_vec()
             }
-            OutputPublication::Aliases => {
+            OutputPublication::Aliases | OutputPublication::Literal => {
                 let incoming = &active.incoming;
                 if state.stack != incoming.stack
                     || state.cells != incoming.cells
@@ -705,16 +798,24 @@ impl<'a> Verifier<'a> {
                 {
                     return Err(fail(
                         DiagnosticCategory::UnavailableValue,
-                        "alias publication changed physical state",
+                        "semantic publication changed physical state",
                     ));
                 }
-                super::reconstruction::alias_outputs(
-                    &self.plan.selected,
-                    &unit.outputs,
-                    incoming,
-                    &self.tokens,
-                    self.frame,
-                )?
+                if unit.publication == OutputPublication::Literal {
+                    super::reconstruction::literal_outputs(
+                        &self.plan.selected,
+                        &unit.outputs,
+                        &mut self.tokens,
+                    )?
+                } else {
+                    super::reconstruction::alias_outputs(
+                        &self.plan.selected,
+                        &unit.outputs,
+                        incoming,
+                        &self.tokens,
+                        self.frame,
+                    )?
+                }
             }
         };
         for (offset, token) in &active.readonly {

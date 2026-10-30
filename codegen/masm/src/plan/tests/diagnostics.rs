@@ -264,3 +264,28 @@ fn generated_terminal_tail_is_reported_without_preparation_metrics() {
     assert!(rendered.contains("unplanned-unit s1 kind=0 source=1"), "{rendered}");
     assert_eq!(rendered.matches("tier=").count(), 1, "{rendered}");
 }
+
+/// The printed plan shows a literal publication and names a folded count as a lane-free
+/// dependency of its shift, since neither appears in any input list.
+#[test]
+fn printed_plan_shows_literal_publications_and_lane_free_inputs() {
+    let source = crate::select::tests::parse(
+        "builtin.function public extern(\"C\") @f(%a:u32) -> u32 { %c = arith.constant 3 : u32; \
+         %r = arith.shl %a, %c; builtin.ret %r : (u32); };",
+    );
+    let (plan, ..) = crate::select::tests::ready(&source, &crate::select::SelectEnv::default());
+    let units = &plan.selected.segments[0].units;
+    assert_eq!(units[0].publication, OutputPublication::Literal);
+    let count = units[0].outputs[0].value;
+    let rendered = format!("{plan}");
+    assert_eq!(
+        rendered
+            .lines()
+            .filter(|line| line.trim() == "publication=Literal semantic=[]")
+            .count(),
+        1,
+        "{rendered}"
+    );
+    let shift = format!("publication=Stack semantic={:?}", vec![&count]);
+    assert_eq!(rendered.lines().filter(|line| line.trim() == shift).count(), 1, "{rendered}");
+}

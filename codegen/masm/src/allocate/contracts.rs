@@ -88,6 +88,9 @@ fn equal(
 
 /// A representation is renamed only through checked old-source equality. Duplicate
 /// destination names get explicit aliases; they do not duplicate physical occurrences.
+/// Callers pass only namable atoms (see `choose`): a value published without a copy must not
+/// receive a lane's name, or an equal resident literal would let an inherited layout request
+/// a copy for it.
 fn rename(
     incoming: &Incoming<'_>,
     atom: Atom,
@@ -106,7 +109,7 @@ fn rename(
     Ok(atom)
 }
 
-/// Retain only equalities established on every forward edge.
+/// Retain only equalities established on every forward edge, among the namable atoms.
 /// Loop headers publish none: initial-entry equality alone does not prove cyclic equality.
 fn aliases(
     incoming: &[Incoming<'_>],
@@ -135,7 +138,7 @@ fn aliases(
     Ok(LaneAliases::new(pairs))
 }
 
-/// Keep one common backing cell per eligible lane, preferring its canonical ID.
+/// Keep one common backing cell per eligible namable lane, preferring its canonical ID.
 /// Every predecessor must establish the same source-substituted contents in that cell.
 fn common_slots(
     incoming: &[Incoming<'_>],
@@ -385,7 +388,8 @@ fn recoverable(
 /// Shared scratch and provenance facts must already hold; scalar repairs may materialize
 /// missing representations. Ordinary joins compare demand-ranked, common-resident, and
 /// inherited layouts unless predecessor agreement already provides a complete layout.
-/// Loop headers use a single layout ranked by cyclic demand before ordinary next use.
+/// Loop headers use a single layout ranked by cyclic demand before ordinary next use. A value
+/// published without a copy is never ranked or named, so no candidate requests a lane for it.
 ///
 /// Candidate scoring includes all forward repairs and the first unit's preparation,
 /// weighted by incoming edge count. Equal costs retain the earlier candidate. Failed
@@ -406,6 +410,14 @@ pub(super) fn choose(
     }
     let live: BTreeSet<_> = analysis.live_in[&segment].iter().collect();
     let live_atoms = atoms(program, &live);
+    // Every candidate builder names lanes, cells and aliases from this list only: a value
+    // published without a copy is live but must never be named, or an equal resident literal
+    // would let a layout request a copy for it. Recoverability still covers all live atoms.
+    let namable: Vec<_> = live_atoms
+        .iter()
+        .copied()
+        .filter(|atom| !context.unpublished.contains(&atom.value))
+        .collect();
     // Select eligible invariant names before old-source equality chooses a representative.
     // A changing parameter may equal a capture on entry without preserving that equality.
     let parameters = &program.segments.iter().find(|s| s.id == segment).unwrap().parameters;
@@ -414,7 +426,7 @@ pub(super) fn choose(
         .copied()
         .filter(|value| loop_demand.is_none() || !parameters.contains(value))
         .collect();
-    let cached_atoms: Vec<_> = live_atoms
+    let cached_atoms: Vec<_> = namable
         .iter()
         .copied()
         .filter(|atom| invariant_values.contains(&atom.value))
@@ -437,7 +449,7 @@ pub(super) fn choose(
         }
     }
 
-    let aliases = aliases(incoming, &live_atoms, context, loop_demand.is_some())?;
+    let aliases = aliases(incoming, &namable, context, loop_demand.is_some())?;
     let tail = incoming[0].state.tail;
     if incoming.iter().any(|entry| entry.state.tail != tail) {
         return Err(invariant(
@@ -460,7 +472,7 @@ pub(super) fn choose(
                 .state
                 .stack
                 .iter()
-                .map(|o| rename(entry, o.atom, &live_atoms, context))
+                .map(|o| rename(entry, o.atom, &namable, context))
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -479,7 +491,16 @@ pub(super) fn choose(
     }
     if candidates.is_empty() {
         let ordinary = &analysis.next_use.entry[&segment];
-        let mut ranked: Vec<_> = live.iter().copied().collect();
+        // A value published without a physical copy never gets a lane: its consumers take it
+        // as an immediate, so a lane would only make the edge push a copy the segment never
+        // reads. Residency cannot decide this, since another resident literal of the same
+        // value compares equal. Any other value, including a parameter bound from a literal
+        // and an ordinary pushed constant, keeps its place in the ranking.
+        let mut ranked: Vec<_> = live
+            .iter()
+            .copied()
+            .filter(|value| !context.unpublished.contains(value))
+            .collect();
         if let Some(demand) = loop_demand {
             let cyclic = &demand.next_use.entry[&segment];
             let first = &translated[0];
@@ -639,6 +660,22 @@ pub(super) fn choose(
             )
         })
     })?;
+    debug_assert!(
+        !contract
+            .stack_top_first
+            .iter()
+            .any(|atom| context.unpublished.contains(&atom.value))
+            && !contract
+                .required_spill_slots
+                .iter()
+                .any(|(_, atom)| context.unpublished.contains(&atom.value))
+            && !contract
+                .aliases
+                .pairs()
+                .iter()
+                .any(|(a, b)| [a, b].iter().any(|atom| context.unpublished.contains(&atom.value))),
+        "an entry contract named a value published without a copy"
+    );
     Ok(Choice {
         contract,
         repairs,

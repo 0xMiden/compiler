@@ -70,6 +70,9 @@ pub(crate) struct UnitEvidence {
     pub loops: BTreeMap<ControlId, LoopSchema>,
     /// Ordered source-authorized call sites, with order interpreted within each path.
     pub calls: Vec<CallSite>,
+    /// Semantic inputs the body carries as instruction immediates rather than stack lanes,
+    /// in body order, each with the literal its value must reconstruct to.
+    pub immediates: Vec<(Atom, Felt)>,
 }
 
 /// Source authority for generic event emission. This permits only the registered event form;
@@ -155,9 +158,17 @@ pub(crate) struct CheckedSelectedProgram {
     source_locals: SourceLocalLayout,
     program: SelectedProgram,
     units: BTreeMap<SelectedStepId, UnitEvidence>,
+    unpublished: BTreeSet<ValueId>,
 }
 
 impl CheckedSelectedProgram {
+    /// Values published without a physical copy. The checker has established that every
+    /// semantic use of one is a registered immediate, and that no stack or stored input, edge
+    /// binding, alias recipe or control predicate names it, so no layout may request a lane.
+    pub(crate) fn unpublished(&self) -> &BTreeSet<ValueId> {
+        &self.unpublished
+    }
+
     /// Sealed permission used to price input orders and independently check physical bindings.
     pub(crate) fn input_symmetry(
         &self,
@@ -263,19 +274,22 @@ pub(crate) fn check_selection(
         }
         return Err(failure);
     }
-    validate_graph(&program, &expected.units)?;
+    let unpublished = validate_graph(&program, &expected.units)?;
     Ok(CheckedSelectedProgram {
         observations,
         source_locals: expected.source_locals,
         program,
         units: expected.units,
+        unpublished,
     })
 }
 
+/// Check the selected graph's structure, definitions, evidence relations and control skeleton.
+/// Returns the values published without a physical copy, which the allocator must never name.
 fn validate_graph(
     program: &SelectedProgram,
     units: &BTreeMap<SelectedStepId, UnitEvidence>,
-) -> Result<(), VerificationError> {
+) -> Result<BTreeSet<ValueId>, VerificationError> {
     let mut objects = BTreeMap::<ScratchId, (ScratchRequirement, BTreeSet<SelectedStepId>)>::new();
     for unit in program.segments.iter().flat_map(|segment| &segment.units) {
         let mut seen = BTreeSet::new();
@@ -310,6 +324,23 @@ fn validate_graph(
         if *id != value.id {
             return Err(error("value ID disagrees with definition"));
         }
+    }
+    // A value published without a copy must not be taken by any unit as a stack or stored
+    // input, bound by any edge, sourced by an alias, or read as a control predicate: each
+    // would need a copy its unit never produces. Immediates and observations are lane-free.
+    let unpublished: BTreeSet<_> = program
+        .segments
+        .iter()
+        .flat_map(|segment| segment.units.iter())
+        .filter(|unit| unit.publication == OutputPublication::Literal)
+        .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
+        .collect();
+    // Every alias recipe, whichever unit publishes it, would rebuild its source on demand.
+    if program.values.values().any(|value| {
+        matches!(&value.reconstruction, Some(Reconstruction::Alias(sources))
+            if sources.iter().any(|source| unpublished.contains(&source.value)))
+    }) {
+        return Err(error("literal publication used as an alias source"));
     }
     for segment in &program.segments {
         if !segments.insert(segment.id) {
@@ -409,7 +440,7 @@ fn validate_graph(
                         return Err(error("invalid generated event source contract"));
                     }
                 }
-                if unit.publication == OutputPublication::Aliases {
+                if unit.publication != OutputPublication::Stack {
                     let evidence = &units[&unit.id];
                     if !unit.stack_inputs.is_empty()
                         || !unit.stored_inputs.is_empty()
@@ -421,11 +452,67 @@ fn validate_graph(
                         || !evidence.calls.is_empty()
                         || !evidence.loops.is_empty()
                         || !evidence.scratch_outputs.is_empty()
+                        || !evidence.immediates.is_empty()
                     {
                         return Err(error(
-                            "alias publication has a physical or effectful contract",
+                            "semantic publication has a physical or effectful contract",
                         ));
                     }
+                }
+                if unit.publication == OutputPublication::Literal {
+                    if !unit.semantic_inputs.is_empty() {
+                        return Err(error("literal publication has semantic inputs"));
+                    }
+                    if unit.outputs.is_empty() {
+                        return Err(error("literal publication defines no value"));
+                    }
+                    for output in &unit.outputs {
+                        if !matches!(
+                            program.values[&output.value].reconstruction,
+                            Some(Reconstruction::Literal(_))
+                        ) {
+                            return Err(error("literal publication lacks a literal value"));
+                        }
+                    }
+                }
+                if unit.stack_inputs.iter().any(|atom| unpublished.contains(&atom.value))
+                    || unit.stored_inputs.iter().any(|stored| {
+                        matches!(stored.value, StoredValue::Atom(atom) if unpublished.contains(&atom.value))
+                    })
+                {
+                    return Err(error("literal publication demanded as a physical input"));
+                }
+                // The only semantic use a literal publication admits is a registered immediate.
+                if unit.semantic_inputs.iter().any(|value| {
+                    unpublished.contains(value)
+                        && !units[&unit.id].immediates.iter().any(|(atom, _)| atom.value == *value)
+                }) {
+                    return Err(error("literal publication named without an immediate"));
+                }
+                // An immediate is a dependency the body carries without a lane: its value must
+                // be a literal the unit names semantically but never physically.
+                for (atom, literal) in &units[&unit.id].immediates {
+                    validate_atom(program, *atom)?;
+                    let lanes = match &program.values[&atom.value].reconstruction {
+                        Some(Reconstruction::Literal(lanes)) => lanes,
+                        _ => return Err(error("immediate input is not a literal value")),
+                    };
+                    if lanes.get(usize::from(atom.lane)) != Some(literal) {
+                        return Err(error("immediate input disagrees with its literal value"));
+                    }
+                    // The physical arms matter for a count that is published on the stack
+                    // for another user; an unpublished count is already rejected above.
+                    if !unit.semantic_inputs.contains(&atom.value)
+                        || unit.stack_inputs.contains(atom)
+                        || unit
+                            .stored_inputs
+                            .iter()
+                            .any(|stored| stored.value == StoredValue::Atom(*atom))
+                    {
+                        return Err(error("immediate input is not a lane-free semantic input"));
+                    }
+                }
+                if unit.publication == OutputPublication::Aliases {
                     for output in &unit.outputs {
                         let Some(Reconstruction::Alias(sources)) =
                             &program.values[&output.value].reconstruction
@@ -567,6 +654,9 @@ fn validate_graph(
             {
                 return Err(error("duplicate or undefined edge binding"));
             }
+            if unpublished.contains(&binding.source) {
+                return Err(error("literal publication bound across an edge"));
+            }
             if let Some(destination) = edge.destination {
                 let target =
                     program.segments.iter().find(|segment| segment.id == destination).unwrap();
@@ -590,21 +680,35 @@ fn validate_graph(
     }
     let mut used_segments = BTreeSet::new();
     let mut used_edges = BTreeSet::new();
-    walk_tree(&program.structure, &mut used_segments, &mut used_edges, &mut BTreeSet::new())?;
+    let mut predicates = vec![];
+    walk_tree(
+        &program.structure,
+        &mut used_segments,
+        &mut used_edges,
+        &mut BTreeSet::new(),
+        &mut predicates,
+    )?;
     if used_segments != segments || used_edges != edges {
         return Err(error("structured skeleton and graph disagree"));
+    }
+    // Control predicates are read from a lane as well; a literal publication cannot serve.
+    if predicates.iter().any(|predicate| unpublished.contains(&predicate.value)) {
+        return Err(error("literal publication used as a control predicate"));
     }
     validate_flow(program)?;
     super::reconstruction::validate(program)?;
     super::storage::validate(program)?;
-    Ok(())
+    Ok(unpublished)
 }
 
+/// Visit the structured skeleton once, collecting its segments, edges, control identities and
+/// control predicates while rejecting any that occurs twice.
 fn walk_tree(
     tree: &ControlTree,
     segments: &mut BTreeSet<SegmentId>,
     edges: &mut BTreeSet<EdgeId>,
     controls: &mut BTreeSet<ControlId>,
+    predicates: &mut Vec<Atom>,
 ) -> Result<(), VerificationError> {
     match tree {
         ControlTree::Segment(id) => {
@@ -619,11 +723,12 @@ fn walk_tree(
         }
         ControlTree::Sequence(children) => {
             for child in children {
-                walk_tree(child, segments, edges, controls)?;
+                walk_tree(child, segments, edges, controls, predicates)?;
             }
         }
         ControlTree::If {
             id,
+            predicate,
             on_true,
             then_body,
             on_false,
@@ -636,12 +741,14 @@ fn walk_tree(
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate branch edge"));
             }
-            walk_tree(then_body, segments, edges, controls)?;
-            walk_tree(else_body, segments, edges, controls)?;
+            predicates.push(*predicate);
+            walk_tree(then_body, segments, edges, controls, predicates)?;
+            walk_tree(else_body, segments, edges, controls, predicates)?;
         }
         ControlTree::Loop {
             id,
             condition,
+            predicate,
             header,
             before,
             body,
@@ -656,6 +763,7 @@ fn walk_tree(
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate loop condition edge"));
             }
+            predicates.push(*predicate);
             fn entry(tree: &ControlTree) -> Option<SegmentId> {
                 match tree {
                     ControlTree::Segment(id) => Some(*id),
@@ -666,8 +774,8 @@ fn walk_tree(
             if entry(before) != Some(*header) {
                 return Err(error("loop header disagrees with before-subtree entry"));
             }
-            walk_tree(before, segments, edges, controls)?;
-            walk_tree(body, segments, edges, controls)?;
+            walk_tree(before, segments, edges, controls, predicates)?;
+            walk_tree(body, segments, edges, controls, predicates)?;
             for edge in backedges {
                 if !edges.contains(edge) {
                     return Err(error("missing backedge in loop body"));

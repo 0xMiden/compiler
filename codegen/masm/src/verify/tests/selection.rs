@@ -1008,3 +1008,246 @@ fn semantic_alias_contract_rejects_physical_effects_and_incomplete_mappings() {
     candidate.segments[0].units[0].publication = OutputPublication::Aliases;
     assert!(check_selection(candidate, &SourceContext::Generated(&Identity)).is_err());
 }
+
+/// Ways a count consumed as an immediate can be misdeclared by its definition, its consumer or
+/// an edge, whether the count is published as a literal or on the stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImmediateDefect {
+    /// The sound declaration.
+    None,
+    /// The evidence names a value without a literal reconstruction as the immediate.
+    NotLiteral,
+    /// The evidence names a different literal than the value reconstructs to.
+    WrongLiteral,
+    /// The immediate is also demanded as a stack lane.
+    AlsoStackInput,
+    /// The immediate is also demanded as a stored input.
+    AlsoStoredInput,
+    /// The count is published on the stack, and its consumer takes it both as an immediate and
+    /// as a stack lane.
+    StackPublishedCountAlsoLane,
+    /// The count is published on the stack, and its consumer takes it both as an immediate and
+    /// as a stored input.
+    StackPublishedCountAlsoStored,
+    /// The literal publication defines a value without a literal reconstruction; the consumer
+    /// names no immediate.
+    LiteralWithoutLiteralValue,
+    /// A forward edge binds the literal into a parameter of the next segment.
+    BoundIntoParameter,
+    /// The immediate is not a semantic input of its consumer.
+    NotSemanticInput,
+    /// The literal publication claims a semantic input.
+    LiteralHasInputs,
+    /// The literal publication claims an effect.
+    LiteralHasEffects,
+    /// The return edge binds the literal instead of the consumer's output.
+    BoundAcrossEdge,
+}
+
+/// A literal count published without a physical copy, consumed as an immediate by the
+/// identity unit, with one optional defect in the source declaration.
+struct ImmediateCount(ImmediateDefect);
+
+impl GeneratedDefinition for ImmediateCount {
+    fn id(&self) -> GeneratedDefinitionId {
+        GeneratedDefinitionId(3)
+    }
+
+    fn instantiate(&self, parameters: &[Felt]) -> Result<DefinitionEvidence, VerificationError> {
+        use ImmediateDefect::*;
+        assert!(parameters.is_empty());
+        let mut evidence = Identity.instantiate(&[])?;
+        evidence.program.origin = ProcedureOrigin::Generated {
+            definition: self.id(),
+            parameters: vec![],
+        };
+        let count = Atom::new(ValueId(2), 0);
+        evidence.program.values.insert(
+            ValueId(2),
+            SelectedValue {
+                id: ValueId(2),
+                origin: ValueOrigin::Temporary {
+                    step: SourceStepId(0),
+                    index: 0,
+                },
+                layout: ValueLayout::new(Type::U32).unwrap(),
+                reconstruction: (self.0 != LiteralWithoutLiteralValue)
+                    .then(|| Reconstruction::Literal(vec![Felt::from(3u32)])),
+            },
+        );
+        let consumer = &mut evidence.program.segments[0].units[0];
+        consumer.id = SelectedStepId(1);
+        consumer.source = SourceStepId(1);
+        // A consumer registering the parameter as its immediate names only the parameter.
+        if !matches!(self.0, NotSemanticInput | NotLiteral) {
+            consumer.semantic_inputs.push(ValueId(2));
+        }
+        if matches!(self.0, AlsoStackInput | StackPublishedCountAlsoLane) {
+            consumer.stack_inputs.push(count);
+        }
+        if matches!(self.0, AlsoStoredInput | StackPublishedCountAlsoStored) {
+            consumer.stored_inputs.push(StoredInput {
+                id: StoredInputId(0),
+                value: StoredValue::Atom(count),
+            });
+        }
+        let mut literal = consumer.clone();
+        literal.id = SelectedStepId(0);
+        literal.source = SourceStepId(0);
+        literal.kind = LoweringKind(1);
+        literal.semantic_inputs = if self.0 == LiteralHasInputs {
+            vec![ValueId(0)]
+        } else {
+            vec![]
+        };
+        literal.stack_inputs = vec![];
+        literal.stored_inputs = vec![];
+        literal.outputs = vec![count];
+        literal.publication =
+            if matches!(self.0, StackPublishedCountAlsoLane | StackPublishedCountAlsoStored) {
+                OutputPublication::Stack
+            } else {
+                OutputPublication::Literal
+            };
+        literal.effects.may_trap = self.0 == LiteralHasEffects;
+        evidence.program.segments[0].units.insert(0, literal);
+        if self.0 == BoundAcrossEdge {
+            evidence.program.edges[0].bindings[0].source = ValueId(2);
+        }
+        if self.0 == BoundIntoParameter {
+            // The fixture is otherwise valid: data flow accepts it, so the edge rule is the only
+            // check that rejects the forward binding.
+            evidence.program.values.insert(
+                ValueId(3),
+                SelectedValue {
+                    id: ValueId(3),
+                    origin: ValueOrigin::Parameter {
+                        segment: SegmentId(1),
+                        index: 0,
+                    },
+                    layout: ValueLayout::new(Type::U32).unwrap(),
+                    reconstruction: Option::None,
+                },
+            );
+            evidence.program.segments.push(SelectedSegment {
+                content_parameters: vec![],
+                id: SegmentId(1),
+                parameters: vec![ValueId(3)],
+                units: vec![],
+            });
+            evidence.program.edges = vec![
+                TransferEdge {
+                    content_bindings: vec![],
+                    id: EdgeId(0),
+                    source: SegmentId(0),
+                    destination: Some(SegmentId(1)),
+                    kind: EdgeKind::Forward,
+                    bindings: vec![ParameterBinding {
+                        destination: ValueId(3),
+                        source: ValueId(2),
+                    }],
+                },
+                TransferEdge {
+                    content_bindings: vec![],
+                    id: EdgeId(1),
+                    source: SegmentId(1),
+                    destination: Option::None,
+                    kind: EdgeKind::Return,
+                    bindings: vec![ParameterBinding {
+                        destination: ValueId(1),
+                        source: ValueId(1),
+                    }],
+                },
+            ];
+            evidence.program.structure = ControlTree::Sequence(vec![
+                ControlTree::Segment(SegmentId(0)),
+                ControlTree::Edge(EdgeId(0)),
+                ControlTree::Segment(SegmentId(1)),
+                ControlTree::Edge(EdgeId(1)),
+            ]);
+        }
+        evidence.program.source_map = BTreeMap::from([
+            (
+                SourceStepId(0),
+                SourceRecord {
+                    origin: SourceOrigin::Generated {
+                        definition: self.id(),
+                        stage: 0,
+                    },
+                    location: SourceLocation::default(),
+                },
+            ),
+            (
+                SourceStepId(1),
+                SourceRecord {
+                    origin: SourceOrigin::Generated {
+                        definition: self.id(),
+                        stage: 1,
+                    },
+                    location: SourceLocation::default(),
+                },
+            ),
+        ]);
+        let registered: u32 = if self.0 == WrongLiteral { 4 } else { 3 };
+        // The parameter is a semantic input of the consumer but has no literal value.
+        let immediate = if self.0 == NotLiteral {
+            Atom::new(ValueId(0), 0)
+        } else {
+            count
+        };
+        evidence.units = BTreeMap::from([
+            (SelectedStepId(0), UnitEvidence::default()),
+            (
+                SelectedStepId(1),
+                UnitEvidence {
+                    aliases: LaneAliases::new(vec![(
+                        Atom::new(ValueId(1), 0),
+                        Atom::new(ValueId(0), 0),
+                    )]),
+                    immediates: if self.0 == LiteralWithoutLiteralValue {
+                        vec![]
+                    } else {
+                        vec![(immediate, Felt::from(registered))]
+                    },
+                    ..Default::default()
+                },
+            ),
+        ]);
+        Ok(evidence)
+    }
+}
+
+/// Each immediate defect is rejected by the selection check that names it.
+#[test]
+fn immediate_inputs_are_lane_free_literals_named_by_their_consumer() {
+    use ImmediateDefect::*;
+    let sound = ImmediateCount(None);
+    check_selection(sound.instantiate(&[]).unwrap().program, &SourceContext::Generated(&sound))
+        .unwrap();
+    for (defect, message) in [
+        (NotLiteral, "immediate input is not a literal value"),
+        (WrongLiteral, "immediate input disagrees with its literal value"),
+        (AlsoStackInput, "literal publication demanded as a physical input"),
+        (AlsoStoredInput, "literal publication demanded as a physical input"),
+        (StackPublishedCountAlsoLane, "immediate input is not a lane-free semantic input"),
+        (
+            StackPublishedCountAlsoStored,
+            "immediate input is not a lane-free semantic input",
+        ),
+        (LiteralWithoutLiteralValue, "literal publication lacks a literal value"),
+        (BoundIntoParameter, "literal publication bound across an edge"),
+        (NotSemanticInput, "immediate input is not a lane-free semantic input"),
+        (LiteralHasInputs, "literal publication has semantic inputs"),
+        (LiteralHasEffects, "semantic publication has a physical or effectful contract"),
+        (BoundAcrossEdge, "literal publication bound across an edge"),
+    ] {
+        let source = ImmediateCount(defect);
+        let error = check_selection(
+            source.instantiate(&[]).unwrap().program,
+            &SourceContext::Generated(&source),
+        )
+        .unwrap_err();
+        assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering, "{defect:?}");
+        assert_eq!(error.message, message, "{defect:?}");
+    }
+}

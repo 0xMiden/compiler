@@ -144,8 +144,10 @@ impl Observation {
     }
 }
 
-/// One currently valid physical lane; cells remain symbolic until frame assignment.
-/// Unavailable includes missing values and lanes buried beyond the VM's accessible window.
+/// One currently valid lane location: a physical location, or the literal the lane reconstructs
+/// to. Cells remain symbolic until frame assignment.
+/// Unavailable includes missing values and physical lanes buried beyond the VM's accessible
+/// window; a literal lane has no depth, so it is never unavailable for that reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Location {
     /// Zero-based raw depth, with lane zero nearest the top. Only depths0..15 are accessible.
@@ -153,6 +155,8 @@ pub(crate) enum Location {
     /// A currently valid symbolic cell, resolved after coloring to an FMP-relative displacement.
     /// All lanes must occupy increasing contiguous cells because the target describes one base.
     Cell(SpillSlotId),
+    /// A literal the lane reconstructs to when it has no accessible physical copy.
+    Literal(miden_core::Felt),
     /// No current accessible representation; this never requests a debug-only copy.
     Unavailable,
 }
@@ -165,8 +169,9 @@ pub(crate) struct AllocatedObservation {
     pub locations: Vec<Location>,
 }
 
-/// Describe only a contiguous ordered stack or frame representation supported by the target.
-/// Split values and out-of-range signed debug displacements are explicitly unavailable.
+/// Describe only a contiguous ordered stack or frame representation supported by the target,
+/// or a one-lane literal. Split values, multi-lane literals and out-of-range signed debug
+/// displacements are explicitly unavailable.
 pub(crate) fn resolve_lanes(
     locations: &[Location],
     frame: &FinalFrameLayout,
@@ -176,6 +181,7 @@ pub(crate) fn resolve_lanes(
         return D::Unavailable;
     };
     match first {
+        Location::Literal(value) if locations.len() == 1 => D::Const(*value),
         Location::Stack(start)
             if locations.iter().enumerate().all(|(i, loc)| {
                 usize::from(*start) + i < 16 && *loc == Location::Stack(*start + i as u8)
@@ -233,6 +239,7 @@ impl AllocatedObservation {
             let read = match operand {
                 D::Stack(position) => Some(E::ReadStack(position)),
                 D::Local(offset) => Some(E::ReadLocal(offset)),
+                D::Const(value) => Some(E::ConstU64(value.as_canonical_u64())),
                 _ => None,
             };
             super::lowering::resolve_debug_var_location_with_operand(

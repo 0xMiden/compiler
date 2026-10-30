@@ -178,7 +178,8 @@ impl Default for LoweringEffects {
 ///
 /// Most units produce a physical prefix. Representation-preserving operations can instead
 /// introduce names for existing values, avoiding moves solely to expose an otherwise unused
-/// result prefix. Selection, not the allocator, authorizes this distinction.
+/// result prefix, and a constant consumed only as instruction immediates needs no copy at all.
+/// Selection, not the allocator, authorizes these distinctions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputPublication {
     /// Outputs occupy the top-first physical prefix after the unit consumes its inputs.
@@ -187,6 +188,13 @@ pub(crate) enum OutputPublication {
     /// no physical inputs, storage bindings, scratch, address results, or effects; replay must
     /// establish every source's recoverability and preserve physical state unchanged.
     Aliases,
+    /// Outputs are literal reconstructions whose consumers all take them as instruction
+    /// immediates. The unit has no inputs, storage bindings, scratch, address results, effects,
+    /// or instructions (replay rejects a body). The checker rejects any stack or stored input,
+    /// edge binding, alias recipe or control predicate naming the value and any semantic use
+    /// that is not a registered immediate, and entry candidate construction never ranks, names,
+    /// aliases or backs it, so no copy is ever produced.
+    Literal,
 }
 
 /// One allocation boundary whose internal instruction sequence is owned by a lowering definition.
