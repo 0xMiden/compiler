@@ -466,13 +466,7 @@ impl<'a> AllocationContext<'a> {
                 (segment.id, eligible)
             })
             .collect();
-        let unpublished = program
-            .segments
-            .iter()
-            .flat_map(|segment| segment.units.iter())
-            .filter(|unit| unit.publication == OutputPublication::Literal)
-            .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
-            .collect();
+        let unpublished = program.unpublished().clone();
         Self {
             values: &program.values,
             next_use: &analysis.next_use,

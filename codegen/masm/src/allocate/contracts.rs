@@ -124,7 +124,13 @@ fn aliases(
     }
     let mut pairs = vec![];
     for (index, b) in live_atoms.iter().enumerate() {
+        if context.unpublished.contains(&b.value) {
+            continue;
+        }
         for a in &live_atoms[..index] {
+            if context.unpublished.contains(&a.value) {
+                continue;
+            }
             if incoming
                 .iter()
                 .map(|edge| equal(edge, *a, *b, context))
@@ -150,6 +156,9 @@ fn common_slots(
     let mut slots = BTreeMap::new();
     for slot in incoming[0].state.slots.keys() {
         for atom in live_atoms {
+            if context.unpublished.contains(&atom.value) {
+                continue;
+            }
             let mut common = true;
             for entry in incoming {
                 common &= if let Some(contents) = entry.state.slots.get(slot) {
@@ -654,6 +663,22 @@ pub(super) fn choose(
             )
         })
     })?;
+    debug_assert!(
+        !contract
+            .stack_top_first
+            .iter()
+            .any(|atom| context.unpublished.contains(&atom.value))
+            && !contract
+                .required_spill_slots
+                .iter()
+                .any(|(_, atom)| context.unpublished.contains(&atom.value))
+            && !contract
+                .aliases
+                .pairs()
+                .iter()
+                .any(|(a, b)| [a, b].iter().any(|atom| context.unpublished.contains(&atom.value))),
+        "an entry contract named a value published without a copy"
+    );
     Ok(Choice {
         contract,
         repairs,

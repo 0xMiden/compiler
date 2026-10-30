@@ -213,11 +213,15 @@ impl<'a> Verifier<'a> {
     /// claim about their immediates. A literal publication must expand to no instruction at
     /// all: its value exists only as a reconstruction.
     fn check_immediates(&self, body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
+        /// What the expanded body attributes to one unit, across its nested control bodies.
         #[derive(Default)]
         struct Found {
+            /// Operands of the immediate-form movement instructions, in body order.
             immediates: Vec<u64>,
+            /// Every instruction attributed to the unit, immediate-form or not.
             instructions: usize,
         }
+        /// Collect per-unit instruction facts, descending into structured control bodies.
         fn scan(body: &AnnotatedMasmBody, found: &mut BTreeMap<SelectedStepId, Found>) {
             for op in body.ops() {
                 match op {
@@ -249,12 +253,10 @@ impl<'a> Verifier<'a> {
             }
         }
         let units = self.plan.selected.segments.iter().flat_map(|segment| &segment.units);
-        let claims = units.clone().try_fold(false, |any, unit| {
-            Ok::<_, VerificationError>(
-                any || unit.publication == OutputPublication::Literal
-                    || !self.plan.selected.evidence(unit.id)?.immediates.is_empty(),
-            )
-        })?;
+        let mut claims = !self.plan.selected.unpublished().is_empty();
+        for unit in units.clone() {
+            claims |= !self.plan.selected.evidence(unit.id)?.immediates.is_empty();
+        }
         if !claims {
             return Ok(());
         }

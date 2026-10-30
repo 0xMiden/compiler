@@ -158,9 +158,16 @@ pub(crate) struct CheckedSelectedProgram {
     source_locals: SourceLocalLayout,
     program: SelectedProgram,
     units: BTreeMap<SelectedStepId, UnitEvidence>,
+    unpublished: BTreeSet<ValueId>,
 }
 
 impl CheckedSelectedProgram {
+    /// Values published without a physical copy: the checker has established that every
+    /// consumer takes them as an instruction immediate, so no layout may request a lane.
+    pub(crate) fn unpublished(&self) -> &BTreeSet<ValueId> {
+        &self.unpublished
+    }
+
     /// Sealed permission used to price input orders and independently check physical bindings.
     pub(crate) fn input_symmetry(
         &self,
@@ -266,19 +273,20 @@ pub(crate) fn check_selection(
         }
         return Err(failure);
     }
-    validate_graph(&program, &expected.units)?;
+    let unpublished = validate_graph(&program, &expected.units)?;
     Ok(CheckedSelectedProgram {
         observations,
         source_locals: expected.source_locals,
         program,
         units: expected.units,
+        unpublished,
     })
 }
 
 fn validate_graph(
     program: &SelectedProgram,
     units: &BTreeMap<SelectedStepId, UnitEvidence>,
-) -> Result<(), VerificationError> {
+) -> Result<BTreeSet<ValueId>, VerificationError> {
     let mut objects = BTreeMap::<ScratchId, (ScratchRequirement, BTreeSet<SelectedStepId>)>::new();
     for unit in program.segments.iter().flat_map(|segment| &segment.units) {
         let mut seen = BTreeSet::new();
@@ -314,8 +322,9 @@ fn validate_graph(
             return Err(error("value ID disagrees with definition"));
         }
     }
-    // A value published without a copy may only be consumed as an immediate: any lane demand
-    // or edge binding would need a copy its unit never produces.
+    // A value published without a copy must not be taken by any unit as a stack or stored
+    // input, bound by any edge, sourced by an alias, or read as a control predicate: each
+    // would need a copy its unit never produces. Immediates and observations are lane-free.
     let unpublished: BTreeSet<_> = program
         .segments
         .iter()
@@ -471,6 +480,8 @@ fn validate_graph(
                     if lanes.get(usize::from(atom.lane)) != Some(literal) {
                         return Err(error("immediate input disagrees with its literal value"));
                     }
+                    // The physical arms matter for a count that is published on the stack
+                    // for another user; an unpublished count is already rejected above.
                     if !unit.semantic_inputs.contains(&atom.value)
                         || unit.stack_inputs.contains(atom)
                         || unit
@@ -493,6 +504,9 @@ fn validate_graph(
                             .any(|source| !unit.semantic_inputs.contains(&source.value))
                         {
                             return Err(error("alias publication source is not a semantic input"));
+                        }
+                        if sources.iter().any(|source| unpublished.contains(&source.value)) {
+                            return Err(error("literal publication used as an alias source"));
                         }
                     }
                 }
@@ -656,7 +670,39 @@ fn validate_graph(
     validate_flow(program)?;
     super::reconstruction::validate(program)?;
     super::storage::validate(program)?;
-    Ok(())
+    // Control predicates are read from a lane as well; a literal publication cannot serve.
+    let mut controls = vec![&program.structure];
+    while let Some(tree) = controls.pop() {
+        let predicate = match tree {
+            ControlTree::If {
+                predicate,
+                then_body,
+                else_body,
+                ..
+            } => {
+                controls.extend([then_body.as_ref(), else_body.as_ref()]);
+                Some(predicate)
+            }
+            ControlTree::Loop {
+                predicate,
+                before,
+                body,
+                ..
+            } => {
+                controls.extend([before.as_ref(), body.as_ref()]);
+                Some(predicate)
+            }
+            ControlTree::Sequence(children) => {
+                controls.extend(children);
+                None
+            }
+            _ => None,
+        };
+        if predicate.is_some_and(|predicate| unpublished.contains(&predicate.value)) {
+            return Err(error("literal publication used as a control predicate"));
+        }
+    }
+    Ok(unpublished)
 }
 
 fn walk_tree(
