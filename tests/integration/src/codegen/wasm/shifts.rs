@@ -5,6 +5,7 @@
 //! operand on the stack; a constant shifted value is still an operand.
 
 use super::*;
+use crate::codegen::support::run_args;
 
 /// Compile an entrypoint with the given `params`, whose body is `body`, returning an `i32`.
 fn compile(params: &str, body: &str) -> (CompilerTest, Arc<Package>, String) {
@@ -17,7 +18,7 @@ fn compile(params: &str, body: &str) -> (CompilerTest, Arc<Package>, String) {
 /// Run `package` on the `i32` arguments `args`, the first on top of the operand stack.
 fn run(test: &CompilerTest, package: &Arc<Package>, args: &[u32]) -> u32 {
     let args: Vec<Felt> = args.iter().map(|&arg| Felt::from(arg)).collect();
-    eval_package::<u32, _, _>(package.clone(), None, &args, &test.session, |_| Ok(())).unwrap()
+    run_args(package, &test.context, &args)
 }
 
 /// Whether `masm` has a line consisting of exactly the instruction `instruction`.
@@ -49,6 +50,8 @@ fn shl_of_a_constant_by_a_variable_count() {
     local.get 0
     i32.shl",
     );
+    // The count is an operand on the stack, not an immediate.
+    assert!(has_instruction(&masm, "u32shl"), "{masm}");
     for count in [0u32, 1, 31, 33] {
         assert_eq!(
             run(&test, &package, &[count]),
@@ -58,8 +61,8 @@ fn shl_of_a_constant_by_a_variable_count() {
     }
 }
 
-/// A constant used both as a shift count and as an operand of another operation is right in
-/// both uses.
+/// A constant shift count next to an equal-valued constant operand of an add still folds into
+/// the shift. The frontend emits a separate `u32` count constant, so the two share nothing.
 #[test]
 fn constant_shared_by_a_shift_count_and_an_add() {
     let (test, package, masm) = compile(

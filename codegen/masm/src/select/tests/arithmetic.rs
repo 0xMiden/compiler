@@ -1290,6 +1290,9 @@ fn instruction_lines(procedure: &str, instruction: &str) -> usize {
     procedure.lines().filter(|line| line.trim() == instruction).count()
 }
 
+/// A constant count below the width folds into the immediate form of every movement that has
+/// one: the count is published as a literal, and its consumer takes only the moved value on the
+/// stack while keeping the count as a semantic input.
 #[test]
 fn constant_movement_counts_are_immediates() {
     for (op, ty, instruction, a, expected) in [
@@ -1297,6 +1300,9 @@ fn constant_movement_counts_are_immediates() {
         ("shl", "i32", "u32shl.3", 5, 40),
         ("shl", "u16", "u32shl.3", 0x2345, 0x1a28),
         ("shl", "u8", "u32shl.3", 200, 64),
+        // Narrow lanes are raw 8- and 16-bit values, so the result is masked to the width.
+        ("shl", "i8", "u32shl.3", 0xff, 0xf8),
+        ("shl", "i16", "u32shl.3", 0xffff, 0xfff8),
         ("shr", "u32", "u32shr.3", 40, 5),
         ("shr", "u16", "u32shr.3", 0x1234, 0x246),
         ("shr", "u8", "u32shr.3", 200, 25),
@@ -1319,34 +1325,7 @@ fn constant_movement_counts_are_immediates() {
     }
 }
 
-#[test]
-fn signed_and_wide_shifts_keep_the_count_on_the_stack() {
-    for (op, ty, a, expected) in [
-        ("shr", "i32", 40usize, 5usize),
-        ("shl", "u64", 5, 40),
-        ("rotl", "u64", 5, 40),
-        ("rotr", "i64", 40, 5),
-    ] {
-        let f = shift_by_constant(op, ty, 3);
-        let procedure = selected_procedure(&f, &SelectEnv::default());
-        assert!(procedure.contains("push.3"), "{op} {ty}: {procedure}");
-        assert!(
-            !["u32shr.", "u32shl.", "u32rotl.", "u32rotr."]
-                .iter()
-                .any(|i| procedure.contains(i)),
-            "{procedure}"
-        );
-        let wide = ty.ends_with("64");
-        let inputs = if wide { vec![a, 0] } else { vec![a] };
-        let outputs = if wide {
-            vec![expected, 0]
-        } else {
-            vec![expected]
-        };
-        execute_linked(&f, &inputs, &outputs);
-    }
-}
-
+/// A count of 32 or more has no immediate form, so it keeps its stack publication.
 #[test]
 fn shift_counts_at_or_above_the_width_are_not_immediates() {
     let f = shift_by_constant("shl", "u32", 32);
@@ -1357,6 +1336,7 @@ fn shift_counts_at_or_above_the_width_are_not_immediates() {
     assert_eq!(selected.segments[0].units[0].publication, OutputPublication::Stack);
 }
 
+/// A zero count is an immediate like any other count below the width.
 #[test]
 fn a_zero_shift_count_is_an_immediate() {
     let f = shift_by_constant("shr", "u32", 0);
@@ -1366,6 +1346,8 @@ fn a_zero_shift_count_is_an_immediate() {
     execute(&f, &SelectEnv::default(), &[7], &[7]);
 }
 
+/// A count that another operation takes on the stack keeps its stack publication and is pushed
+/// once, while the shift still uses the immediate form.
 #[test]
 fn a_count_shared_with_another_user_is_pushed_for_that_user_only() {
     let f = parse(
@@ -1381,6 +1363,7 @@ fn a_count_shared_with_another_user_is_pushed_for_that_user_only() {
     assert_eq!(selected.segments[0].units[0].publication, OutputPublication::Stack);
 }
 
+/// A constant shifted by itself keeps the stack form of the shift.
 #[test]
 fn a_constant_shifted_by_itself_keeps_the_stack_form() {
     // One value cannot be both the shifted lane and the immediate of the same instruction.
@@ -1394,6 +1377,7 @@ fn a_constant_shifted_by_itself_keeps_the_stack_form() {
     execute(&f, &SelectEnv::default(), &[], &[24]);
 }
 
+/// A count defined before an `scf.if` folds into a shift inside one of its arms.
 #[test]
 fn a_dominating_count_folds_into_a_nested_shift() {
     let f = parse(
@@ -1408,21 +1392,28 @@ fn a_dominating_count_folds_into_a_nested_shift() {
     execute(&f, &SelectEnv::default(), &[0, 5], &[5]);
 }
 
-#[test]
-fn a_folded_count_is_observable_as_a_constant() {
+/// Observe the result of the first operation of `f`, a constant, just before the second one.
+fn observe_first_constant(f: &Parsed) {
     use midenc_hir::{
         Builder, OpBuilder, SourceSpan,
         dialects::debuginfo::{DIBuilder, attributes::Variable},
         interner::Symbol,
     };
-    let f = shift_by_constant("shl", "u32", 3);
     let entry = f.borrow().entry_block();
     let ops = entry.borrow().body().iter().map(|op| op.as_operation_ref()).collect::<Vec<_>>();
-    let count = ops[0].borrow().results().all()[0].borrow().as_value_ref();
+    let constant = ops[0].borrow().results().all()[0].borrow().as_value_ref();
     let mut builder = OpBuilder::new(f.context.clone());
     builder.set_insertion_point_before(ops[1]);
     let variable = Variable::new(Symbol::intern("count"), Symbol::intern("test.rs"), 1, None);
-    builder.debug_value(count, variable, SourceSpan::UNKNOWN).unwrap();
+    builder.debug_value(constant, variable, SourceSpan::UNKNOWN).unwrap();
+}
+
+/// An observation of a folded count describes it by its constant value, down to the emitted
+/// debug decorator, without pushing it.
+#[test]
+fn a_folded_count_is_observable_as_a_constant() {
+    let f = shift_by_constant("shl", "u32", 3);
+    observe_first_constant(&f);
     let (plan, frame, body) = ready(&f, &SelectEnv::default());
     let record = plan.debug_locations.values().find(|r| !r.locations.is_empty()).unwrap();
     assert_eq!(
@@ -1473,6 +1464,7 @@ fn an_immediate_shift_body_must_carry_the_registered_count() {
         assert_eq!(rewritten, 1, "{op}");
         let error = verify::verify(&plan, &frame, body).unwrap_err();
         assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering, "{op}");
+        assert_eq!(error.message, "actual body immediates differ from registered evidence", "{op}");
     }
 }
 
@@ -1495,6 +1487,7 @@ fn an_immediate_shift_body_must_not_omit_the_registered_count() {
     assert_eq!(body.ops().len(), before - 1);
     let error = verify::verify(&plan, &frame, body).unwrap_err();
     assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+    assert_eq!(error.message, "actual body immediates differ from registered evidence");
 }
 
 /// A unit must carry exactly its registered immediates: a second copy of the immediate
@@ -1524,6 +1517,38 @@ fn an_immediate_shift_body_must_not_repeat_the_registered_count() {
     );
     let error = verify::verify(&plan, &frame, body).unwrap_err();
     assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+    assert_eq!(error.message, "actual body immediates differ from registered evidence");
+}
+
+/// The immediates check reaches nested bodies: a different count on a shift folded inside an
+/// `scf.if` arm is rejected.
+#[test]
+fn a_nested_immediate_shift_body_must_carry_the_registered_count() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%p: i1, %a: u32) -> u32 { %c = arith.constant 3 \
+         : u32; %x = scf.if %p then { %r = arith.shl %a, %c; scf.yield %r : (u32); } else { \
+         scf.yield %a : (u32); } : (i1) -> u32; builtin.ret %x : (u32); };",
+    );
+    let (plan, frame, mut body) = ready(&f, &SelectEnv::default());
+    let mut rewritten = 0;
+    for op in body.ops_mut() {
+        if let AnnotatedOp::If { then_body, .. } = op {
+            for op in then_body.ops_mut() {
+                if let AnnotatedOp::Instruction {
+                    instruction: crate::masm::Instruction::U32ShlImm(value),
+                    ..
+                } = op
+                {
+                    *value = 4u8.into();
+                    rewritten += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(rewritten, 1, "{body:?}");
+    let error = verify::verify(&plan, &frame, body).unwrap_err();
+    assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+    assert_eq!(error.message, "actual body immediates differ from registered evidence");
 }
 
 /// A literal-published constant has no body: even a stack-neutral instruction attributed to
@@ -1563,23 +1588,12 @@ fn a_literal_publication_must_expand_to_no_instruction() {
 /// than as a literal.
 #[test]
 fn a_resident_constant_is_observed_on_the_stack() {
-    use midenc_hir::{
-        Builder, OpBuilder, SourceSpan,
-        dialects::debuginfo::{DIBuilder, attributes::Variable},
-        interner::Symbol,
-    };
     let f = parse(
         "builtin.function public extern(\"C\") @f(%a:u32) -> u32 { %c = arith.constant 3 : u32; \
          %s = arith.add %a, %c <{ overflow = #builtin.overflow<wrapping> }>; builtin.ret %s : \
          (u32); };",
     );
-    let entry = f.borrow().entry_block();
-    let ops = entry.borrow().body().iter().map(|op| op.as_operation_ref()).collect::<Vec<_>>();
-    let count = ops[0].borrow().results().all()[0].borrow().as_value_ref();
-    let mut builder = OpBuilder::new(f.context.clone());
-    builder.set_insertion_point_before(ops[1]);
-    let variable = Variable::new(Symbol::intern("count"), Symbol::intern("test.rs"), 1, None);
-    builder.debug_value(count, variable, SourceSpan::UNKNOWN).unwrap();
+    observe_first_constant(&f);
     let (plan, ..) = ready(&f, &SelectEnv::default());
     let record = plan.debug_locations.values().find(|r| !r.locations.is_empty()).unwrap();
     assert_eq!(record.locations, vec![crate::lower::debug::Location::Stack(0)]);
@@ -1589,7 +1603,13 @@ fn a_resident_constant_is_observed_on_the_stack() {
 #[test]
 fn only_a_single_lane_literal_resolves_to_a_constant() {
     use crate::{lower::debug::Location, masm::DebugVarLocation};
-    let (_, frame, _) = ready(&shift_by_constant("shl", "u32", 3), &SelectEnv::default());
+    let frame = FinalFrameLayout::new(
+        SourceLocalLayout::default(),
+        alloc::collections::BTreeMap::new(),
+        alloc::collections::BTreeMap::new(),
+        0,
+    )
+    .unwrap();
     let three = miden_core::Felt::from(3u32);
     assert_eq!(
         crate::lower::debug::resolve_lanes(&[Location::Literal(three)], &frame),
@@ -1689,7 +1709,105 @@ fn a_literal_yielded_on_one_arm_and_folded_on_the_other() {
     execute(&f, &SelectEnv::default(), &[0, 5], &[3]);
 }
 
-/// A count folded inside a loop and added after it is pushed once, for the add only.
+/// A count folded after a three-way join is never pushed: no entry contract, inherited ones
+/// included, names it, even beside an equal operand constant of the default arm, which is the
+/// only `push.3`.
+#[test]
+fn a_three_way_join_never_pushes_a_folded_count() {
+    let f = parse(
+        "builtin.function public extern(\"C\") @f(%s: u32, %a: u32) -> u32 { %c = arith.constant \
+         3 : u32; %k = arith.constant 3 : u32; %r = scf.index_switch %s case 0 { %t0 = arith.mul \
+         %a, %a <{ overflow = #builtin.overflow<wrapping> }>; scf.yield %t0 : (u32); } case 1 { \
+         %t1 = arith.add %a, %a <{ overflow = #builtin.overflow<wrapping> }>; scf.yield %t1 : \
+         (u32); } default { %z = arith.add %a, %k <{ overflow = #builtin.overflow<wrapping> }>; \
+         scf.yield %z : (u32); } : u32; %y = arith.shl %r, %c; builtin.ret %y : (u32); };",
+    );
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert_eq!(instruction_lines(&procedure, "push.3"), 1, "{procedure}");
+    assert_eq!(instruction_lines(&procedure, "u32shl.3"), 1, "{procedure}");
+    let (plan, ..) = ready(&f, &SelectEnv::default());
+    let folded = plan
+        .selected
+        .segments
+        .iter()
+        .flat_map(|segment| &segment.units)
+        .find(|unit| unit.publication == OutputPublication::Literal)
+        .unwrap()
+        .outputs[0]
+        .value;
+    for contract in plan.contracts.values() {
+        assert!(!contract.stack_top_first.iter().any(|atom| atom.value == folded), "{plan}");
+        assert!(
+            !contract.required_spill_slots.iter().any(|(_, atom)| atom.value == folded),
+            "{plan}"
+        );
+    }
+    for (s, expected) in [(0, 200), (1, 80), (2, 64)] {
+        execute(&f, &SelectEnv::default(), &[s, 5], &[expected]);
+    }
+}
+
+/// A constant that is moved by a folded count keeps its stack publication: only the count is
+/// consumed as an immediate.
+#[test]
+fn a_moved_constant_keeps_its_stack_publication() {
+    let f = parse(MOVED_CONSTANT);
+    let selected = checked(&f, &SelectEnv::default());
+    let units = &selected.segments[0].units;
+    assert_eq!(units[0].publication, OutputPublication::Stack, "the moved constant");
+    assert_eq!(units[1].publication, OutputPublication::Literal, "the count");
+    let procedure = selected_procedure(&f, &SelectEnv::default());
+    assert_eq!(instruction_lines(&procedure, "u32shl.2"), 1, "{procedure}");
+    assert_eq!(instruction_lines(&procedure, "push.7"), 1, "{procedure}");
+    execute(&f, &SelectEnv::default(), &[], &[28]);
+}
+
+/// A constant moved by a constant count.
+const MOVED_CONSTANT: &str = "builtin.function public extern(\"C\") @f() -> u32 { %v = \
+                              arith.constant 7 : u32; %c = arith.constant 2 : u32; %r = arith.shl \
+                              %v, %c; builtin.ret %r : (u32); };";
+
+/// The selection check rejects a literal publication of a value another unit takes on the
+/// stack.
+#[test]
+fn a_literal_publication_demanded_on_the_stack_is_rejected() {
+    use crate::verify::{DefinitionEvidence, GeneratedDefinition, VerificationError};
+    /// Evidence selected from HIR and then altered, registered as a generated definition so
+    /// the checker validates the altered program instead of rejecting it as a disagreement
+    /// with its source.
+    struct Altered(DefinitionEvidence);
+    impl GeneratedDefinition for Altered {
+        fn id(&self) -> GeneratedDefinitionId {
+            GeneratedDefinitionId(1005)
+        }
+
+        fn instantiate(
+            &self,
+            _: &[miden_core::Felt],
+        ) -> Result<DefinitionEvidence, VerificationError> {
+            Ok(self.0.clone())
+        }
+    }
+    let f = parse(MOVED_CONSTANT);
+    let function = f.borrow();
+    let mut evidence = crate::select::evidence(&function, &SelectEnv::default()).unwrap().source;
+    evidence.program.origin = ProcedureOrigin::Generated {
+        definition: GeneratedDefinitionId(1005),
+        parameters: vec![],
+    };
+    let moved = &mut evidence.program.segments[0].units[0];
+    assert_eq!(moved.publication, OutputPublication::Stack);
+    moved.publication = OutputPublication::Literal;
+    let source = Altered(evidence);
+    let error =
+        check_selection(source.0.program.clone(), &SourceContext::Generated(&source)).unwrap_err();
+    assert_eq!(error.category, DiagnosticCategory::InvalidSelectedLowering);
+    assert_eq!(error.message, "literal publication demanded as a physical input");
+}
+
+/// A count folded inside a loop and added after it keeps its stack publication: it is pushed
+/// once before the loop and carried through it for the add, while the shift inside the loop
+/// still uses the immediate form.
 #[test]
 fn a_folded_count_used_on_the_stack_after_the_loop() {
     let f = parse(
@@ -1749,21 +1867,37 @@ fn a_loop_parameter_bound_from_a_literal_keeps_its_lane() {
     );
     let procedure = selected_procedure(&f, &SelectEnv::default());
     assert_eq!(instruction_lines(&procedure, "u32shl.3"), 1, "{procedure}");
-    assert!(instruction_lines(&procedure, "push.3") > 0, "{procedure}");
+    let (plan, ..) = ready(&f, &SelectEnv::default());
+    let constant = &plan.selected.segments[0].units[0];
+    assert_eq!(constant.publication, OutputPublication::Stack, "{plan}");
+    let (header, parameter) = plan
+        .selected
+        .edges
+        .iter()
+        .find_map(|edge| {
+            let binding = edge.bindings.iter().find(|b| b.source == constant.outputs[0].value)?;
+            Some((edge.destination?, binding.destination))
+        })
+        .unwrap();
+    assert_eq!(plan.decisions.entries[&header].origin, "loop-demand", "{plan}");
+    assert!(
+        plan.contracts[&header]
+            .stack_top_first
+            .iter()
+            .any(|atom| atom.value == parameter),
+        "{plan}"
+    );
     execute(&f, &SelectEnv::default(), &[2, 1], &[64, 5]);
     execute(&f, &SelectEnv::default(), &[0, 5], &[5, 3]);
 }
 
-/// Immediate forms at the largest count and on the narrow signed types compute the masked
-/// result without pushing the count.
+/// Immediate forms at the largest count compute the result without pushing the count.
 #[test]
 fn immediate_movements_at_the_count_and_width_boundaries() {
     for (op, ty, count, a, expected) in [
         ("shl", "u32", 31, 1usize, 0x8000_0000usize),
         ("shr", "u32", 31, 0xffff_ffff, 1),
         ("rotl", "u32", 31, 1, 0x8000_0000),
-        ("shl", "i8", 3, 0x19, 0xc8),
-        ("shl", "i16", 3, 0x1234, 0x91a0),
     ] {
         let f = shift_by_constant(op, ty, count);
         let procedure = selected_procedure(&f, &SelectEnv::default());
@@ -1784,7 +1918,8 @@ fn immediate_movements_at_the_count_and_width_boundaries() {
 fn stack_movements_distinguish_sign_and_rotation() {
     // Wide values are given low limb first, as `[low, high]`.
     for (op, ty, count, a, expected) in [
-        ("shr", "i32", 3, vec![0xffff_fff8usize], vec![0xffff_ffffusize]),
+        ("shr", "i32", 3, vec![40usize], vec![5usize]),
+        ("shr", "i32", 3, vec![0xffff_fff8], vec![0xffff_ffff]),
         ("shl", "u64", 4, vec![0xffff_ffff, 0], vec![0xffff_fff0, 0xf]),
         ("rotl", "u64", 1, vec![1, 0x8000_0000], vec![3, 0]),
         ("rotr", "i64", 1, vec![3, 0], vec![1, 0x8000_0000]),

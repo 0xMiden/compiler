@@ -1025,6 +1025,8 @@ enum ImmediateDefect {
     LiteralHasInputs,
     /// The literal publication claims an effect.
     LiteralHasEffects,
+    /// The return edge binds the literal instead of the consumer's output.
+    BoundAcrossEdge,
 }
 
 /// A literal count published without a physical copy, consumed as an immediate by the
@@ -1080,6 +1082,9 @@ impl GeneratedDefinition for ImmediateCount {
         literal.publication = OutputPublication::Literal;
         literal.effects.may_trap = self.0 == LiteralHasEffects;
         evidence.program.segments[0].units.insert(0, literal);
+        if self.0 == BoundAcrossEdge {
+            evidence.program.edges[0].bindings[0].source = ValueId(2);
+        }
         evidence.program.source_map = BTreeMap::from([
             (
                 SourceStepId(0),
@@ -1137,10 +1142,11 @@ fn immediate_inputs_are_lane_free_literals_named_by_their_consumer() {
     for (defect, message) in [
         (NotLiteral, "immediate input is not a literal value"),
         (WrongLiteral, "immediate input disagrees with its literal value"),
-        (AlsoStackInput, "immediate input is not a lane-free semantic input"),
+        (AlsoStackInput, "literal publication demanded as a physical input"),
         (NotSemanticInput, "immediate input is not a lane-free semantic input"),
         (LiteralHasInputs, "literal publication has semantic inputs"),
         (LiteralHasEffects, "semantic publication has a physical or effectful contract"),
+        (BoundAcrossEdge, "literal publication bound across an edge"),
     ] {
         let source = ImmediateCount(defect);
         let error = check_selection(
