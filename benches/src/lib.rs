@@ -1,4 +1,4 @@
-//! End-to-end benchmarks for compiler example projects.
+//! End-to-end benchmarks for compiler example projects and the batch kernel fixture.
 
 use std::{
     collections::BTreeMap,
@@ -15,6 +15,7 @@ use miden_debug::{ExecutionConfig, Executor, flamegraph::FlamegraphProfile};
 use miden_mast_package::Package;
 use serde::{Deserialize, Serialize};
 
+mod batch_kernel;
 mod mockchain;
 
 pub const RESULTS_FILE: &str = "results.json";
@@ -144,6 +145,13 @@ impl BenchmarkRunner {
             Err(err) => return Err(err),
         };
         merge_transaction_benchmarks(&mut benchmarks, transactions)?;
+        match self.run_batch_kernel() {
+            Ok(rows) => benchmarks.extend(rows),
+            Err(err) if self.skip_failed_builds && err.is::<BuildFailure>() => {
+                eprintln!("Skipping {}: {err:#}", batch_kernel::NAME);
+            }
+            Err(err) => return Err(err),
+        }
         if !self.skip_failed_builds {
             ensure!(
                 benchmarks
@@ -214,9 +222,7 @@ impl BenchmarkRunner {
             case.name
         );
 
-        let optimized = self
-            .compile(&project_dir, "none")
-            .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+        let optimized = self.compile(&project_dir, "release", "none", &[])?;
         let optimized_package = if self.write_artifacts {
             let saved_package = self.output_dir.join("packages").join(format!(
                 "{}.{}",
@@ -238,17 +244,18 @@ impl BenchmarkRunner {
 
         let (cycles, flamegraph) = if case.execute {
             let inputs = project_dir.join("inputs.toml");
-            let optimized_profile = self.profile(optimized_package, &inputs, &project_dir, None)?;
+            let config = ExecutionConfig::parse_file(&inputs)
+                .with_context(|| format!("failed to parse {}", inputs.display()))?;
+            let optimized_profile =
+                self.profile(optimized_package, config.clone(), &project_dir, None)?;
 
             let flamegraph = if self.write_artifacts {
-                let debuggable = self
-                    .compile(&project_dir, "full")
-                    .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+                let debuggable = self.compile(&project_dir, "release", "full", &[])?;
                 let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
                 let flamegraph_path = self.output_dir.join(&relative_flamegraph);
                 self.profile(
                     load_package(&debuggable)?,
-                    &inputs,
+                    config,
                     &project_dir,
                     Some(&flamegraph_path),
                 )?;
@@ -271,19 +278,113 @@ impl BenchmarkRunner {
         })
     }
 
-    /// Compiles an example, keeping its dependency packages readable for [`Self::profile`].
+    /// Measures the batch kernel fixture: one row per [`batch_kernel::scenarios`] entry, each
+    /// with the kernel's MAST size and the scenario's cycles.
+    fn run_batch_kernel(&self) -> Result<Vec<BenchmarkResult>> {
+        if self.write_artifacts {
+            eprintln!("Benchmarking {}", batch_kernel::NAME);
+        }
+        let project_dir = self.workspace_root.join(batch_kernel::PROJECT_DIR);
+        let optimized =
+            self.compile(&project_dir, "release", "none", batch_kernel::COMPILE_ARGS)?;
+        if self.write_artifacts {
+            let saved_package = self.output_dir.join("packages").join(format!(
+                "{}.{}",
+                batch_kernel::NAME,
+                Package::EXTENSION
+            ));
+            fs::copy(&optimized, &saved_package).with_context(|| {
+                format!(
+                    "failed to copy optimized package from {} to {}",
+                    optimized.display(),
+                    saved_package.display()
+                )
+            })?;
+        }
+        let optimized = load_package(&optimized)?;
+        let mast_size = serialized_mast_size(&optimized);
+
+        let scenarios = batch_kernel::scenarios();
+        let mut rows = Vec::with_capacity(scenarios.len());
+        for scenario in &scenarios {
+            let name = batch_kernel::row_name(scenario);
+            let cycles = self
+                .profile(optimized.clone(), scenario.config.clone(), &project_dir, None)
+                .with_context(|| format!("{name} failed"))?
+                .total_cycles();
+            rows.push(BenchmarkResult {
+                name,
+                mast_size,
+                cycles: Some(cycles),
+                flamegraph: None,
+                replay: None,
+            });
+        }
+
+        // Built after the optimized runs: compiling replaces the dependency packages they load.
+        if self.write_artifacts {
+            let debuggable = load_package(&self.compile(
+                &project_dir,
+                batch_kernel::DEBUG_PROFILE,
+                "full",
+                batch_kernel::COMPILE_ARGS,
+            )?)?;
+            // Without the package debug info the flamegraphs only hold unnamed frames.
+            ensure!(
+                debuggable.debug_info().map_err(|err| anyhow!(err.to_string()))?.is_some(),
+                "the {} flamegraph build carries no debug info",
+                batch_kernel::NAME
+            );
+            for (row, scenario) in rows.iter_mut().zip(scenarios) {
+                let relative =
+                    format!("flamegraphs/{}.svg", batch_kernel::artifact_stem(&scenario));
+                self.profile(
+                    debuggable.clone(),
+                    scenario.config,
+                    &project_dir,
+                    Some(&self.output_dir.join(&relative)),
+                )
+                .with_context(|| format!("{} failed in the debuggable build", row.name))?;
+                row.flamegraph = Some(relative);
+            }
+        }
+        Ok(rows)
+    }
+
+    /// Compiles a project with the named build profile and returns the compiled package path,
+    /// keeping its dependency packages readable for the [`Self::profile`] executions.
     ///
-    /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
-    /// current compiler adopts the directory as its package cache and leaves the packages
-    /// in place after it exits. Old compiler versions — one runner binary drives both
-    /// during a benchmark comparison — ignore the inherited variable and persist their
-    /// packages in the project cache instead, which the legacy scan picks up.
-    fn compile(&self, project_dir: &Path, debug: &str) -> Result<PathBuf> {
+    /// A failing compiler run is reported as [`BuildFailure`]; failing to prepare the package
+    /// cache is a harness error. `extra_args` are appended to the runner's standard build flags.
+    fn compile(
+        &self,
+        project_dir: &Path,
+        build_profile: &str,
+        debug: &str,
+        extra_args: &[&str],
+    ) -> Result<PathBuf> {
         // The export directory is runner-owned and stable across invocations; recreate it so
         // this compile's output is the only content. Without the clear, an old compiler that
         // ignores the variable would leave the previous invocation's export in place, and
         // its non-empty state would suppress the legacy-cache fallback in `profile`.
         recreate_dir(&self.package_cache_dir(project_dir))?;
+        self.run_compiler(project_dir, build_profile, debug, extra_args)
+            .map_err(|err| anyhow::Error::new(BuildFailure(err)))
+    }
+
+    /// Runs `cargo miden build` for a project and returns the compiled package path.
+    ///
+    /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
+    /// current compiler adopts the directory as its package cache and leaves the packages
+    /// in place after it exits. Old compiler versions ignore the inherited variable and
+    /// persist their packages in the project cache instead, which the legacy scan picks up.
+    fn run_compiler(
+        &self,
+        project_dir: &Path,
+        build_profile: &str,
+        debug: &str,
+        extra_args: &[&str],
+    ) -> Result<PathBuf> {
         let mut command = if let Some(cargo_miden) = self.cargo_miden.as_ref() {
             let mut command = Command::new(cargo_miden);
             command.arg("miden");
@@ -295,7 +396,8 @@ impl BenchmarkRunner {
         };
         command
             .arg("build")
-            .arg("--release")
+            .arg("--profile")
+            .arg(build_profile)
             .arg("--manifest-path")
             .arg(project_dir.join("Cargo.toml"))
             .arg("--target-dir")
@@ -306,6 +408,7 @@ impl BenchmarkRunner {
             .arg("max")
             .arg("--color")
             .arg("never")
+            .args(extra_args)
             .env("CARGO_TARGET_DIR", self.build_dir.join("cargo-target"))
             .env("MIDENC_PACKAGE_CACHE", self.package_cache_dir(project_dir))
             .current_dir(project_dir);
@@ -320,23 +423,24 @@ impl BenchmarkRunner {
         parse_compiled_package(&output, project_dir)
     }
 
-    /// The per-example package-cache directory this run hands to the compiler.
+    /// The per-project package-cache directory this run hands to the compiler.
     fn package_cache_dir(&self, project_dir: &Path) -> PathBuf {
         let case = project_dir.file_name().unwrap_or_default();
         self.build_dir.join("package-cache").join(case)
     }
 
+    /// Executes `package` with the given inputs and returns its cycle profile, writing an SVG
+    /// flamegraph to `flamegraph_path` if given. The dependency packages are loaded from the
+    /// latest [`Self::compile`] of `project_dir`.
     fn profile(
         &self,
         package: Arc<Package>,
-        inputs_path: &Path,
+        config: ExecutionConfig,
         project_dir: &Path,
         flamegraph_path: Option<&Path>,
     ) -> Result<FlamegraphProfile> {
         ensure!(package.is_program(), "{} is not executable", package.name);
 
-        let config = ExecutionConfig::parse_file(inputs_path)
-            .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
         let mut executor = Executor::from_config(config);
         // Load exactly one package generation. The current compiler adopts the runner-owned
         // cache directory (see `Self::compile`), so when that directory holds packages it is
@@ -636,6 +740,68 @@ mod tests {
         package.description = Some("metadata".repeat(1_000));
 
         assert_eq!(serialized_mast_size(&package), expected);
+    }
+
+    #[test]
+    fn batch_kernel_names_do_not_collide() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let examples = discover_cases(workspace)
+            .unwrap()
+            .into_iter()
+            .map(|case| case.name)
+            .collect::<BTreeSet<_>>();
+        let scenarios = batch_kernel::scenarios();
+        let stems = scenarios.iter().map(batch_kernel::artifact_stem).collect::<Vec<_>>();
+        let rows = scenarios.iter().map(batch_kernel::row_name).collect::<Vec<_>>();
+        let cache_key = Path::new(batch_kernel::PROJECT_DIR).file_name().unwrap().to_str().unwrap();
+
+        // Examples share the saved-package (`NAME`), package-cache (project directory name),
+        // flamegraph (artifact stems), and report-row namespaces with the kernel.
+        for name in [batch_kernel::NAME, cache_key]
+            .into_iter()
+            .chain(stems.iter().map(String::as_str))
+            .chain(rows.iter().map(String::as_str))
+        {
+            assert!(!examples.contains(name), "{name} collides with an example");
+        }
+        assert_eq!(stems.iter().collect::<BTreeSet<_>>().len(), stems.len(), "duplicate stem");
+        assert_eq!(rows.iter().collect::<BTreeSet<_>>().len(), rows.len(), "duplicate row");
+    }
+
+    #[test]
+    #[ignore = "requires a built cargo-miden binary supplied via CARGO_MIDEN and MIDEN_SYSROOT"]
+    fn batch_kernel_records_cycles_size_and_named_flamegraphs() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let cargo_miden = std::env::var_os("CARGO_MIDEN").expect("set CARGO_MIDEN");
+        let runner = BenchmarkRunner::new(
+            workspace,
+            output.path().join("results"),
+            output.path().join("build"),
+            Some(cargo_miden.into()),
+            false,
+        )
+        .unwrap();
+        runner.prepare_output_dirs().unwrap();
+
+        let rows = runner.run_batch_kernel().unwrap();
+
+        let names = rows.iter().map(|row| row.name.as_str()).collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            ["batch-kernel (two transactions)", "batch-kernel (eight transactions, 64 notes)"]
+        );
+        assert!(rows[0].mast_size > 0);
+        // The measured build is the release one; only the flamegraph build carries debug info.
+        let measured = load_package(&runner.output_dir.join("packages/batch-kernel.masp")).unwrap();
+        assert!(measured.debug_info().unwrap().is_none());
+        assert!(rows[0].cycles.unwrap() < rows[1].cycles.unwrap());
+        for row in &rows {
+            let svg = fs::read_to_string(runner.output_dir.join(row.flamegraph.as_ref().unwrap()))
+                .unwrap();
+            // The debuggable build must carry procedure names, not only `<unknown>` frames.
+            assert!(svg.contains("batch_kernel::entrypoint"), "{} flamegraph is unnamed", row.name);
+        }
     }
 
     #[test]

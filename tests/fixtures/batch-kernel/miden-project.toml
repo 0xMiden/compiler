@@ -10,7 +10,8 @@ path = "src/lib.rs"
 miden-core = "*"
 
 # `release` code plus the package debug-info section, for the `batch_kernel_profile` cycle
-# profiler (callstack frame names and source locations in the debug executor).
+# profiler and the benchmark flamegraphs (`DEBUG_PROFILE` in `benches/src/batch_kernel.rs`):
+# callstack frame names and source locations in the debug executor.
 [profile.profiling]
 inherits = "release"
 debug = true
