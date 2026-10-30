@@ -184,7 +184,7 @@ The selected graph is immutable during analysis and allocation. Reachability fol
 
 Backend liveness uses dense bitsets of semantic value identities. A live value initially means all its representation lanes are needed; lane-specific aliases are normalized through the layout table. Selected temporaries passed between lowering units and operands used in later phases are ordinary values in this analysis.
 
-Every value is published as a complete representation at an allocation boundary. `OutputPublication::Stack` requires the complete top-first output prefix. `OutputPublication::Aliases` instead publishes complete semantic names through source-checked `Reconstruction::Alias` lane mappings; it does not require a physical result prefix. A selected unit defining a value publishes all its layout lanes exactly once at that unit's normal completion; separate units cannot publish different lanes of the same value. Segment parameters likewise introduce complete values through checked simultaneous bindings. Cross-unit partial computations use explicit scalar or typed temporary values and an explicit alias/join completion unit when a complete result is needed. This keeps dense semantic-value demand meaningful at every boundary; it does not restrict raw partial stages inside one lowering unit.
+Every value is published as a complete representation at an allocation boundary. `OutputPublication::Stack` requires the complete top-first output prefix. `OutputPublication::Aliases` instead publishes complete semantic names through source-checked `Reconstruction::Alias` lane mappings; it does not require a physical result prefix. `OutputPublication::Literal` publishes a `Reconstruction::Literal` value whose every consumer takes it as an instruction immediate; the unit expands to no instruction, the value is a lane-free semantic input of its consumers, and entry layouts never request a lane for it. A selected unit defining a value publishes all its layout lanes exactly once at that unit's normal completion; separate units cannot publish different lanes of the same value. Segment parameters likewise introduce complete values through checked simultaneous bindings. Cross-unit partial computations use explicit scalar or typed temporary values and an explicit alias/join completion unit when a complete result is needed. This keeps dense semantic-value demand meaningful at every boundary; it does not restrict raw partial stages inside one lowering unit.
 
 Let `P(S)` be the parameters of successor segment `S`, and `bind_e(p)` the source supplied to parameter `p` on edge `e: B -> S`:
 
@@ -332,7 +332,7 @@ struct SelectedLowering {
     stack_inputs: Vec<Atom>,          // top first, with required multiplicity
     stored_inputs: Vec<StoredInput>,
     outputs: Vec<Atom>,              // complete semantic definitions
-    publication: OutputPublication, // Stack prefix or semantic-only Aliases
+    publication: OutputPublication, // Stack prefix, semantic-only Aliases, or lane-free Literal
     effects: LoweringEffects,
     scratch: Vec<ScratchRequirement>,
     scratch_effects: Vec<ScratchEffect>, // checked content dependencies, reads, and writes
@@ -342,6 +342,7 @@ struct SelectedLowering {
 enum OutputPublication {
     Stack,
     Aliases,
+    Literal,
 }
 
 struct StoredInput {

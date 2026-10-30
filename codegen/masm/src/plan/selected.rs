@@ -188,8 +188,10 @@ pub(crate) enum OutputPublication {
     /// establish every source's recoverability and preserve physical state unchanged.
     Aliases,
     /// Outputs are literal reconstructions whose consumers all take them as instruction
-    /// immediates, so no physical copy is ever produced. The unit has no inputs, storage
-    /// bindings, scratch, address results, effects, or instructions.
+    /// immediates. The unit has no inputs, storage bindings, scratch, address results, effects,
+    /// or instructions (replay rejects a body), and entry layouts never request a lane for its
+    /// outputs, so no copy is produced on the unit's own account; a transfer may still rebuild
+    /// the literal like any other reconstruction if a contract it joins demands one.
     Literal,
 }
 

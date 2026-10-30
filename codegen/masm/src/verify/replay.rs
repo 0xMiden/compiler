@@ -210,21 +210,27 @@ impl<'a> Verifier<'a> {
 
     /// A unit whose evidence names immediates must carry exactly those literals, in order, as
     /// the operands of its immediate-form instructions. Units without such evidence make no
-    /// claim about their immediates.
+    /// claim about their immediates. A literal publication must expand to no instruction at
+    /// all: its value exists only as a reconstruction.
     fn check_immediates(&self, body: &AnnotatedMasmBody) -> Result<(), VerificationError> {
-        fn scan(body: &AnnotatedMasmBody, found: &mut BTreeMap<SelectedStepId, Vec<u64>>) {
+        #[derive(Default)]
+        struct Found {
+            immediates: Vec<u64>,
+            instructions: usize,
+        }
+        fn scan(body: &AnnotatedMasmBody, found: &mut BTreeMap<SelectedStepId, Found>) {
             for op in body.ops() {
                 match op {
-                    AnnotatedOp::Instruction {
-                        instruction:
-                            Instruction::U32ShlImm(value)
-                            | Instruction::U32ShrImm(value)
-                            | Instruction::U32RotlImm(value)
-                            | Instruction::U32RotrImm(value),
-                        unit,
-                    } => {
-                        if let crate::masm::Immediate::Value(value) = value {
-                            found.entry(*unit).or_default().push(u64::from(*value.inner()));
+                    AnnotatedOp::Instruction { instruction, unit } => {
+                        let found = found.entry(*unit).or_default();
+                        found.instructions += 1;
+                        if let Instruction::U32ShlImm(value)
+                        | Instruction::U32ShrImm(value)
+                        | Instruction::U32RotlImm(value)
+                        | Instruction::U32RotrImm(value) = instruction
+                            && let crate::masm::Immediate::Value(value) = value
+                        {
+                            found.immediates.push(u64::from(*value.inner()));
                         }
                     }
                     AnnotatedOp::If {
@@ -246,6 +252,17 @@ impl<'a> Verifier<'a> {
         scan(body, &mut found);
         for segment in &self.plan.selected.segments {
             for unit in &segment.units {
+                if unit.publication == OutputPublication::Literal
+                    && found.get(&unit.id).is_some_and(|found| found.instructions > 0)
+                {
+                    return Err(self.context(
+                        fail(
+                            DiagnosticCategory::InvalidSelectedLowering,
+                            "literal publication expands to instructions",
+                        ),
+                        Some(unit.id),
+                    ));
+                }
                 let expected = self
                     .plan
                     .selected
@@ -254,7 +271,9 @@ impl<'a> Verifier<'a> {
                     .iter()
                     .map(|(_, literal)| literal.as_canonical_u64())
                     .collect::<Vec<_>>();
-                if !expected.is_empty() && found.get(&unit.id) != Some(&expected) {
+                if !expected.is_empty()
+                    && found.get(&unit.id).map(|found| &found.immediates) != Some(&expected)
+                {
                     return Err(self.context(
                         fail(
                             DiagnosticCategory::InvalidSelectedLowering,

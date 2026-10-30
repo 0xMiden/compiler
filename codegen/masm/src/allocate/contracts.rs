@@ -479,21 +479,20 @@ pub(super) fn choose(
     }
     if candidates.is_empty() {
         let ordinary = &analysis.next_use.entry[&segment];
-        // A literal value that some predecessor holds nowhere on its stack stays
-        // reconstructible: giving it a lane would make that edge push a copy the segment can
-        // rebuild on demand. A parameter merely bound from a literal keeps its lane.
-        let mut ranked = vec![];
-        for value in live.iter().copied() {
-            let mut backed = true;
-            if matches!(program.values[&value].reconstruction, Some(Reconstruction::Literal(_))) {
-                for entry in incoming {
-                    backed &= complete_value_depth(entry, value, program, context)?.is_some();
-                }
-            }
-            if backed {
-                ranked.push(value);
-            }
-        }
+        // A value published without a physical copy never gets a lane: its consumers take it
+        // as an immediate, so a lane would only make the edge push a copy the segment never
+        // reads. Residency cannot decide this, since another resident literal of the same
+        // value compares equal. Any other value, including a parameter bound from a literal
+        // and an ordinary pushed constant, keeps its place in the ranking.
+        let unpublished: BTreeSet<_> = program
+            .segments
+            .iter()
+            .flat_map(|segment| segment.units.iter())
+            .filter(|unit| unit.publication == OutputPublication::Literal)
+            .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
+            .collect();
+        let mut ranked: Vec<_> =
+            live.iter().copied().filter(|value| !unpublished.contains(value)).collect();
         if let Some(demand) = loop_demand {
             let cyclic = &demand.next_use.entry[&segment];
             let first = &translated[0];

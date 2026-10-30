@@ -143,7 +143,7 @@ fn prepare_order(
         if !valid(&base, unit, &needs)? {
             return Err(invariant(
                 DiagnosticCategory::UnavailableValue,
-                "alias publication source is not recoverable",
+                "semantic publication source is not recoverable",
             ));
         }
         normalize::bind_inputs(&mut base, unit, &needs.needed)?;
