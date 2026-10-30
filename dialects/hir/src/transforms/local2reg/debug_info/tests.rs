@@ -12,7 +12,12 @@ use crate::HirOpBuilder;
 
 // Count payload entries actually materialized by fact construction, including joins as well as
 // clones. This measures work, not Rc layout or elapsed time, and is isolated between test threads.
-std::thread_local! { pub(super) static MATERIALIZED: Cell<usize> = const { Cell::new(0) }; }
+std::thread_local! {
+    pub(super) static MATERIALIZED: Cell<usize> = const { Cell::new(0) };
+    // Count all translator value comparisons: source membership, target deduplication, and
+    // prospective-result equality. Collection/iteration without comparisons is not counted.
+    pub(super) static COMPARISONS: Cell<usize> = const { Cell::new(0) };
+}
 
 fn materialized(f: impl FnOnce()) -> usize {
     MATERIALIZED.set(0);
@@ -190,4 +195,62 @@ fn edge_translation_preserves_snapshots_and_reestablishes_only_mapped_loop_argum
         translate(&before, core::iter::empty(), ProgramPoint::at_start_of(entry), &dominance);
     assert!(unmapped.0.as_ref().unwrap().aliases[0].is_empty());
     assert_eq!(before.0.as_ref().unwrap().aliases[0], [a, b]);
+}
+
+#[test]
+fn wide_edges_compare_only_relevant_aliases_for_duplicate_targets() {
+    use midenc_dialect_cf::ControlFlowOpBuilder;
+
+    let mut measurements = Vec::new();
+    for selected in [16, 32] {
+        let width = selected * selected;
+        let mut test = Test::new("wide_recovery_edge", &[Type::U32, Type::U32], &[Type::U32]);
+        let context = test.context_rc();
+        let (value, successor, arguments, branch);
+        {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            value = entry.borrow().arguments()[0] as ValueRef;
+            let unrelated = entry.borrow().arguments()[1] as ValueRef;
+            successor = builder.create_block();
+            arguments = (0..width)
+                .map(|_| context.append_block_argument(successor, Type::U32, SourceSpan::UNKNOWN))
+                .collect::<Vec<_>>();
+            let operands = core::iter::repeat_n(unrelated, width - selected)
+                .chain(core::iter::repeat_n(value, selected));
+            branch = builder.br(successor, operands, SourceSpan::UNKNOWN).unwrap();
+            builder.switch_to_block(successor);
+            builder.ret([value], SourceSpan::UNKNOWN).unwrap();
+        }
+        let dominance = DominanceInfo::new(test.function().borrow().as_operation());
+        let before = recovery(alloc::vec![alloc::vec![value]], alloc::vec![2]);
+        let branch = branch.borrow();
+        let operands = branch.get_successor_operands(0);
+        let mappings = arguments
+            .iter()
+            .enumerate()
+            .map(|(i, target)| (operands.get(i).unwrap().into_value_ref().unwrap(), *target));
+        COMPARISONS.set(0);
+        let after = translate(&before, mappings, ProgramPoint::at_start_of(successor), &dominance);
+        let comparisons = COMPARISONS.get();
+        let expected = core::iter::once(value)
+            .chain(arguments[width - selected..].iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(after.0.as_ref().unwrap().aliases[0], expected);
+        assert_eq!(after.0.as_ref().unwrap().bindings, [2]);
+        assert_eq!(before.0.as_ref().unwrap().aliases[0], [value]);
+        assert_eq!(before.0.as_ref().unwrap().bindings, [2]);
+        let bound = 4 * width + 2 * selected * selected;
+        std::eprintln!(
+            "wide edge M={width}, K={selected}: {comparisons} comparisons; bound {bound}"
+        );
+        measurements.push((width, selected, comparisons, bound));
+    }
+    for (width, selected, comparisons, bound) in measurements {
+        assert!(
+            comparisons <= bound,
+            "wide edge M={width}, K={selected} used {comparisons} comparisons, above the O(M + \
+             K^2) bound {bound}"
+        );
+    }
 }

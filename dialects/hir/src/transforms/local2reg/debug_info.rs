@@ -317,28 +317,57 @@ fn translate(
                 && anchor.is_some_and(|op| value.properly_dominates(&op.borrow(), dominance))
         };
         for (index, aliases) in before.aliases.iter().enumerate() {
-            // Compare the complete translated sequence before copying. Sources always refer to
-            // the predecessor snapshot, even when the edge kills or remaps the same static name.
-            let translated = || {
-                aliases.iter().copied().filter(preserved).chain(
-                    mappings.iter().enumerate().filter_map(|(i, (source, target))| {
-                        (aliases.contains(source)
-                            && !(aliases.contains(target) && preserved(target))
-                            && !mappings[..i].iter().any(|(previous_source, previous_target)| {
-                                previous_target == target && aliases.contains(previous_source)
-                            }))
-                        .then_some(*target)
-                    }),
-                )
-            };
-            if !aliases.iter().copied().eq(translated()) {
-                let values = &mut Rc::make_mut(result.0.as_mut().unwrap()).aliases[index];
-                values.clear();
-                values.extend(translated());
+            if aliases_unchanged(aliases, &mappings, preserved) {
+                continue;
+            }
+            // Sources always refer to the predecessor snapshot. Deduplicate against the result,
+            // not earlier mappings: unrelated edge operands do not contribute any aliases.
+            let values = &mut Rc::make_mut(result.0.as_mut().unwrap()).aliases[index];
+            values.clear();
+            values.extend(aliases.iter().copied().filter(preserved));
+            for (source, target) in &mappings {
+                if contains_alias(aliases, source) && !contains_alias(values, target) {
+                    values.push(*target);
+                }
             }
         }
     }
     result
+}
+
+/// Check a prospective result without allocating it. Until the first difference, the matched
+/// original prefix is exactly the result so far, including the set of targets already emitted.
+fn aliases_unchanged(
+    aliases: &[ValueRef],
+    mappings: &[(ValueRef, ValueRef)],
+    preserved: impl Fn(&ValueRef) -> bool,
+) -> bool {
+    let mut matched = 0;
+    for alias in aliases.iter().filter(|alias| preserved(alias)) {
+        if !same_alias(alias, &aliases[matched]) {
+            return false;
+        }
+        matched += 1;
+    }
+    for (source, target) in mappings {
+        if contains_alias(aliases, source) && !contains_alias(&aliases[..matched], target) {
+            if aliases.get(matched).is_none_or(|alias| !same_alias(alias, target)) {
+                return false;
+            }
+            matched += 1;
+        }
+    }
+    matched == aliases.len()
+}
+
+fn same_alias(a: &ValueRef, b: &ValueRef) -> bool {
+    #[cfg(test)]
+    tests::COMPARISONS.set(tests::COMPARISONS.get() + 1);
+    a == b
+}
+
+fn contains_alias(aliases: &[ValueRef], value: &ValueRef) -> bool {
+    aliases.iter().any(|alias| same_alias(alias, value))
 }
 
 fn normalized_expression(expression: &Expression, local: u32) -> Option<Expression> {
