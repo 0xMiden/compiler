@@ -20,7 +20,7 @@ use midenc_hir_analysis::{
     analyses::{IntegerRangeAnalysis, integer_range::value_range},
 };
 
-use crate::{Bitcast, LoadLocal, LocalAddress, StoreLocal};
+use crate::{Bitcast, ExecFpi, LoadLocal, LocalAddress, StoreLocal};
 
 /// Shares one `u32` `arith.divmod` among the divisions of one base plus constant offsets in a
 /// block.
@@ -33,16 +33,20 @@ use crate::{Bitcast, LoadLocal, LocalAddress, StoreLocal};
 /// division then takes the shared remainder, and the shared quotient minus `(Kmax - K) / d`.
 ///
 /// The addition of `Kmax` traps when `b + Kmax` overflows, like the addition it replaces, unless
-/// the integer range analysis proves that it cannot overflow. That trap may now happen earlier in
+/// the integer range analysis proves that it cannot overflow. Then so would `b + K`, as `b` is a
+/// canonical `u32` value as its type requires (the addition it replaces relies on that too: a felt
+/// above `u32::MAX` may wrap past its check). That trap may now happen earlier in
 /// the block than the access to `b + Kmax` would have: any execution that reaches the first
 /// operation of the group and then the access still fails, but with the overflow instead of a
 /// failure between them, and without the host events emitted between them.
 ///
-/// A group ends at a call or an operation with regions, which are allocation boundaries the shared
-/// quotient would have to be carried across, and at most [MAX_OPEN_GROUPS] groups of a block may
-/// overlap, so that the shared quotients do not crowd the operand stack.
+/// A group ends at a call (including a foreign procedure invocation) or an operation with regions,
+/// which are allocation boundaries the shared quotient would have to be carried across; an addition
+/// before such a boundary is not split off from a division after it. At most `MAX_OPEN_GROUPS`
+/// groups of a block may overlap, so that the shared quotients do not crowd the operand stack.
 ///
-/// Bases are the same when they are the same SSA value, or when they are loaded from the same
+/// Bases are the same when they are the same SSA value or `hir.bitcast`s of it, or when they are
+/// loaded from the same
 /// procedure local in the block, all directly or all through a `hir.bitcast`, with no store to that
 /// local between the loads, including stores nested in regions. A local is assumed to be written
 /// only by `hir.store_local`: a function that takes the address of any local with
@@ -59,7 +63,8 @@ midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Sha
     "share one divmod of a base value among divmods of that base plus constant offsets"
 ));
 
-/// The largest number of groups of a block whose shared quotients may be live at the same time.
+/// The largest number of groups of a block whose spans, from their first operation to their last,
+/// may overlap.
 const MAX_OPEN_GROUPS: usize = 2;
 
 /// A `divmod` of `base + offset` by the divisor of its group.
@@ -103,6 +108,8 @@ impl Candidate {
 enum BaseKey {
     /// The base is this SSA value.
     Value(ValueRef),
+    /// The base is a `hir.bitcast` of this SSA value.
+    Bitcast(ValueRef),
     /// The base is loaded from a local, and loads with equal keys read the same value.
     Local {
         /// The local the base is loaded from.
@@ -115,7 +122,8 @@ enum BaseKey {
     },
 }
 
-/// The candidates of one block that divide the same base by the same divisor, in block order.
+/// The candidates of one block that divide the same base by the same divisor, with no call or
+/// operation with regions between them, in block order.
 struct Group {
     /// The identity of the base.
     key: BaseKey,
@@ -131,8 +139,9 @@ impl Group {
         self.candidates.len() > 1
     }
 
-    /// Returns true if the range analysis may prove that the base plus the largest offset fits in 32
-    /// bits: there is an offset, and the base is not loaded from a local, whose range is unknown.
+    /// Returns false if the range analysis cannot prove that the base plus the largest offset fits
+    /// in 32 bits: there is no offset, or the base is a bitcast or a load from a local in the block,
+    /// whose ranges only follow from their types.
     fn may_be_proven(&self) -> bool {
         matches!(self.key, BaseKey::Value(_)) && self.max_offset() != 0
     }
@@ -256,7 +265,9 @@ impl Pass for ShareBaseDivmod {
     }
 }
 
-/// Collects the candidate divisions of `function`, grouped by block, base and divisor.
+/// Collects the groups of candidate divisions of `function` to rewrite: grouped by block, base,
+/// divisor and the calls and operations with regions between them, keeping the profitable groups
+/// within the overlap limit.
 fn collect_groups(function: OperationRef) -> Vec<Group> {
     // An address of one local reaches the others too (they are adjacent in the frame), so a memory
     // write may then modify any local.
@@ -276,7 +287,7 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
         let mut group_index = FxHashMap::<(BaseKey, u32, u32), usize>::default();
         let mut epochs = FxHashMap::<LocalVariable, u32>::default();
         let mut load_epochs = FxHashMap::<OperationRef, (LocalVariable, u32)>::default();
-        // The segment (counted in boundaries) and position of every checked addition seen.
+        // The segment (counted in boundaries) and position of every addition seen.
         let mut add_positions = FxHashMap::<OperationRef, (u32, u32)>::default();
         // The number of calls and operations with regions so far, which no group spans.
         let mut segment = 0u32;
@@ -289,7 +300,10 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
             if operation.is::<Add>() {
                 add_positions.insert(op, (segment, position));
             }
-            if operation.has_regions() || operation.implements::<dyn CallOpInterface>() {
+            if operation.has_regions()
+                || operation.implements::<dyn CallOpInterface>()
+                || operation.is::<ExecFpi>()
+            {
                 segment += 1;
             }
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
@@ -336,16 +350,22 @@ fn collect_groups(function: OperationRef) -> Vec<Group> {
     groups
 }
 
-/// Returns the profitable groups among `groups` of one block, dropping a group that would overlap
-/// [MAX_OPEN_GROUPS] groups already kept.
-fn limit_open_groups(mut groups: Vec<Group>) -> Vec<Group> {
-    groups.retain(Group::is_profitable);
-    groups.sort_by_key(|group| group.span().0);
-    let mut kept = Vec::<Group>::with_capacity(groups.len());
-    for group in groups {
-        let start = group.span().0;
-        let open = kept.iter().filter(|kept| kept.span().1 > start).count();
-        if open < MAX_OPEN_GROUPS {
+/// Returns the profitable groups among `groups` of one block, in order of their first operation,
+/// dropping a group that would overlap `MAX_OPEN_GROUPS` groups already kept.
+fn limit_open_groups(groups: Vec<Group>) -> Vec<Group> {
+    let mut groups = groups
+        .into_iter()
+        .filter(Group::is_profitable)
+        .map(|group| (group.span(), group))
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|((start, _), _)| *start);
+    // The ends of the kept groups that may still be open.
+    let mut open_ends = Vec::<u32>::with_capacity(MAX_OPEN_GROUPS);
+    let mut kept = Vec::with_capacity(groups.len());
+    for ((start, end), group) in groups {
+        open_ends.retain(|open_end| *open_end > start);
+        if open_ends.len() < MAX_OPEN_GROUPS {
+            open_ends.push(end);
             kept.push(group);
         }
     }
@@ -353,7 +373,8 @@ fn limit_open_groups(mut groups: Vec<Group>) -> Vec<Group> {
 }
 
 /// Returns the key of `base`: the local and epoch of the load in the block that produces it,
-/// directly or through a `hir.bitcast`, if any, otherwise the value itself.
+/// directly or through a `hir.bitcast`, if any, otherwise the value itself or the operand of the
+/// `hir.bitcast` producing it.
 fn base_key(
     base: ValueRef,
     load_epochs: &FxHashMap<OperationRef, (LocalVariable, u32)>,
@@ -373,11 +394,14 @@ fn base_key(
             epoch,
             bitcast: false,
         }
-    } else if let Some((local, epoch)) = bitcast_operand.and_then(loaded) {
-        BaseKey::Local {
-            local,
-            epoch,
-            bitcast: true,
+    } else if let Some(operand) = bitcast_operand {
+        match loaded(operand) {
+            Some((local, epoch)) => BaseKey::Local {
+                local,
+                epoch,
+                bitcast: true,
+            },
+            None => BaseKey::Bitcast(operand),
         }
     } else {
         BaseKey::Value(base)
@@ -405,8 +429,9 @@ fn match_candidate(op: OperationRef) -> Option<(u32, Candidate)> {
             return None;
         }
         let add_ref = add.downcast_ref::<Add>()?;
-        // The shared addition is placed before the group's first operation in this block, which
-        // must stay on the paths through the original addition.
+        // Only a checked addition never wraps, so only then does the quotient of the sum follow
+        // from the quotient of the base. The shared addition is placed before the group's first
+        // operation in this block, which must stay on the paths through the original addition.
         if *add_ref.get_overflow() != Overflow::Checked || add.parent() != Some(block) {
             return None;
         }
@@ -477,6 +502,7 @@ fn rewrite_group(
             }
         };
         let divisor = rewriter.imm(Immediate::U32(group.divisor), span);
+        // The builder returns the quotient first, unlike the order of the operation's results.
         let (quotient, remainder) = rewriter.divmod(dividend, divisor, span)?;
         (remainder, quotient)
     };
