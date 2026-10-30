@@ -19,7 +19,9 @@
 use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
-use midenc_codegen_masm::{CheckMasmLegality, LegalizeForMasm, MasmComponent, ToMasmComponent};
+use midenc_codegen_masm::{
+    CheckMasmLegality, LegalizeForMasm, MasmComponent, OptimizeMasmArithmetic, ToMasmComponent,
+};
 use midenc_dialect_hir::transforms::Local2Reg;
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
 use midenc_frontend_wasm_metadata::PackageSections;
@@ -290,6 +292,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+            func_pm.add_pass(Box::new(OptimizeMasmArithmetic::default()));
         }
         // Function passes for component-level functions, up to the last canonicalization
         {
@@ -303,6 +306,7 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
             func_pm.add_pass(Box::new(LiftControlFlowToSCF));
             // Re-run canonicalization to clean up generated structured control flow
             func_pm.add_pass(Canonicalizer::create_with_config(&rewrite_config));
+            func_pm.add_pass(Box::new(OptimizeMasmArithmetic::default()));
         }
         // Representation legalization precedes final optional operand sinking
         component_pm.add_pass(Box::new(LegalizeForMasm));
@@ -338,10 +342,15 @@ fn rewrite_pipeline(world: OperationRef, context: Rc<Context>) -> CompilerResult
     };
     if has_component {
         // The component's siblings: modules and functions of the world itself
+        pm.nest::<builtin::Module>()
+            .add_pass(Box::new(OptimizeMasmArithmetic::default()));
         pm.nest::<builtin::Module>().add_pass(Box::new(LegalizeForMasm));
+        pm.nest::<builtin::Function>()
+            .add_pass(Box::new(OptimizeMasmArithmetic::default()));
         pm.nest::<builtin::Function>().add_pass(Box::new(LegalizeForMasm));
     } else {
         // A world without a component
+        pm.add_pass(Box::new(OptimizeMasmArithmetic::default()));
         pm.add_pass(Box::new(LegalizeForMasm));
     }
 
@@ -775,16 +784,17 @@ mod tests {
     fn the_masm_legalization_precedes_final_operand_sinking() {
         let (component, context) = build_component();
         let pipeline = textual_pipeline(component.world.as_operation_ref(), context);
-        let functions =
-            "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,canonicalizer";
+        let functions = "canonicalizer,cse,sccp,sink-operand-defs,local2reg,cfg-to-scf,\
+                         canonicalizer,masm-arithmetic";
         let last = "sink-operand-defs";
         assert_eq!(
             pipeline,
             alloc::format!(
                 "builtin.world(builtin.component(builtin.module(builtin.function({functions})),\
                  builtin.function({functions}),legalize-for-masm,builtin.module(builtin.\
-                 function({last})),builtin.function({last})),builtin.module(legalize-for-masm),\
-                 builtin.function(legalize-for-masm))"
+                 function({last})),builtin.function({last})),builtin.module(masm-arithmetic),\
+                 builtin.module(legalize-for-masm),builtin.function(masm-arithmetic),builtin.\
+                 function(legalize-for-masm))"
             )
         );
     }
@@ -813,7 +823,7 @@ mod tests {
         )()
         .expect("an empty world should build");
         let pipeline = textual_pipeline(world.as_operation_ref(), context);
-        assert!(pipeline.ends_with(",legalize-for-masm)"), "{pipeline}");
+        assert!(pipeline.ends_with(",masm-arithmetic,legalize-for-masm)"), "{pipeline}");
     }
 
     #[test]

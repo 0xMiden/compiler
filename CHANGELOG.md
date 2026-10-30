@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Wasm explicit and implicit returns preserve every declared result, including mixed-width
   tuples, instead of rejecting or dropping results after the first.
+- Select cheaper native arithmetic for wrapping `i32` multiplication using a MASM-derived
+  target cost model, preserving signed bit patterns, input validation, and debug metadata.
 - Benchmark contract examples through deterministic MockChain transactions, comparing VM cycles
   against `next` and retaining replay snapshots and cycle-weighted flamegraphs.
 - The MASM frontend now reports advice taint findings from supported procedures even when it skips

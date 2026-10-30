@@ -1,0 +1,81 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(masm-arithmetic)' | hir-opt --verify - | filecheck %s
+
+builtin.module public @arithmetic_boundaries {
+    // CHECK: @narrow(%[[LHS:\d+]]: i8, %[[RHS:\d+]]: i8)
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.mul %[[LHS]], %[[RHS]] {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i8);
+    builtin.function public extern("C") @narrow(%lhs: i8, %rhs: i8) -> i8 {
+        %result = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (i8);
+    };
+
+    // CHECK: @half_width(%[[LHS:\d+]]: i16, %[[RHS:\d+]]: i16)
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.mul %[[LHS]], %[[RHS]] {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i16);
+    builtin.function public extern("C") @half_width(%lhs: i16, %rhs: i16) -> i16 {
+        %result = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (i16);
+    };
+
+    // CHECK: @wide_unsigned(%[[LHS:\d+]]: u64, %[[RHS:\d+]]: u64)
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.mul %[[LHS]], %[[RHS]] {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (u64);
+    builtin.function public extern("C") @wide_unsigned(%lhs: u64, %rhs: u64) -> u64 {
+        %result = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (u64);
+    };
+
+    // CHECK: @double_wide(%[[LHS:\d+]]: i128, %[[RHS:\d+]]: i128)
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.mul %[[LHS]], %[[RHS]] {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i128);
+    builtin.function public extern("C") @double_wide(%lhs: i128, %rhs: i128) -> i128 {
+        %result = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (i128);
+    };
+
+    // CHECK: @checked(%[[LHS:\d+]]: i32, %[[RHS:\d+]]: i32)
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.mul %[[LHS]], %[[RHS]] {{.*}}checked
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @checked(%lhs: i32, %rhs: i32) -> i32 {
+        %result = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<checked> }>;
+        builtin.ret %result : (i32);
+    };
+
+    // CHECK: @overflow_flag(%[[LHS:\d+]]: i32, %[[RHS:\d+]]: i32)
+    // CHECK-NEXT: %[[FLAG:\d+]], %[[PRODUCT:\d+]] = arith.mul_overflowing %[[LHS]], %[[RHS]];
+    // CHECK-NEXT: builtin.ret %[[FLAG]] : (i1);
+    builtin.function public extern("C") @overflow_flag(%lhs: i32, %rhs: i32) -> i1 {
+        %flag, %product = arith.mul_overflowing %lhs, %rhs;
+        builtin.ret %flag : (i1);
+    };
+
+    // CHECK: @overflow_product(%[[LHS:\d+]]: i32, %[[RHS:\d+]]: i32)
+    // CHECK-NEXT: %[[FLAG:\d+]], %[[PRODUCT:\d+]] = arith.mul_overflowing %[[LHS]], %[[RHS]];
+    // CHECK-NEXT: builtin.ret %[[PRODUCT]] : (i32);
+    builtin.function public extern("C") @overflow_product(%lhs: i32, %rhs: i32) -> i32 {
+        %flag, %product = arith.mul_overflowing %lhs, %rhs;
+        builtin.ret %product : (i32);
+    };
+
+    // CHECK: @add_zero(%[[INPUT:\d+]]: i32)
+    // CHECK-NEXT: %[[ZERO:\d+]] = arith.constant 0 : i32;
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.add %[[INPUT]], %[[ZERO]] {{.*}}wrapping
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @add_zero(%input: i32) -> i32 {
+        %zero = arith.constant 0 : i32;
+        %result = arith.add %input, %zero <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (i32);
+    };
+
+    // CHECK-LABEL: @eligible
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[PRODUCT:\d+]] = arith.mul %[[LEFT]], %[[RIGHT]] {{.*}}wrapping
+    // CHECK-NEXT: %[[RESULT:\d+]] = hir.bitcast %[[PRODUCT]] {{.*}}i32
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @eligible(%lhs: i32, %rhs: i32) -> i32 {
+        %result = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %result : (i32);
+    };
+};

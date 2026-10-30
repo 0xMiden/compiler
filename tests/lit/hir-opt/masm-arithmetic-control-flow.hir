@@ -1,0 +1,83 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(masm-arithmetic)' | hir-opt --verify - | filecheck %s
+
+builtin.module public @arithmetic_control_flow {
+    // CHECK-LABEL: @cfg_product
+    // CHECK-NEXT: cf.cond_br
+    // CHECK: %[[FIRST:\d+]] = arith.mul {{.*}}wrapping
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast %[[FIRST]] {{.*}}i32
+    // CHECK-NEXT: cf.br ^[[JOIN:block\d+]](%[[LEFT]] : i32);
+    // CHECK: %[[SECOND:\d+]] = arith.mul {{.*}}wrapping
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast %[[SECOND]] {{.*}}i32
+    // CHECK-NEXT: cf.br ^[[JOIN]](%[[RIGHT]] : i32);
+    // CHECK-NEXT: ^block{{\d+}}(%[[RESULT:\d+]]: i32):
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @cfg_product(%condition: i1, %lhs: i32, %rhs: i32) -> i32 {
+        cf.cond_br %condition ^left, ^right : (i1);
+    ^left:
+        %first = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        cf.br ^join(%first : i32);
+    ^right:
+        %second = arith.mul %lhs, %lhs <{ overflow = #builtin.overflow<wrapping> }>;
+        cf.br ^join(%second : i32);
+    ^join(%result: i32):
+        builtin.ret %result : (i32);
+    };
+
+    // CHECK-LABEL: @nested_product
+    // CHECK-NEXT: %[[OUTER:\d+]] = scf.if
+    // CHECK-NEXT: %[[INNER:\d+]] = scf.if
+    // CHECK: %[[FIRST:\d+]] = arith.mul {{.*}}wrapping
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast %[[FIRST]] {{.*}}i32
+    // CHECK-NEXT: scf.yield %[[LEFT]] : (i32);
+    // CHECK-NEXT: } else {
+    // CHECK: %[[SECOND:\d+]] = arith.mul {{.*}}wrapping
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast %[[SECOND]] {{.*}}i32
+    // CHECK-NEXT: scf.yield %[[RIGHT]] : (i32);
+    // CHECK-NEXT: } : (i1) -> (i32);
+    // CHECK-NEXT: scf.yield %[[INNER]] : (i32);
+    // CHECK: builtin.ret %[[OUTER]] : (i32);
+    builtin.function public extern("C") @nested_product(%outer: i1, %inner: i1, %lhs: i32, %rhs: i32) -> i32 {
+        %result = scf.if %outer then {
+            %nested = scf.if %inner then {
+                %first = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+                scf.yield %first : (i32);
+            } else {
+                %second = arith.mul %rhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+                scf.yield %second : (i32);
+            } : (i1) -> (i32);
+            scf.yield %nested : (i32);
+        } else {
+            scf.yield %lhs : (i32);
+        } : (i1) -> (i32);
+        builtin.ret %result : (i32);
+    };
+
+    // CHECK-LABEL: @loop_product
+    // CHECK: %[[COUNT:\d+]], %[[RESULT:\d+]] = scf.while
+    // CHECK: scf.condition {{.*}} : (i1, u32, i32);
+    // CHECK: ^block{{\d+}}(%[[REMAINING:\d+]]: u32, %[[ACC:\d+]]: i32):
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast %[[ACC]] {{.*}}u32
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[PRODUCT:\d+]] = arith.mul %[[LEFT]], %[[RIGHT]] {{.*}}wrapping
+    // CHECK-NEXT: %[[NEXT:\d+]] = hir.bitcast %[[PRODUCT]] {{.*}}i32
+    // CHECK-NEXT: %[[DECREMENT:\d+]] = arith.sub %[[REMAINING]]
+    // CHECK-NEXT: scf.yield %[[DECREMENT]], %[[NEXT]] : (u32, i32);
+    // CHECK-NEXT: } : (u32, i32) -> (u32, i32);
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @loop_product(%initial: i32, %factor: i32, %count: u32) -> i32 {
+        %zero = arith.constant 0 : u32;
+        %one = arith.constant 1 : u32;
+        %remaining, %result = scf.while %count, %initial before {
+        ^head(%iterations: u32, %value: i32):
+            %condition = arith.neq %iterations, %zero;
+            scf.condition %condition, %iterations, %value : (i1, u32, i32);
+        } after {
+        ^body(%iterations: u32, %value: i32):
+            %product = arith.mul %value, %factor <{ overflow = #builtin.overflow<wrapping> }>;
+            %next = arith.sub %iterations, %one <{ overflow = #builtin.overflow<unchecked> }>;
+            scf.yield %next, %product : (u32, i32);
+        } : (u32, i32) -> (u32, i32);
+        builtin.ret %result : (i32);
+    };
+};

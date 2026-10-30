@@ -1,0 +1,97 @@
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(builtin.function(masm-arithmetic))' | filecheck %s
+// RUN: hir-opt %s --verify --pass-pipeline='builtin.module(masm-arithmetic)' | hir-opt --verify - | filecheck %s
+
+builtin.module public @arithmetic_dataflow {
+    // CHECK: @square(%[[INPUT:\d+]]: i32)
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast %[[INPUT]] {{.*}}u32
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast %[[INPUT]] {{.*}}u32
+    // CHECK-NEXT: %[[PRODUCT:\d+]] = arith.mul %[[LEFT]], %[[RIGHT]] {{.*}}wrapping
+    // CHECK-NEXT: %[[RESULT:\d+]] = hir.bitcast %[[PRODUCT]] {{.*}}i32
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @square(%input: i32) -> i32 {
+        %product = arith.mul %input, %input <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %product : (i32);
+    };
+
+    // CHECK-LABEL: @chained_product
+    // CHECK: %[[FIRST:\d+]] = arith.mul {{.*}}wrapping
+    // CHECK-NEXT: %[[SIGNED:\d+]] = hir.bitcast %[[FIRST]] {{.*}}i32
+    // CHECK-NEXT: di.debug_value %[[SIGNED]] {{.*}}name = "first"
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast %[[SIGNED]] {{.*}}u32
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[SECOND:\d+]] = arith.mul %[[LEFT]], %[[RIGHT]] {{.*}}wrapping
+    // CHECK-NEXT: %[[RESULT:\d+]] = hir.bitcast %[[SECOND]] {{.*}}i32
+    // CHECK-NEXT: di.debug_value %[[RESULT]] {{.*}}name = "second"
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @chained_product(%lhs: i32, %rhs: i32, %factor: i32) -> i32 {
+        %first = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        di.debug_value %first <{ variable = #di.variable<{ name = "first", file = "test.rs", line = 1, ty = i32 }>, expression = #di.expression<[]> }> : (i32);
+        %second = arith.mul %first, %factor <{ overflow = #builtin.overflow<wrapping> }>;
+        di.debug_value %second <{ variable = #di.variable<{ name = "second", file = "test.rs", line = 2, ty = i32 }>, expression = #di.expression<[]> }> : (i32);
+        builtin.ret %second : (i32);
+    };
+
+    // CHECK: @shared_operands(%[[LEFT:\d+]]: i32, %[[RIGHT:\d+]]: i32)
+    // CHECK: %[[PRODUCT:\d+]] = hir.bitcast {{.*}}i32
+    // CHECK-NEXT: %[[SUM:\d+]] = arith.add %[[PRODUCT]], %[[LEFT]] {{.*}}wrapping
+    // CHECK-NEXT: %[[RESULT:\d+]] = arith.bxor %[[SUM]], %[[RIGHT]]
+    // CHECK-NEXT: builtin.ret %[[RESULT]] : (i32);
+    builtin.function public extern("C") @shared_operands(%lhs: i32, %rhs: i32) -> i32 {
+        %product = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        %sum = arith.add %product, %lhs <{ overflow = #builtin.overflow<wrapping> }>;
+        %result = arith.bxor %sum, %rhs;
+        builtin.ret %result : (i32);
+    };
+
+    // CHECK-LABEL: @signed_uses
+    // CHECK: %[[PRODUCT:\d+]] = hir.bitcast {{.*}}i32
+    // CHECK-NEXT: %[[ZERO:\d+]] = arith.constant 0 : i32;
+    // CHECK-NEXT: %[[NEGATIVE:\d+]] = arith.lt %[[PRODUCT]], %[[ZERO]];
+    // CHECK-NEXT: builtin.ret %[[NEGATIVE]] : (i1);
+    builtin.function public extern("C") @signed_uses(%lhs: i32, %rhs: i32) -> i1 {
+        %product = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        %zero = arith.constant 0 : i32;
+        %negative = arith.lt %product, %zero;
+        builtin.ret %negative : (i1);
+    };
+
+    // CHECK-LABEL: @wide_product
+    // CHECK: %[[PRODUCT:\d+]] = hir.bitcast {{.*}}i32
+    // CHECK-NEXT: %[[WIDE:\d+]] = arith.sext %[[PRODUCT]] {{.*}}i64
+    // CHECK-NEXT: builtin.ret %[[WIDE]] : (i64);
+    builtin.function public extern("C") @wide_product(%lhs: i32, %rhs: i32) -> i64 {
+        %product = arith.mul %lhs, %rhs <{ overflow = #builtin.overflow<wrapping> }>;
+        %wide = arith.sext %product <{ ty = #builtin.type<i64> }>;
+        builtin.ret %wide : (i64);
+    };
+
+    // CHECK-LABEL: @negative_constant
+    // CHECK-NEXT: %[[NEGATIVE_BITS:\d+]] = arith.constant 4294967295 : u32;
+    // CHECK-NEXT: %[[NEGATIVE:\d+]] = hir.bitcast %[[NEGATIVE_BITS]] {{.*}}i32
+    // CHECK-NEXT: %[[LEFT:\d+]] = hir.bitcast %[[NEGATIVE]] {{.*}}u32
+    // CHECK-NEXT: %[[RIGHT:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[PRODUCT:\d+]] = arith.mul %[[LEFT]], %[[RIGHT]] {{.*}}wrapping
+    // CHECK-NEXT: %[[FIRST:\d+]] = hir.bitcast %[[PRODUCT]] {{.*}}i32
+    // CHECK-NEXT: builtin.ret %[[FIRST]] : (i32);
+    builtin.function public extern("C") @negative_constant(%input: i32) -> i32 {
+        %negative_bits = arith.constant 4294967295 : u32;
+        %negative = hir.bitcast %negative_bits <{ ty = #builtin.type<i32> }>;
+        %product = arith.mul %negative, %input <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %product : (i32);
+    };
+
+    // CHECK-LABEL: @min_constant
+    // CHECK-NEXT: %[[MIN_BITS:\d+]] = arith.constant 2147483648 : u32;
+    // CHECK-NEXT: %[[MIN:\d+]] = hir.bitcast %[[MIN_BITS]] {{.*}}i32
+    // CHECK-NEXT: %[[INPUT:\d+]] = hir.bitcast {{.*}}u32
+    // CHECK-NEXT: %[[FACTOR:\d+]] = hir.bitcast %[[MIN]] {{.*}}u32
+    // CHECK-NEXT: %[[OTHER:\d+]] = arith.mul %[[INPUT]], %[[FACTOR]] {{.*}}wrapping
+    // CHECK-NEXT: %[[SECOND:\d+]] = hir.bitcast %[[OTHER]] {{.*}}i32
+    // CHECK-NEXT: builtin.ret %[[SECOND]] : (i32);
+    builtin.function public extern("C") @min_constant(%input: i32) -> i32 {
+        %min_bits = arith.constant 2147483648 : u32;
+        %min = hir.bitcast %min_bits <{ ty = #builtin.type<i32> }>;
+        %product = arith.mul %input, %min <{ overflow = #builtin.overflow<wrapping> }>;
+        builtin.ret %product : (i32);
+    };
+};

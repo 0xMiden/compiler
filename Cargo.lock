@@ -4694,6 +4694,7 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
+ "midenc-codegen-masm",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
