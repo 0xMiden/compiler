@@ -39,6 +39,8 @@ pub(super) fn context(values: &BTreeMap<ValueId, SelectedValue>) -> AllocationCo
         after: BTreeMap::new(),
         edge: BTreeMap::new(),
     };
+    static NO_UNPUBLISHED: alloc::collections::BTreeSet<ValueId> =
+        alloc::collections::BTreeSet::new();
     // Direct physical-state fixtures do not claim any graph-derived reconstruction eligibility.
     AllocationContext {
         input_symmetries: BTreeMap::new(),
@@ -49,7 +51,7 @@ pub(super) fn context(values: &BTreeMap<ValueId, SelectedValue>) -> AllocationCo
             (SegmentId(0), Default::default()),
             (SegmentId(1), Default::default()),
         ]),
-        unpublished: Default::default(),
+        unpublished: &NO_UNPUBLISHED,
     }
 }
 

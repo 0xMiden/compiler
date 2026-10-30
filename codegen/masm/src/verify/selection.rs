@@ -162,8 +162,9 @@ pub(crate) struct CheckedSelectedProgram {
 }
 
 impl CheckedSelectedProgram {
-    /// Values published without a physical copy: the checker has established that every
-    /// consumer takes them as an instruction immediate, so no layout may request a lane.
+    /// Values published without a physical copy. The checker has established that every
+    /// semantic use of one is a registered immediate, and that no stack or stored input, edge
+    /// binding, alias recipe or control predicate names it, so no layout may request a lane.
     pub(crate) fn unpublished(&self) -> &BTreeSet<ValueId> {
         &self.unpublished
     }
@@ -283,6 +284,8 @@ pub(crate) fn check_selection(
     })
 }
 
+/// Check the selected graph's structure, definitions, evidence relations and control skeleton.
+/// Returns the values published without a physical copy, which the allocator must never name.
 fn validate_graph(
     program: &SelectedProgram,
     units: &BTreeMap<SelectedStepId, UnitEvidence>,
@@ -332,6 +335,13 @@ fn validate_graph(
         .filter(|unit| unit.publication == OutputPublication::Literal)
         .flat_map(|unit| unit.outputs.iter().map(|atom| atom.value))
         .collect();
+    // Every alias recipe, whichever unit publishes it, would rebuild its source on demand.
+    if program.values.values().any(|value| {
+        matches!(&value.reconstruction, Some(Reconstruction::Alias(sources))
+            if sources.iter().any(|source| unpublished.contains(&source.value)))
+    }) {
+        return Err(error("literal publication used as an alias source"));
+    }
     for segment in &program.segments {
         if !segments.insert(segment.id) {
             return Err(error("duplicate segment"));
@@ -453,6 +463,9 @@ fn validate_graph(
                     if !unit.semantic_inputs.is_empty() {
                         return Err(error("literal publication has semantic inputs"));
                     }
+                    if unit.outputs.is_empty() {
+                        return Err(error("literal publication defines no value"));
+                    }
                     for output in &unit.outputs {
                         if !matches!(
                             program.values[&output.value].reconstruction,
@@ -468,6 +481,13 @@ fn validate_graph(
                     })
                 {
                     return Err(error("literal publication demanded as a physical input"));
+                }
+                // The only semantic use a literal publication admits is a registered immediate.
+                if unit.semantic_inputs.iter().any(|value| {
+                    unpublished.contains(value)
+                        && !units[&unit.id].immediates.iter().any(|(atom, _)| atom.value == *value)
+                }) {
+                    return Err(error("literal publication named without an immediate"));
                 }
                 // An immediate is a dependency the body carries without a lane: its value must
                 // be a literal the unit names semantically but never physically.
@@ -504,9 +524,6 @@ fn validate_graph(
                             .any(|source| !unit.semantic_inputs.contains(&source.value))
                         {
                             return Err(error("alias publication source is not a semantic input"));
-                        }
-                        if sources.iter().any(|source| unpublished.contains(&source.value)) {
-                            return Err(error("literal publication used as an alias source"));
                         }
                     }
                 }
@@ -663,53 +680,35 @@ fn validate_graph(
     }
     let mut used_segments = BTreeSet::new();
     let mut used_edges = BTreeSet::new();
-    walk_tree(&program.structure, &mut used_segments, &mut used_edges, &mut BTreeSet::new())?;
+    let mut predicates = vec![];
+    walk_tree(
+        &program.structure,
+        &mut used_segments,
+        &mut used_edges,
+        &mut BTreeSet::new(),
+        &mut predicates,
+    )?;
     if used_segments != segments || used_edges != edges {
         return Err(error("structured skeleton and graph disagree"));
+    }
+    // Control predicates are read from a lane as well; a literal publication cannot serve.
+    if predicates.iter().any(|predicate| unpublished.contains(&predicate.value)) {
+        return Err(error("literal publication used as a control predicate"));
     }
     validate_flow(program)?;
     super::reconstruction::validate(program)?;
     super::storage::validate(program)?;
-    // Control predicates are read from a lane as well; a literal publication cannot serve.
-    let mut controls = vec![&program.structure];
-    while let Some(tree) = controls.pop() {
-        let predicate = match tree {
-            ControlTree::If {
-                predicate,
-                then_body,
-                else_body,
-                ..
-            } => {
-                controls.extend([then_body.as_ref(), else_body.as_ref()]);
-                Some(predicate)
-            }
-            ControlTree::Loop {
-                predicate,
-                before,
-                body,
-                ..
-            } => {
-                controls.extend([before.as_ref(), body.as_ref()]);
-                Some(predicate)
-            }
-            ControlTree::Sequence(children) => {
-                controls.extend(children);
-                None
-            }
-            _ => None,
-        };
-        if predicate.is_some_and(|predicate| unpublished.contains(&predicate.value)) {
-            return Err(error("literal publication used as a control predicate"));
-        }
-    }
     Ok(unpublished)
 }
 
+/// Visit the structured skeleton once, collecting its segments, edges, control identities and
+/// control predicates while rejecting any that occurs twice.
 fn walk_tree(
     tree: &ControlTree,
     segments: &mut BTreeSet<SegmentId>,
     edges: &mut BTreeSet<EdgeId>,
     controls: &mut BTreeSet<ControlId>,
+    predicates: &mut Vec<Atom>,
 ) -> Result<(), VerificationError> {
     match tree {
         ControlTree::Segment(id) => {
@@ -724,11 +723,12 @@ fn walk_tree(
         }
         ControlTree::Sequence(children) => {
             for child in children {
-                walk_tree(child, segments, edges, controls)?;
+                walk_tree(child, segments, edges, controls, predicates)?;
             }
         }
         ControlTree::If {
             id,
+            predicate,
             on_true,
             then_body,
             on_false,
@@ -741,12 +741,14 @@ fn walk_tree(
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate branch edge"));
             }
-            walk_tree(then_body, segments, edges, controls)?;
-            walk_tree(else_body, segments, edges, controls)?;
+            predicates.push(*predicate);
+            walk_tree(then_body, segments, edges, controls, predicates)?;
+            walk_tree(else_body, segments, edges, controls, predicates)?;
         }
         ControlTree::Loop {
             id,
             condition,
+            predicate,
             header,
             before,
             body,
@@ -761,6 +763,7 @@ fn walk_tree(
             if !edges.insert(*on_true) || !edges.insert(*on_false) {
                 return Err(error("duplicate loop condition edge"));
             }
+            predicates.push(*predicate);
             fn entry(tree: &ControlTree) -> Option<SegmentId> {
                 match tree {
                     ControlTree::Segment(id) => Some(*id),
@@ -771,8 +774,8 @@ fn walk_tree(
             if entry(before) != Some(*header) {
                 return Err(error("loop header disagrees with before-subtree entry"));
             }
-            walk_tree(before, segments, edges, controls)?;
-            walk_tree(body, segments, edges, controls)?;
+            walk_tree(before, segments, edges, controls, predicates)?;
+            walk_tree(body, segments, edges, controls, predicates)?;
             for edge in backedges {
                 if !edges.contains(edge) {
                     return Err(error("missing backedge in loop body"));

@@ -88,8 +88,9 @@ fn equal(
 
 /// A representation is renamed only through checked old-source equality. Duplicate
 /// destination names get explicit aliases; they do not duplicate physical occurrences.
-/// A value published without a copy never receives a lane's name: an equal resident literal
-/// would otherwise let an inherited layout request a copy for it.
+/// Callers pass only namable atoms (see `choose`): a value published without a copy must not
+/// receive a lane's name, or an equal resident literal would let an inherited layout request
+/// a copy for it.
 fn rename(
     incoming: &Incoming<'_>,
     atom: Atom,
@@ -97,9 +98,6 @@ fn rename(
     context: &AllocationContext<'_>,
 ) -> Result<Atom, AllocationError> {
     for candidate in live_atoms {
-        if context.unpublished.contains(&candidate.value) {
-            continue;
-        }
         if context.same(
             incoming.state,
             StoredValue::Atom(atom),
@@ -111,7 +109,7 @@ fn rename(
     Ok(atom)
 }
 
-/// Retain only equalities established on every forward edge.
+/// Retain only equalities established on every forward edge, among the namable atoms.
 /// Loop headers publish none: initial-entry equality alone does not prove cyclic equality.
 fn aliases(
     incoming: &[Incoming<'_>],
@@ -124,13 +122,7 @@ fn aliases(
     }
     let mut pairs = vec![];
     for (index, b) in live_atoms.iter().enumerate() {
-        if context.unpublished.contains(&b.value) {
-            continue;
-        }
         for a in &live_atoms[..index] {
-            if context.unpublished.contains(&a.value) {
-                continue;
-            }
             if incoming
                 .iter()
                 .map(|edge| equal(edge, *a, *b, context))
@@ -146,7 +138,7 @@ fn aliases(
     Ok(LaneAliases::new(pairs))
 }
 
-/// Keep one common backing cell per eligible lane, preferring its canonical ID.
+/// Keep one common backing cell per eligible namable lane, preferring its canonical ID.
 /// Every predecessor must establish the same source-substituted contents in that cell.
 fn common_slots(
     incoming: &[Incoming<'_>],
@@ -156,9 +148,6 @@ fn common_slots(
     let mut slots = BTreeMap::new();
     for slot in incoming[0].state.slots.keys() {
         for atom in live_atoms {
-            if context.unpublished.contains(&atom.value) {
-                continue;
-            }
             let mut common = true;
             for entry in incoming {
                 common &= if let Some(contents) = entry.state.slots.get(slot) {
@@ -421,6 +410,14 @@ pub(super) fn choose(
     }
     let live: BTreeSet<_> = analysis.live_in[&segment].iter().collect();
     let live_atoms = atoms(program, &live);
+    // Every candidate builder names lanes, cells and aliases from this list only: a value
+    // published without a copy is live but must never be named, or an equal resident literal
+    // would let a layout request a copy for it. Recoverability still covers all live atoms.
+    let namable: Vec<_> = live_atoms
+        .iter()
+        .copied()
+        .filter(|atom| !context.unpublished.contains(&atom.value))
+        .collect();
     // Select eligible invariant names before old-source equality chooses a representative.
     // A changing parameter may equal a capture on entry without preserving that equality.
     let parameters = &program.segments.iter().find(|s| s.id == segment).unwrap().parameters;
@@ -429,7 +426,7 @@ pub(super) fn choose(
         .copied()
         .filter(|value| loop_demand.is_none() || !parameters.contains(value))
         .collect();
-    let cached_atoms: Vec<_> = live_atoms
+    let cached_atoms: Vec<_> = namable
         .iter()
         .copied()
         .filter(|atom| invariant_values.contains(&atom.value))
@@ -452,7 +449,7 @@ pub(super) fn choose(
         }
     }
 
-    let aliases = aliases(incoming, &live_atoms, context, loop_demand.is_some())?;
+    let aliases = aliases(incoming, &namable, context, loop_demand.is_some())?;
     let tail = incoming[0].state.tail;
     if incoming.iter().any(|entry| entry.state.tail != tail) {
         return Err(invariant(
@@ -475,7 +472,7 @@ pub(super) fn choose(
                 .state
                 .stack
                 .iter()
-                .map(|o| rename(entry, o.atom, &live_atoms, context))
+                .map(|o| rename(entry, o.atom, &namable, context))
                 .collect::<Result<Vec<_>, _>>()
         })
         .collect::<Result<Vec<_>, _>>()?;

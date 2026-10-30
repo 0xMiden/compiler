@@ -218,7 +218,7 @@ impl<'a> Verifier<'a> {
         struct Found {
             /// Operands of the immediate-form movement instructions, in body order.
             immediates: Vec<u64>,
-            /// Every instruction attributed to the unit, immediate-form or not.
+            /// How many instructions the body attributes to the unit, immediate-form or not.
             instructions: usize,
         }
         /// Collect per-unit instruction facts, descending into structured control bodies.
@@ -252,17 +252,28 @@ impl<'a> Verifier<'a> {
                 }
             }
         }
-        let units = self.plan.selected.segments.iter().flat_map(|segment| &segment.units);
-        let mut claims = !self.plan.selected.unpublished().is_empty();
-        for unit in units.clone() {
-            claims |= !self.plan.selected.evidence(unit.id)?.immediates.is_empty();
+        // Gather every claim first: the registered immediates per unit and the literal
+        // publications, which must expand to nothing. A body without claims needs no scan.
+        let mut claims = vec![];
+        for unit in self.plan.selected.segments.iter().flat_map(|segment| &segment.units) {
+            let expected = self
+                .plan
+                .selected
+                .evidence(unit.id)?
+                .immediates
+                .iter()
+                .map(|(_, literal)| literal.as_canonical_u64())
+                .collect::<Vec<_>>();
+            if unit.publication == OutputPublication::Literal || !expected.is_empty() {
+                claims.push((unit, expected));
+            }
         }
-        if !claims {
+        if claims.is_empty() {
             return Ok(());
         }
         let mut found = BTreeMap::new();
         scan(body, &mut found);
-        for unit in units {
+        for (unit, expected) in claims {
             if unit.publication == OutputPublication::Literal
                 && found.get(&unit.id).is_some_and(|found| found.instructions > 0)
             {
@@ -274,14 +285,6 @@ impl<'a> Verifier<'a> {
                     Some(unit.id),
                 ));
             }
-            let expected = self
-                .plan
-                .selected
-                .evidence(unit.id)?
-                .immediates
-                .iter()
-                .map(|(_, literal)| literal.as_canonical_u64())
-                .collect::<Vec<_>>();
             if !expected.is_empty()
                 && found.get(&unit.id).map(|found| &found.immediates) != Some(&expected)
             {
