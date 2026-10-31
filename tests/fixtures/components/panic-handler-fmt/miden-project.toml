@@ -1,0 +1,11 @@
+[package]
+name = "panic-handler-fmt"
+version = "0.1.0"
+
+[[bin]]
+name = "panic-handler-fmt"
+path = "src/lib.rs"
+
+[profile.release]
+# The tests need the package's error-message table to identify the unreachable trap.
+debug = true

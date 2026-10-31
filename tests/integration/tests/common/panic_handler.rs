@@ -15,19 +15,23 @@ pub const PANIC_HANDLER_MESSAGE: &str = "custom panic handler invoked";
 /// The message supplied to the fixture's assertion.
 pub const ASSERTION_MESSAGE: &str = "input smaller than threshold";
 
-/// Compiles and executes the panicking fixture, returning its captured info messages.
-pub fn panic_handler_messages(strategy: PanicStrategy) -> Vec<String> {
+/// Compiles and executes the given panic-handler fixture, returning its captured info messages.
+pub fn panic_handler_messages_for_fixture(
+    fixture: &str,
+    entrypoint: &str,
+    strategy: PanicStrategy,
+) -> Vec<String> {
     DebugLogger::init_for_tests()
         .expect("each test using DebugLogger should run in its own process");
     // Keep compiler info logs out of the test output, then enable them only for execution.
     log::set_max_level(log::LevelFilter::Warn);
 
     let mut test = CompilerTest::rust_source_cargo_miden(
-        "../fixtures/components/panic-handler-test",
+        fixture,
         WasmTranslationConfig::default(),
         [
             "--entrypoint".to_string(),
-            "panic_handler_test::entrypoint".to_string(),
+            entrypoint.to_string(),
             strategy.as_rustc_arg().to_string(),
         ],
     );
