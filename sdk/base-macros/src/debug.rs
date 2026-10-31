@@ -116,9 +116,13 @@ mod tests {
         let implementation: syn::ItemImpl = syn::parse2(expanded).unwrap();
         let predicates = &implementation.generics.where_clause.unwrap().predicates;
         assert_eq!(predicates.len(), 2);
-        assert_eq!(quote::quote!(#predicates).to_string(), quote::quote!(
-            T: ::core::fmt::Debug, U: ::core::fmt::Debug
-        ).to_string());
+        assert_eq!(
+            quote::quote!(#predicates).to_string(),
+            quote::quote!(
+                T: ::core::fmt::Debug, U: ::core::fmt::Debug
+            )
+            .to_string()
+        );
     }
 
     #[test]
